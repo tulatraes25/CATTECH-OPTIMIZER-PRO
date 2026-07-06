@@ -3,13 +3,13 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.9.0
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cattech.Optimizer.Pro.Core", "src\Cattech.Optimizer.Pro.Core\Cattech.Optimizer.Pro.Core.csproj", "{A1B2C3D4-1234-5678-9ABC-DEF012345678}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cattech.Optimizer.Pro.Core", "Cattech.Optimizer.Pro.Core\Cattech.Optimizer.Pro.Core.csproj", "{A1B2C3D4-1234-5678-9ABC-DEF012345678}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cattech.Optimizer.Pro.Infrastructure", "src\Cattech.Optimizer.Pro.Infrastructure\Cattech.Optimizer.Pro.Infrastructure.csproj", "{B2C3D4E5-2345-6789-ABCD-EF0123456789}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cattech.Optimizer.Pro.Infrastructure", "Cattech.Optimizer.Pro.Infrastructure\Cattech.Optimizer.Pro.Infrastructure.csproj", "{B2C3D4E5-2345-6789-ABCD-EF0123456789}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cattech.Optimizer.Pro.UI", "src\Cattech.Optimizer.Pro.UI\Cattech.Optimizer.Pro.UI.csproj", "{C3D4E5F6-3456-789A-BCDE-F01234567890}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cattech.Optimizer.Pro.UI", "Cattech.Optimizer.Pro.UI\Cattech.Optimizer.Pro.UI.csproj", "{C3D4E5F6-3456-789A-BCDE-F01234567890}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cattech.Optimizer.Pro.Core.Tests", "tests\Cattech.Optimizer.Pro.Core.Tests\Cattech.Optimizer.Pro.Core.Tests.csproj", "{D4E5F6A7-4567-89AB-CDEF-012345678901}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cattech.Optimizer.Pro.Core.Tests", "..\tests\Cattech.Optimizer.Pro.Core.Tests\Cattech.Optimizer.Pro.Core.Tests.csproj", "{D4E5F6A7-4567-89AB-CDEF-012345678901}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

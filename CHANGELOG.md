@@ -17,12 +17,28 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - ROADMAP.md - Plan de desarrollo por versiones
 - CHANGELOG.md - Este archivo
 - .gitignore - Archivos a ignorar en git
+- Solución .NET 8 con proyectos Core, Infrastructure, UI y Tests
+- Modelo de hardware (CPU, RAM, GPU, Disk, System, Motherboard)
+- Modelo de reportes (Client, Equipment, Service)
+- Modelo de configuración (Company, Technician, AppSettings)
+- Interfaz IHardwareService con implementación WMI
+- Interfaz IReportService e ISettingsService
+- Servicio de persistencia JSON (JsonSettingsService)
+- MainWindow WPF con navegación MVVM
+- CommunityToolkit.Mvvm para patrón MVVM
 
-### Planned
-- Inicialización de proyecto .NET 8 WPF
-- Estructura de carpetas Core/Infrastructure/UI
-- Configuración de Serilog para logging
-- Primer ViewModel y View de prueba
+### Fixed
+- Corrección de rutas relativas en .sln (proyectos no se encontraban)
+- Corrección de comandos de publicación en README.md (rutas incorrectas)
+- Corrección de URL de clonado en README.md (tu-usuario → tulatraes25)
+- Corrección de ManagementDateTime → ManagementDateTimeConverter en WmiHardwareService
+- Corrección de variable no usada (ex) en JsonSettingsService
+- Remoción de ApplicationIcon inexistente del .csproj
+
+### Changed
+- Compatibilidad documentada: solo Windows 10/11 para .NET 8
+- SMART completo postergado a v0.2 (v0.1 solo detección básica)
+- Build verificado: dotnet restore, build y test exitosos
 
 ---
 

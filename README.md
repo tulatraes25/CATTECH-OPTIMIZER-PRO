@@ -52,7 +52,7 @@ CATTECH OPTIMIZER PRO es una aplicación de escritorio para Windows diseñada pa
 ### Usando línea de comandos
 
 ```bash
-# Navegar al directorio del proyecto
+# Navegar al directorio src
 cd src
 
 # Restaurar dependencias
@@ -69,11 +69,11 @@ dotnet run --project Cattech.Optimizer.Pro.UI
 
 ```bash
 # Build self-contained (no requiere .NET Runtime instalado)
-dotnet publish Cattech.Optimizer.Pro.UI\Cattech.Optimizer.Pro.UI.csproj `
+dotnet publish src\Cattech.Optimizer.Pro.UI\Cattech.Optimizer.Pro.UI.csproj `
   --configuration Release `
   --runtime win-x64 `
   --self-contained true `
-  --output ..\output\release
+  --output output\release
 
 # El ejecutable estará en: output\release\Cattech.Optimizer.Pro.UI.exe
 ```
@@ -141,11 +141,11 @@ Para más detalles, ver [ARQUITECTURA_INICIAL.md](ARQUITECTURA_INICIAL.md)
 
 ```bash
 # Clonar repositorio
-git clone https://github.com/tu-usuario/cattech-optimizer-pro.git
-cd cattech-optimizer-pro
+git clone https://github.com/tulatraes25/CATTECH-OPTIMIZER-PRO.git
+cd CATTECH-OPTIMIZER-PRO
 
 # Abrir en Visual Studio
-start CATTECH-OPTIMIZER-PRO.sln
+start src\Cattech.Optimizer.Pro.sln
 
 # O compilar desde línea de comandos
 dotnet build
@@ -197,7 +197,7 @@ Ver [AUDITORIA_REFERENCIAS.md](AUDITORIA_REFERENCIAS.md) para detalles completos
 
 - **Website**: [cattech.com](https://cattech.com) (futuro)
 - **Email**: info@cattech.com (futuro)
-- **Issues**: [GitHub Issues](https://github.com/tu-usuario/cattech-optimizer-pro/issues)
+- **Issues**: [GitHub Issues](https://github.com/tulatraes25/CATTECH-OPTIMIZER-PRO/issues)
 
 ---
 

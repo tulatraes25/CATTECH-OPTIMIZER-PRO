@@ -49,9 +49,16 @@ public class WmiHardwareService : IHardwareService
                 info.BuildNumber = obj["BuildNumber"]?.ToString() ?? "Unknown";
                 info.ComputerName = obj["CSName"]?.ToString() ?? Environment.MachineName;
 
-                if (obj["InstallDate"] is ManagementDateTime mdt)
+                if (obj["InstallDate"] is string installDateStr)
                 {
-                    info.InstallDate = mdt.ToLocalTime();
+                    try
+                    {
+                        info.InstallDate = ManagementDateTimeConverter.ToDateTime(installDateStr);
+                    }
+                    catch
+                    {
+                        // Date format not recognized
+                    }
                 }
 
                 break;
@@ -265,9 +272,16 @@ public class WmiHardwareService : IHardwareService
                 info.BiosVersion = obj["SMBIOSBIOSVersion"]?.ToString() ?? "Unknown";
 
                 var releaseDate = obj["ReleaseDate"];
-                if (releaseDate is ManagementDateTime mdt)
+                if (releaseDate is string releaseDateStr)
                 {
-                    info.BiosDate = mdt.ToLocalTime();
+                    try
+                    {
+                        info.BiosDate = ManagementDateTimeConverter.ToDateTime(releaseDateStr);
+                    }
+                    catch
+                    {
+                        // Date format not recognized
+                    }
                 }
 
                 break;

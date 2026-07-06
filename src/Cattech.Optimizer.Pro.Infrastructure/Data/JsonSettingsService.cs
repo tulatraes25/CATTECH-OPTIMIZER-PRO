@@ -45,7 +45,7 @@ public class JsonSettingsService : ISettingsService
 
             return _currentSettings;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             // Si hay error, retornar configuración por defecto
             _currentSettings = new AppSettings();
