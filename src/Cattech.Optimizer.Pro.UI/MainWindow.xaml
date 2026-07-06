@@ -1,0 +1,150 @@
+<Window x:Class="Cattech.Optimizer.Pro.UI.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:Cattech.Optimizer.Pro.UI.ViewModels"
+        Title="CATTECH OPTIMIZER PRO" 
+        Height="768" Width="1280"
+        MinHeight="600" MinWidth="900"
+        WindowStartupLocation="CenterScreen"
+        Background="#F5F5F5">
+
+    <Window.DataContext>
+        <vm:MainViewModel />
+    </Window.DataContext>
+
+    <Window.Resources>
+        <!-- Estilos base -->
+        <Style x:Key="SidebarButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#333333" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="20,12" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" 
+                                Background="{TemplateBinding Background}" 
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" 
+                                            VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#E0E0E0" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#D0D0D0" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ActiveSidebarButton" TargetType="Button" BasedOn="{StaticResource SidebarButton}">
+            <Setter Property="Background" Value="#0078D4" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" 
+                                Background="{TemplateBinding Background}" 
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" 
+                                            VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#106EBE" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="220" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- Sidebar -->
+        <Border Grid.Column="0" Background="#E8E8E8">
+            <DockPanel>
+                <!-- Logo/Header -->
+                <Border DockPanel.Dock="Top" 
+                        Background="#0078D4" 
+                        Height="60" 
+                        Padding="15,0">
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="CATTECH" 
+                                   FontSize="18" 
+                                   FontWeight="Bold" 
+                                   Foreground="White" />
+                        <TextBlock Text="OPTIMIZER PRO" 
+                                   FontSize="11" 
+                                   Foreground="#B0D4F1" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Botones de navegación -->
+                <StackPanel Margin="0,10,0,0">
+                    <Button Content="🏠 Inicio" 
+                            Style="{Binding Source={x:Static vm:MainViewModel.HomeButtonStyle}}"
+                            Command="{Binding NavigateCommand}" 
+                            CommandParameter="Home"
+                            Height="45" />
+                    <Button Content="💻 Hardware" 
+                            Style="{Binding Source={x:Static vm:MainViewModel.HardwareButtonStyle}}"
+                            Command="{Binding NavigateCommand}" 
+                            CommandParameter="Hardware"
+                            Height="45" />
+                    <Button Content="🔍 Diagnóstico" 
+                            Style="{Binding Source={x:Static vm:MainViewModel.DiagnosticsButtonStyle}}"
+                            Command="{Binding NavigateCommand}" 
+                            CommandParameter="Diagnostics"
+                            Height="45" />
+                    <Button Content="⚡ Optimización" 
+                            Style="{Binding Source={x:Static vm:MainViewModel.OptimizationButtonStyle}}"
+                            Command="{Binding NavigateCommand}" 
+                            CommandParameter="Optimization"
+                            Height="45" />
+                    <Button Content="📊 Informes" 
+                            Style="{Binding Source={x:Static vm:MainViewModel.ReportsButtonStyle}}"
+                            Command="{Binding NavigateCommand}" 
+                            CommandParameter="Reports"
+                            Height="45" />
+                    <Button Content="⚙️ Configuración" 
+                            Style="{Binding Source={x:Static vm:MainViewModel.SettingsButtonStyle}}"
+                            Command="{Binding NavigateCommand}" 
+                            CommandParameter="Settings"
+                            Height="45" />
+                </StackPanel>
+
+                <!-- Footer -->
+                <Border DockPanel.Dock="Bottom" 
+                        Height="40" 
+                        VerticalAlignment="Bottom"
+                        Background="#D0D0D0">
+                    <TextBlock Text="v0.1.0 MVP" 
+                               HorizontalAlignment="Center" 
+                               VerticalAlignment="Center"
+                               FontSize="11"
+                               Foreground="#666666" />
+                </Border>
+            </DockPanel>
+        </Border>
+
+        <!-- Contenido principal -->
+        <Border Grid.Column="1" Background="White">
+            <ContentControl Content="{Binding CurrentView}" 
+                          Margin="0" />
+        </Border>
+    </Grid>
+</Window>
