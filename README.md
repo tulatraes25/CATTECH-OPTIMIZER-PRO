@@ -98,11 +98,27 @@ dotnet publish src\Cattech.Optimizer.Pro.UI\Cattech.Optimizer.Pro.UI.csproj `
 
 ## Uso rápido
 
-1. **Configurar empresa**: Ir a Settings → Company y agregar datos + logo
+1. **Configurar empresa**: Ir a ⚙️ Configuración y agregar datos de la empresa/técnico
 2. **Nuevo cliente**: Click en "Nuevo Servicio" y completar datos
-3. **Diagnosticar**: Ir a Diagnostics y ejecutar análisis
+3. **Diagnosticar**: Ir a 🔍 Diagnóstico y ejecutar análisis
 4. **Optimizar**: Seleccionar optimizaciones deseadas (con confirmación)
-5. **Generar informe**: Ir a Reports y generar PDF
+5. **Generar informe**: Ir a 📊 Informes y generar PDF
+
+## Configuración de empresa/técnico
+
+Antes de usar la herramienta, configurá los datos de tu empresa en **⚙️ Configuración**. Estos datos aparecerán en todos los informes HTML y PDF generados.
+
+**Campos disponibles:**
+- Nombre comercial y técnico responsable (obligatorios)
+- CUIT/DNI
+- Teléfono y WhatsApp
+- Email (con validación de formato)
+- Dirección y Ciudad
+- Logo de la empresa (PNG/JPG)
+- Color principal de la marca (hex)
+- Leyenda del pie de informe
+
+La configuración se guarda automáticamente en `config/empresa.json`.
 
 ---
 

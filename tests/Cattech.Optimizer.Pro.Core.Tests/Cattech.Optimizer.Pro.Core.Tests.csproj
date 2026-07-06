@@ -24,6 +24,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Cattech.Optimizer.Pro.Core\Cattech.Optimizer.Pro.Core.csproj" />
+    <ProjectReference Include="..\..\src\Cattech.Optimizer.Pro.Infrastructure\Cattech.Optimizer.Pro.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

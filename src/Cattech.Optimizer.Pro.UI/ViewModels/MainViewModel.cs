@@ -2,6 +2,9 @@ using System.Windows;
 using System.Windows.Controls;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Cattech.Optimizer.Pro.Core.Interfaces;
+using Cattech.Optimizer.Pro.Infrastructure.Data;
+using Cattech.Optimizer.Pro.UI.Views;
 
 namespace Cattech.Optimizer.Pro.UI.ViewModels;
 
@@ -10,7 +13,7 @@ namespace Cattech.Optimizer.Pro.UI.ViewModels;
 /// </summary>
 public partial class MainViewModel : ObservableObject
 {
-    // Estilos para botones del sidebar (se inicializan en código)
+    // Estilos para botones del sidebar
     public static string HomeButtonStyle { get; set; } = "SidebarButton";
     public static string HardwareButtonStyle { get; set; } = "SidebarButton";
     public static string DiagnosticsButtonStyle { get; set; } = "SidebarButton";
@@ -24,9 +27,16 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private string _currentSection = "Home";
 
+    // Servicios (temporal: sin DI, se crean directamente)
+    private readonly ISettingsService _settingsService;
+
+    // ViewModels de secciones
+    private CompanySettingsViewModel? _companySettingsViewModel;
+
     public MainViewModel()
     {
-        // Cargar vista inicial
+        // TODO: Reemplazar con Dependency Injection cuando se configure
+        _settingsService = new JsonSettingsService();
         NavigateTo("Home");
     }
 
@@ -43,8 +53,6 @@ public partial class MainViewModel : ObservableObject
     {
         CurrentSection = section;
 
-        // TODO: Implementar navegación real con vistas
-        // Por ahora, mostrar placeholder
         CurrentView = section switch
         {
             "Home" => CreatePlaceholder("Inicio - Panel principal"),
@@ -52,9 +60,24 @@ public partial class MainViewModel : ObservableObject
             "Diagnostics" => CreatePlaceholder("Diagnóstico del Sistema"),
             "Optimization" => CreatePlaceholder("Optimización"),
             "Reports" => CreatePlaceholder("Generación de Informes"),
-            "Settings" => CreatePlaceholder("Configuración de Empresa/Técnico"),
+            "Settings" => CreateCompanySettingsView(),
             _ => CreatePlaceholder("Sección no encontrada")
         };
+    }
+
+    private object CreateCompanySettingsView()
+    {
+        _companySettingsViewModel ??= new CompanySettingsViewModel(_settingsService);
+
+        var view = new CompanySettingsView
+        {
+            DataContext = _companySettingsViewModel
+        };
+
+        // Cargar datos cuando se muestra la vista (fire and forget)
+        _ = _companySettingsViewModel.LoadAsync();
+
+        return view;
     }
 
     private static ContentControl CreatePlaceholder(string text)

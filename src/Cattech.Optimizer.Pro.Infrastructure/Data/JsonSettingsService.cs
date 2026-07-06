@@ -22,7 +22,7 @@ public class JsonSettingsService : ISettingsService
         _settingsPath = settingsPath ?? Path.Combine(
             AppDomain.CurrentDomain.BaseDirectory,
             "config",
-            "appsettings.json");
+            "empresa.json");
 
         _currentSettings = new AppSettings();
     }
@@ -41,7 +41,11 @@ public class JsonSettingsService : ISettingsService
             }
 
             var json = await File.ReadAllTextAsync(_settingsPath);
-            _currentSettings = JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+            var options = new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            };
+            _currentSettings = JsonSerializer.Deserialize<AppSettings>(json, options) ?? new AppSettings();
 
             return _currentSettings;
         }

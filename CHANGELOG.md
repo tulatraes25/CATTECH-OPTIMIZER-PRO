@@ -10,6 +10,17 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 ## [Unreleased]
 
 ### Added
+- **Módulo de configuración de empresa/técnico** (CompanySettingsView)
+  - Formulario completo con 11 campos: nombre, técnico, CUIT/DNI, tel, WhatsApp, email, dirección, ciudad, logo, color, leyenda
+  - Selección de logo con diálogo de archivos (PNG/JPG/JPEG)
+  - Vista previa del logo y preview del color principal
+  - Validaciones: nombre y técnico obligatorios, formato de email
+  - Persistencia en `config/empresa.json` con camelCase
+  - Detección de cambios sin guardar
+  - Mensajes de éxito/error en la UI
+- CompanySettingsViewModel con CommunityToolkit.Mvvm
+- Converters: BoolToVisibility, LogoPathColor, HexToColor
+- Tests unitarios: 27 tests (serialización, deserialización, validación email, persistencia JSON)
 - Documentación inicial del proyecto
 - AUDITORIA_REFERENCIAS.md - Análisis de herramientas de referencia
 - ARQUITECTURA_INICIAL.md - Estructura y tecnologías del proyecto
@@ -34,10 +45,13 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - Corrección de ManagementDateTime → ManagementDateTimeConverter en WmiHardwareService
 - Corrección de variable no usada (ex) en JsonSettingsService
 - Remoción de ApplicationIcon inexistente del .csproj
+- JsonSettingsService: alineación de PropertyNamingPolicy (camelCase) en save/load
 
 ### Changed
 - Compatibilidad documentada: solo Windows 10/11 para .NET 8
 - SMART completo postergado a v0.2 (v0.1 solo detección básica)
+- CompanyInfo extendido con campos: TechnicianName, TaxId, WhatsApp, City, LogoPath, PrimaryColor, FooterLegend
+- Ruta de configuración cambiada de appsettings.json a empresa.json
 - Build verificado: dotnet restore, build y test exitosos
 
 ---
