@@ -164,6 +164,33 @@ Ir a **🔍 Diagnóstico** para ejecutar un análisis no invasivo del equipo. No
 
 Los diagnósticos se guardan en `data/diagnostics/diagnostic-YYYYMMDD-HHMMSS.json`.
 
+## Programas de inicio
+
+Ir a **🚀 Programas de inicio** para ver y analizar todos los programas que se ejecutan al iniciar Windows. Solo lectura: no se desactiva nada.
+
+**Fuentes analizadas:**
+- Registry: HKCU/HKLM Run y RunOnce
+- Carpetas de inicio del usuario y comunes
+- Tareas programadas de inicio de sesión (solo lectura)
+
+**Para cada entrada se muestra:**
+- Nombre, comando/ruta, origen, ubicación exacta
+- Editor detectado (Microsoft, Google, NVIDIA, etc.)
+- Es Microsoft probable: Sí/No
+- Riesgo estimado: Bajo / Medio / Alto
+- Recomendación: Mantener / Revisar / Posible desactivar
+
+**Filtros disponibles:**
+- Todos, No Microsoft, Revisar, Posible desactivar, Alertas
+
+**Alertas automáticas:**
+- Rutas inexistentes
+- Comandos en Temp/AppData sospechosos
+- Editor desconocido
+- Entradas duplicadas
+
+Los análisis se guardan en `data/startup-analysis/startup-analysis-YYYYMMDD-HHMMSS.json`.
+
 ---
 
 ## Estructura del proyecto

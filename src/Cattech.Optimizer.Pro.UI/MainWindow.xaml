@@ -114,6 +114,10 @@
                             Command="{Binding NavigateCommand}" 
                             CommandParameter="Diagnostics"
                             Height="45" />
+                    <Button Content="🚀 Programas de inicio" 
+                            Command="{Binding NavigateCommand}" 
+                            CommandParameter="Startup"
+                            Height="45" />
                     <Button Content="⚡ Optimización" 
                             Style="{Binding Source={x:Static vm:MainViewModel.OptimizationButtonStyle}}"
                             Command="{Binding NavigateCommand}" 

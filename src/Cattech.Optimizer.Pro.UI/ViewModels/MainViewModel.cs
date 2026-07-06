@@ -6,6 +6,7 @@ using Cattech.Optimizer.Pro.Core.Interfaces;
 using Cattech.Optimizer.Pro.Infrastructure.Data;
 using Cattech.Optimizer.Pro.Infrastructure.Diagnostics;
 using Cattech.Optimizer.Pro.Infrastructure.Hardware;
+using Cattech.Optimizer.Pro.Infrastructure.Startup;
 using Cattech.Optimizer.Pro.UI.Views;
 
 namespace Cattech.Optimizer.Pro.UI.ViewModels;
@@ -34,11 +35,13 @@ public partial class MainViewModel : ObservableObject
     private readonly IServiceReportService _reportService;
     private readonly IHardwareService _hardwareService;
     private readonly IDiagnosticService _diagnosticService;
+    private readonly IStartupService _startupService;
 
     // ViewModels de secciones
     private CompanySettingsViewModel? _companySettingsViewModel;
     private ClientEquipmentViewModel? _clientEquipmentViewModel;
     private QuickDiagnosticViewModel? _quickDiagnosticViewModel;
+    private StartupAnalysisViewModel? _startupAnalysisViewModel;
 
     public MainViewModel()
     {
@@ -47,6 +50,7 @@ public partial class MainViewModel : ObservableObject
         _reportService = new JsonServiceReportService();
         _hardwareService = new WmiHardwareService();
         _diagnosticService = new DiagnosticService(_hardwareService);
+        _startupService = new StartupService();
         NavigateTo("Home");
     }
 
@@ -72,6 +76,7 @@ public partial class MainViewModel : ObservableObject
             "Reports" => CreatePlaceholder("Generación de Informes"),
             "Settings" => CreateCompanySettingsView(),
             "ClientEquipment" => CreateClientEquipmentView(),
+            "Startup" => CreateStartupAnalysisView(),
             _ => CreatePlaceholder("Sección no encontrada")
         };
     }
@@ -107,6 +112,16 @@ public partial class MainViewModel : ObservableObject
         return new QuickDiagnosticView
         {
             DataContext = _quickDiagnosticViewModel
+        };
+    }
+
+    private object CreateStartupAnalysisView()
+    {
+        _startupAnalysisViewModel ??= new StartupAnalysisViewModel(_startupService);
+
+        return new StartupAnalysisView
+        {
+            DataContext = _startupAnalysisViewModel
         };
     }
 

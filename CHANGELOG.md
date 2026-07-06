@@ -10,6 +10,25 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 ## [Unreleased]
 
 ### Added
+- **Módulo de análisis de programas de inicio** (StartupAnalysisView)
+  - Análisis de 6 fuentes: Registry Run/RunOnce (HKCU/HKLM), carpetas de inicio, tareas programadas
+  - Clasificación automática: Microsoft vs terceros, riesgo, recomendación
+  - Detección de editor por nombre/ruta (Microsoft, Google, NVIDIA, Intel, etc.)
+  - Detección de rutas inexistentes, comandos sospechosos en Temp/AppData, duplicados
+  - Filtros: Todos, No Microsoft, Revisar, Posible desactivar, Alertas
+  - Búsqueda por nombre/ruta/editor
+  - Panel de resumen: total, Microsoft, terceros, posibles desactivar, alertas
+  - Panel de detalle al seleccionar entrada
+  - Guardado en `data/startup-analysis/startup-analysis-YYYYMMDD-HHMMSS.json`
+  - Preparado para futura desactivación con backup y reversión
+- StartupEntry: modelo detallado con Status, Risk, Recommendation, Publisher, Notes
+- StartupAnalysis: modelo con controles calculados (TotalCount, MicrosoftCount, etc.)
+- IStartupService: interfaz con Analyze/Save/Load/List/Delete
+- StartupService: implementación con Registry, FileSystem, WMI, clasificación
+- StartupAnalysisViewModel con filtros, búsqueda, selección
+- StartupAnalysisView con DataGrid, filtros, resumen, detalle
+- StringToVisibilityConverter
+- 14 tests nuevos (69 total)
 - **Módulo de diagnóstico rápido** (QuickDiagnosticView)
   - Análisis no invasivo del sistema: SO, CPU, RAM, disco, inicio, seguridad, temporales
   - Detección de programas de inicio via Registry (HKCU/HKLM) y carpetas de inicio

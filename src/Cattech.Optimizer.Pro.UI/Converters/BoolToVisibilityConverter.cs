@@ -118,3 +118,20 @@ public class InverseBoolToVisibilityConverter : IValueConverter
         return value is Visibility.Collapsed;
     }
 }
+
+/// <summary>
+/// Convierte string a Visibility. Null/vacío → Collapsed, con valor → Visible.
+/// </summary>
+public class StringToVisibilityConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        var str = value as string;
+        return string.IsNullOrWhiteSpace(str) ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
