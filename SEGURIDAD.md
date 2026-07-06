@@ -520,5 +520,31 @@ Siempre backups antes de cualquier operación crítica.
 
 ---
 
+## Desactivación de Programas de Inicio
+
+### Reglas específicas para desactivación
+
+1. **No eliminar entradas**: Solo mover a ubicación de backup
+2. **Microsoft bloqueado**: No se permite desactivar entradas de Microsoft
+3. **Solo fuentes soportadas**: Registry Run y carpetas de inicio
+4. **Backup obligatorio**: Cada desactivación crea un registro de backup
+5. **Reversión posible**: Todas las desactivaciones son reversibles
+6. **Confirmación obligatoria**: Resumen antes de ejecutar
+7. **Registro de acciones**: Cada cambio queda registrado con timestamp y técnico
+
+### Fuentes NO desactivables (v0.1)
+- RunOnce
+- Tareas programadas
+- Servicios
+- Drivers
+- Windows Defender
+
+### Estrategia de backup
+- **Registro**: Se copia a `HKCU/HKLM\Software\CATTECH\OptimizerPro\DisabledStartup\Run`
+- **Archivos**: Se mueven a `backups/startup/YYYYMMDD-HHMMSS/`
+- **Metadata**: Se guarda en `backups/startup/startup-backups.json`
+
+---
+
 *Documento de seguridad - CATTECH OPTIMIZER PRO*  
 *Última actualización: 2024*

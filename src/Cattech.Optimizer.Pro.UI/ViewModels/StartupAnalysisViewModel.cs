@@ -8,6 +8,7 @@ namespace Cattech.Optimizer.Pro.UI.ViewModels;
 
 /// <summary>
 /// ViewModel para la pantalla de análisis de programas de inicio.
+/// Incluye desactivación segura con backup y reversión.
 /// </summary>
 public partial class StartupAnalysisViewModel : ObservableObject
 {
@@ -79,6 +80,38 @@ public partial class StartupAnalysisViewModel : ObservableObject
     [ObservableProperty]
     private bool _hasSelectedEntry;
 
+    // --- Selección para desactivación ---
+
+    public ObservableCollection<SelectableStartupEntry> SelectableEntries { get; } = new();
+
+    [ObservableProperty]
+    private int _selectedCount;
+
+    [ObservableProperty]
+    private bool _hasSelectableEntries;
+
+    [ObservableProperty]
+    private bool _isDisabling;
+
+    [ObservableProperty]
+    private string _disableReason = string.Empty;
+
+    // --- Backups ---
+
+    public ObservableCollection<StartupBackupRecord> Backups { get; } = new();
+
+    [ObservableProperty]
+    private bool _showBackups;
+
+    [ObservableProperty]
+    private StartupBackupRecord? _selectedBackup;
+
+    [ObservableProperty]
+    private bool _hasSelectedBackup;
+
+    [ObservableProperty]
+    private bool _isRestoring;
+
     // --- Lista filtrada ---
 
     public ObservableCollection<StartupEntry> FilteredEntries { get; } = new();
@@ -88,9 +121,10 @@ public partial class StartupAnalysisViewModel : ObservableObject
         _startupService = startupService;
     }
 
-    /// <summary>
-    /// Ejecuta el análisis de programas de inicio.
-    /// </summary>
+    // =====================
+    // ANÁLISIS
+    // =====================
+
     [RelayCommand]
     private async Task AnalyzeAsync()
     {
@@ -110,6 +144,7 @@ public partial class StartupAnalysisViewModel : ObservableObject
             SummaryPossibleDisable = analysis.PossibleDisableCount.ToString();
             SummaryAlerts = analysis.AlertCount.ToString();
 
+            RebuildSelectableEntries();
             ApplyFilter();
             HasResults = true;
             StatusText = analysis.AlertCount > 0
@@ -127,9 +162,6 @@ public partial class StartupAnalysisViewModel : ObservableObject
         }
     }
 
-    /// <summary>
-    /// Guarda el análisis actual en disco.
-    /// </summary>
     [RelayCommand]
     private async Task SaveAnalysisAsync()
     {
@@ -140,7 +172,6 @@ public partial class StartupAnalysisViewModel : ObservableObject
         }
 
         ClearMessages();
-
         try
         {
             var analysis = new StartupAnalysis
@@ -148,7 +179,6 @@ public partial class StartupAnalysisViewModel : ObservableObject
                 Entries = _allEntries,
                 TechnicianName = await GetTechnicianNameAsync()
             };
-
             var fileName = await _startupService.SaveAnalysisAsync(analysis);
             ShowSuccess($"Análisis guardado: {fileName}");
         }
@@ -158,9 +188,10 @@ public partial class StartupAnalysisViewModel : ObservableObject
         }
     }
 
-    /// <summary>
-    /// Cambia el filtro activo.
-    /// </summary>
+    // =====================
+    // FILTROS
+    // =====================
+
     [RelayCommand]
     private void SetFilter(string? filter)
     {
@@ -176,7 +207,6 @@ public partial class StartupAnalysisViewModel : ObservableObject
     private void ApplyFilter()
     {
         FilteredEntries.Clear();
-
         var filtered = SelectedFilter switch
         {
             "No Microsoft" => _allEntries.Where(e => !e.IsMicrosoft),
@@ -190,7 +220,6 @@ public partial class StartupAnalysisViewModel : ObservableObject
             _ => _allEntries.AsEnumerable()
         };
 
-        // Aplicar búsqueda
         if (!string.IsNullOrWhiteSpace(SearchText))
         {
             var search = SearchText.ToLowerInvariant();
@@ -201,15 +230,182 @@ public partial class StartupAnalysisViewModel : ObservableObject
         }
 
         foreach (var entry in filtered)
-        {
             FilteredEntries.Add(entry);
-        }
+
+        UpdateSelectedCount();
     }
 
     partial void OnSelectedEntryChanged(StartupEntry? value)
     {
         HasSelectedEntry = value != null;
     }
+
+    // =====================
+    // SELECCIÓN Y DESACTIVACIÓN
+    // =====================
+
+    private void RebuildSelectableEntries()
+    {
+        SelectableEntries.Clear();
+        foreach (var entry in _allEntries)
+        {
+            var canDisable = _startupService.CanDisableStartupEntry(entry);
+            SelectableEntries.Add(new SelectableStartupEntry
+            {
+                Entry = entry,
+                IsSelectable = canDisable,
+                SelectionReason = !canDisable && entry.IsMicrosoft
+                    ? "Bloqueado: Microsoft"
+                    : !canDisable
+                        ? $"Fuente no soportada: {entry.SourceType}"
+                        : ""
+            });
+        }
+        HasSelectableEntries = SelectableEntries.Any(s => s.IsSelectable);
+    }
+
+    [RelayCommand]
+    private void ToggleSelection(SelectableStartupEntry? item)
+    {
+        if (item == null || !item.IsSelectable) return;
+        item.IsSelected = !item.IsSelected;
+        UpdateSelectedCount();
+    }
+
+    [RelayCommand]
+    private void SelectAllPossibleDisable()
+    {
+        foreach (var item in SelectableEntries)
+        {
+            if (item.IsSelectable && item.Entry.Recommendation == StartupRecommendation.PossibleDisable)
+                item.IsSelected = true;
+        }
+        UpdateSelectedCount();
+    }
+
+    [RelayCommand]
+    private void ClearSelection()
+    {
+        foreach (var item in SelectableEntries)
+            item.IsSelected = false;
+        UpdateSelectedCount();
+    }
+
+    private void UpdateSelectedCount()
+    {
+        SelectedCount = SelectableEntries.Count(s => s.IsSelected);
+    }
+
+    [RelayCommand]
+    private async Task DisableSelectedAsync()
+    {
+        var selected = SelectableEntries.Where(s => s.IsSelected).ToList();
+        if (selected.Count == 0)
+        {
+            ShowError("No hay entradas seleccionadas para desactivar.");
+            return;
+        }
+
+        ClearMessages();
+        IsDisabling = true;
+
+        try
+        {
+            var entries = selected.Select(s => s.Entry).ToList();
+            var summary = await _startupService.DisableSelectedAsync(entries, DisableReason);
+
+            // Refrescar lista
+            await AnalyzeAsync();
+
+            // Mostrar resultado
+            if (summary.FailedCount == 0 && summary.SkippedMicrosoftCount == 0 && summary.SkippedUnsupportedCount == 0)
+            {
+                ShowSuccess($"Desactivadas {summary.SuccessCount} entradas correctamente.");
+            }
+            else
+            {
+                var parts = new List<string>();
+                if (summary.SuccessCount > 0) parts.Add($"{summary.SuccessCount} exitosas");
+                if (summary.FailedCount > 0) parts.Add($"{summary.FailedCount} fallidas");
+                if (summary.SkippedMicrosoftCount > 0) parts.Add($"{summary.SkippedMicrosoftCount} omitidas (Microsoft)");
+                if (summary.SkippedUnsupportedCount > 0) parts.Add($"{summary.SkippedUnsupportedCount} omitidas (fuente no soportada)");
+
+                StatusMessage = string.Join(", ", parts);
+                IsSuccess = summary.SuccessCount > 0;
+                HasError = summary.FailedCount > 0;
+            }
+
+            DisableReason = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            ShowError($"Error durante la desactivación: {ex.Message}");
+        }
+        finally
+        {
+            IsDisabling = false;
+        }
+    }
+
+    // =====================
+    // BACKUPS Y REVERSIÓN
+    // =====================
+
+    [RelayCommand]
+    private async Task LoadBackupsAsync()
+    {
+        ShowBackups = !ShowBackups;
+
+        if (ShowBackups)
+        {
+            Backups.Clear();
+            var backups = await _startupService.ListBackupsAsync();
+            foreach (var backup in backups)
+                Backups.Add(backup);
+        }
+    }
+
+    partial void OnSelectedBackupChanged(StartupBackupRecord? value)
+    {
+        HasSelectedBackup = value != null && value.CanRestore;
+    }
+
+    [RelayCommand]
+    private async Task RestoreBackupAsync()
+    {
+        if (SelectedBackup == null) return;
+
+        ClearMessages();
+        IsRestoring = true;
+
+        try
+        {
+            var result = await _startupService.RestoreAsync(SelectedBackup);
+
+            if (result == StartupActionResult.Success)
+            {
+                ShowSuccess($"Entrada '{SelectedBackup.EntryName}' restaurada correctamente.");
+                await LoadBackupsAsync();
+                await AnalyzeAsync();
+            }
+            else
+            {
+                ShowError($"Error al restaurar: {result}");
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowError($"Error durante la restauración: {ex.Message}");
+        }
+        finally
+        {
+            IsRestoring = false;
+        }
+    }
+
+    // =====================
+    // HELPERS
+    // =====================
 
     private static async Task<string> GetTechnicianNameAsync()
     {
@@ -219,10 +415,7 @@ public partial class StartupAnalysisViewModel : ObservableObject
             var settings = await settingsService.LoadSettingsAsync();
             return settings.Company.TechnicianName;
         }
-        catch
-        {
-            return string.Empty;
-        }
+        catch { return string.Empty; }
     }
 
     private void ShowSuccess(string message)
@@ -248,4 +441,17 @@ public partial class StartupAnalysisViewModel : ObservableObject
         HasError = false;
         ErrorMessage = string.Empty;
     }
+}
+
+/// <summary>
+/// Entrada de inicio seleccionable para desactivación.
+/// </summary>
+public partial class SelectableStartupEntry : ObservableObject
+{
+    public required StartupEntry Entry { get; init; }
+    public required bool IsSelectable { get; init; }
+    public required string SelectionReason { get; init; }
+
+    [ObservableProperty]
+    private bool _isSelected;
 }

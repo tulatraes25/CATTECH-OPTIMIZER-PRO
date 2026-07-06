@@ -3,11 +3,12 @@ using Cattech.Optimizer.Pro.Core.Models.Startup;
 namespace Cattech.Optimizer.Pro.Core.Interfaces;
 
 /// <summary>
-/// Interfaz para analizar programas de inicio de Windows.
-/// Solo lectura: no modifica registro ni archivos.
+/// Interfaz para analizar y gestionar programas de inicio de Windows.
 /// </summary>
 public interface IStartupService
 {
+    // --- Análisis (solo lectura) ---
+
     /// <summary>
     /// Analiza todas las fuentes de programas de inicio.
     /// </summary>
@@ -32,6 +33,35 @@ public interface IStartupService
     /// Elimina un análisis por su ID.
     /// </summary>
     Task<bool> DeleteAnalysisAsync(string analysisId);
+
+    // --- Desactivación (con backup y reversión) ---
+
+    /// <summary>
+    /// Verifica si una entrada puede ser desactivada.
+    /// No permite desactivar entradas Microsoft ni fuentes no soportadas.
+    /// </summary>
+    bool CanDisableStartupEntry(StartupEntry entry);
+
+    /// <summary>
+    /// Desactiva las entradas seleccionadas, creando backup de cada una.
+    /// No elimina entradas, solo las mueve a ubicación de backup.
+    /// </summary>
+    Task<StartupDisableSummary> DisableSelectedAsync(IEnumerable<StartupEntry> entries, string reason = "");
+
+    /// <summary>
+    /// Restaura una entrada desde su backup.
+    /// </summary>
+    Task<StartupActionResult> RestoreAsync(StartupBackupRecord backup);
+
+    /// <summary>
+    /// Lista los backups disponibles (más recientes primero).
+    /// </summary>
+    Task<List<StartupBackupRecord>> ListBackupsAsync();
+
+    /// <summary>
+    /// Carga un backup por su ID.
+    /// </summary>
+    Task<StartupBackupRecord?> LoadBackupAsync(string backupId);
 }
 
 /// <summary>

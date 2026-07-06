@@ -10,6 +10,26 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 ## [Unreleased]
 
 ### Added
+- **Desactivación segura de programas de inicio** (StartupAnalysisView)
+  - Checkboxes de selección con verificación de Microsoft
+  - Botón "Desactivar seleccionados" con confirmación
+  - Botón "Seleccionar posibles desactivar" para selects rápidos
+  - Campo de motivo de desactivación (opcional)
+  - Backup automático: registro a HKCU/HKLM\Software\CATTECH\OptimizerPro\DisabledStartup\Run
+  - Backup automático: archivos a backups/startup/YYYYMMDD-HHMMSS/
+  - Persistencia de backups en backups/startup/startup-backups.json
+  - Panel de backups con listado, detalle y botón de restauración
+  - Bloqueo de entradas de Microsoft (checkbox deshabilitado)
+  - Bloqueo de fuentes no soportadas (RunOnce, tareas programadas)
+  - Resultado parcial: exitosas, fallidas, omitidas (Microsoft/soporte)
+  - Reversión desde backup con un click
+- StartupBackupRecord: modelo completo con Id, EntryId, CanRestore, RestoredAt
+- StartupActionResult: enum Success/Failed/SkippedMicrosoft/SkippedUnsupported/AlreadyDisabled/NotFound
+- StartupDisableResult y StartupDisableSummary para resultados parciales
+- SelectableStartupEntry: wrapper observable para selección en UI
+- IStartupService: extendido con CanDisable/DisableSelected/Restore/ListBackups
+- StartupService: implementación con Registry backup y FileSystem backup
+- 10 tests nuevos (79 total)
 - **Módulo de análisis de programas de inicio** (StartupAnalysisView)
   - Análisis de 6 fuentes: Registry Run/RunOnce (HKCU/HKLM), carpetas de inicio, tareas programadas
   - Clasificación automática: Microsoft vs terceros, riesgo, recomendación

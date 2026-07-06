@@ -191,6 +191,33 @@ Ir a **🚀 Programas de inicio** para ver y analizar todos los programas que se
 
 Los análisis se guardan en `data/startup-analysis/startup-analysis-YYYYMMDD-HHMMSS.json`.
 
+## Desactivación segura de programas de inicio
+
+Desde **🚀 Programas de inicio**, seleccioná entradas y desactivarlas con backup y reversión.
+
+**Cómo funciona:**
+1. Analizar programas de inicio
+2. Seleccionar entradas con checkboxes (solo terceros)
+3. Click en "Desactivar seleccionados"
+4. Confirmar en el diálogo
+5. Se crea backup y se desactivan las entradas
+
+**Fuentes desactivables:**
+- Registry Run (HKCU y HKLM)
+- Carpetas de inicio (usuario y comunes)
+
+**NO desactiva (por seguridad):**
+- Entradas de Microsoft (bloqueadas)
+- RunOnce
+- Tareas programadas
+
+**Estrategia de backup:**
+- **Registro**: Se mueve a `HKCU/HKLM\Software\CATTECH\OptimizerPro\DisabledStartup\Run`
+- **Archivos**: Se mueven a `backups/startup/YYYYMMDD-HHMMSS/`
+- **Reversión**: Click en "Backups" → seleccionar → "Restaurar"
+
+Los backups se guardan en `backups/startup/startup-backups.json`.
+
 ---
 
 ## Estructura del proyecto
