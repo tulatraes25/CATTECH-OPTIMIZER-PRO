@@ -120,6 +120,27 @@ Antes de usar la herramienta, configurá los datos de tu empresa en **⚙️ Con
 
 La configuración se guarda automáticamente en `config/empresa.json`.
 
+## Cliente y equipo
+
+Para registrar un nuevo servicio, ir a **👤 Cliente y equipo** y completar:
+
+**Datos del cliente:**
+- Nombre (obligatorio), teléfono, email, empresa, dirección, observaciones
+
+**Datos del equipo:**
+- Marca, modelo, número de serie
+- Tipo de equipo (Notebook / PC de escritorio / All-in-One / Otro)
+- Motivo del servicio (obligatorio)
+- Observaciones del equipo
+
+**Detección automática:**
+El botón **🔍 Detectar datos del equipo** identifica sin modificar el sistema:
+- SO, edición, arquitectura, procesador, RAM
+- Disco principal, capacidad, espacio libre, tipo de disco
+- Nombre del equipo, usuario actual
+
+Los reportes se guardan en `data/service-reports/service-report-YYYYMMDD-HHMMSS.json`.
+
 ---
 
 ## Estructura del proyecto

@@ -10,6 +10,20 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 ## [Unreleased]
 
 ### Added
+- **Módulo de cliente y equipo** (ClientEquipmentView)
+  - Formulario de cliente: nombre, teléfono, email, empresa, dirección, observaciones
+  - Formulario de equipo: marca, modelo, serie, tipo, motivo, observaciones
+  - Detección automática no invasiva de hardware via WMI (SO, CPU, RAM, disco, etc.)
+  - Estado de detección: Sin detectar / Detectando… / Detectado / Error
+  - Persistencia de reportes en `data/service-reports/service-report-YYYYMMDD-HHMMSS.json`
+  - CRUD: guardar, listar, cargar, eliminar reportes
+  - Botón "Nuevo registro" para limpiar formulario
+  - Validaciones: cliente obligatorio, motivo obligatorio, tipo de equipo, email
+- JsonServiceReportService: servicio de persistencia para reportes de servicio
+- IServiceReportService: interfaz con Save/Load/List/Delete
+- ClientEquipmentViewModel con CommunityToolkit.Mvvm
+- InvertBoolConverter para botón de detección
+- 17 tests nuevos (44 total): ServiceReport serialization, CRUD de reportes
 - **Módulo de configuración de empresa/técnico** (CompanySettingsView)
   - Formulario completo con 11 campos: nombre, técnico, CUIT/DNI, tel, WhatsApp, email, dirección, ciudad, logo, color, leyenda
   - Selección de logo con diálogo de archivos (PNG/JPG/JPEG)

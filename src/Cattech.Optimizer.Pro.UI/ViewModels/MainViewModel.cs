@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Cattech.Optimizer.Pro.Core.Interfaces;
 using Cattech.Optimizer.Pro.Infrastructure.Data;
+using Cattech.Optimizer.Pro.Infrastructure.Hardware;
 using Cattech.Optimizer.Pro.UI.Views;
 
 namespace Cattech.Optimizer.Pro.UI.ViewModels;
@@ -29,14 +30,19 @@ public partial class MainViewModel : ObservableObject
 
     // Servicios (temporal: sin DI, se crean directamente)
     private readonly ISettingsService _settingsService;
+    private readonly IServiceReportService _reportService;
+    private readonly IHardwareService _hardwareService;
 
     // ViewModels de secciones
     private CompanySettingsViewModel? _companySettingsViewModel;
+    private ClientEquipmentViewModel? _clientEquipmentViewModel;
 
     public MainViewModel()
     {
         // TODO: Reemplazar con Dependency Injection cuando se configure
         _settingsService = new JsonSettingsService();
+        _reportService = new JsonServiceReportService();
+        _hardwareService = new WmiHardwareService();
         NavigateTo("Home");
     }
 
@@ -61,6 +67,7 @@ public partial class MainViewModel : ObservableObject
             "Optimization" => CreatePlaceholder("Optimización"),
             "Reports" => CreatePlaceholder("Generación de Informes"),
             "Settings" => CreateCompanySettingsView(),
+            "ClientEquipment" => CreateClientEquipmentView(),
             _ => CreatePlaceholder("Sección no encontrada")
         };
     }
@@ -74,10 +81,19 @@ public partial class MainViewModel : ObservableObject
             DataContext = _companySettingsViewModel
         };
 
-        // Cargar datos cuando se muestra la vista (fire and forget)
         _ = _companySettingsViewModel.LoadAsync();
-
         return view;
+    }
+
+    private object CreateClientEquipmentView()
+    {
+        _clientEquipmentViewModel ??= new ClientEquipmentViewModel(
+            _reportService, _settingsService, _hardwareService);
+
+        return new ClientEquipmentView
+        {
+            DataContext = _clientEquipmentViewModel
+        };
     }
 
     private static ContentControl CreatePlaceholder(string text)
