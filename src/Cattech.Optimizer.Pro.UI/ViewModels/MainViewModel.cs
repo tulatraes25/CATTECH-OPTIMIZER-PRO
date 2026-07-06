@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Cattech.Optimizer.Pro.Core.Interfaces;
 using Cattech.Optimizer.Pro.Infrastructure.Data;
+using Cattech.Optimizer.Pro.Infrastructure.Diagnostics;
 using Cattech.Optimizer.Pro.Infrastructure.Hardware;
 using Cattech.Optimizer.Pro.UI.Views;
 
@@ -32,10 +33,12 @@ public partial class MainViewModel : ObservableObject
     private readonly ISettingsService _settingsService;
     private readonly IServiceReportService _reportService;
     private readonly IHardwareService _hardwareService;
+    private readonly IDiagnosticService _diagnosticService;
 
     // ViewModels de secciones
     private CompanySettingsViewModel? _companySettingsViewModel;
     private ClientEquipmentViewModel? _clientEquipmentViewModel;
+    private QuickDiagnosticViewModel? _quickDiagnosticViewModel;
 
     public MainViewModel()
     {
@@ -43,6 +46,7 @@ public partial class MainViewModel : ObservableObject
         _settingsService = new JsonSettingsService();
         _reportService = new JsonServiceReportService();
         _hardwareService = new WmiHardwareService();
+        _diagnosticService = new DiagnosticService(_hardwareService);
         NavigateTo("Home");
     }
 
@@ -63,7 +67,7 @@ public partial class MainViewModel : ObservableObject
         {
             "Home" => CreatePlaceholder("Inicio - Panel principal"),
             "Hardware" => CreatePlaceholder("Información de Hardware"),
-            "Diagnostics" => CreatePlaceholder("Diagnóstico del Sistema"),
+            "Diagnostics" => CreateQuickDiagnosticView(),
             "Optimization" => CreatePlaceholder("Optimización"),
             "Reports" => CreatePlaceholder("Generación de Informes"),
             "Settings" => CreateCompanySettingsView(),
@@ -93,6 +97,16 @@ public partial class MainViewModel : ObservableObject
         return new ClientEquipmentView
         {
             DataContext = _clientEquipmentViewModel
+        };
+    }
+
+    private object CreateQuickDiagnosticView()
+    {
+        _quickDiagnosticViewModel ??= new QuickDiagnosticViewModel(_diagnosticService);
+
+        return new QuickDiagnosticView
+        {
+            DataContext = _quickDiagnosticViewModel
         };
     }
 

@@ -141,6 +141,29 @@ El botón **🔍 Detectar datos del equipo** identifica sin modificar el sistema
 
 Los reportes se guardan en `data/service-reports/service-report-YYYYMMDD-HHMMSS.json`.
 
+## Diagnóstico rápido
+
+Ir a **🔍 Diagnóstico** para ejecutar un análisis no invasivo del equipo. No se modifica nada en Windows.
+
+**Qué analiza:**
+- Sistema operativo, edición, arquitectura
+- Procesador, RAM total y uso
+- Disco principal, tipo (HDD/SSD/NVMe), capacidad, espacio libre
+- Programas de inicio (HKCU, HKLM, carpetas de inicio)
+- Tamaño estimado de archivos temporales
+- Antivirus, Firewall, Windows Update
+- Memoria virtual
+
+**Alertas automáticas:**
+- RAM baja (≤4 GB), RAM justa (4-8 GB)
+- Poco espacio en disco (<15% libre)
+- Disco HDD: recomendar SSD
+- Muchos programas al inicio (>10)
+- Temporales altos (>2 GB)
+- Windows fuera de objetivo (no Win10/11)
+
+Los diagnósticos se guardan en `data/diagnostics/diagnostic-YYYYMMDD-HHMMSS.json`.
+
 ---
 
 ## Estructura del proyecto

@@ -10,6 +10,23 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 ## [Unreleased]
 
 ### Added
+- **Módulo de diagnóstico rápido** (QuickDiagnosticView)
+  - Análisis no invasivo del sistema: SO, CPU, RAM, disco, inicio, seguridad, temporales
+  - Detección de programas de inicio via Registry (HKCU/HKLM) y carpetas de inicio
+  - Cálculo de tamaño de temporales (%TEMP%, C:\Windows\Temp) con timeout de 3s
+  - Detección de antivirus via WMI (AntiVirusProduct), firewall, Windows Update
+  - Detección de memoria virtual (Win32_PageFileUsage)
+  - Alertas automáticas: RAM baja/justa, poco espacio, HDD, muchos startups, temporales altos
+  - Guardado de diagnósticos en `data/diagnostics/diagnostic-YYYYMMDD-HHMMSS.json`
+  - UI con grupos: Sistema, Hardware, Disco, Inicio, Seguridad, Temporales, Alertas
+  - Barra de progreso durante el análisis
+  - Colores por severidad: Info (azul), Warning (amarillo), Critical (rojo)
+- DiagnosticReport: modelo completo con AlertSeverity, StartupInfo, TempFilesInfo, SecurityInfo
+- IDiagnosticService: interfaz con Run/Save/Load/List/Delete
+- DiagnosticService: implementación con WMI, Registry, FileSystem
+- QuickDiagnosticViewModel con CommunityToolkit.Mvvm
+- InverseBoolToVisibilityConverter
+- 11 tests nuevos (55 total)
 - **Módulo de cliente y equipo** (ClientEquipmentView)
   - Formulario de cliente: nombre, teléfono, email, empresa, dirección, observaciones
   - Formulario de equipo: marca, modelo, serie, tipo, motivo, observaciones
