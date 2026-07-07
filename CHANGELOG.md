@@ -9,21 +9,34 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [0.1.1] - 2024
 
-### Changed
-- **Estabilización del MVP v0.1**
+**MVP estabilizado** - CATTECH OPTIMIZER PRO v0.1.1
+
+### Funcionalidades incluidas
+
+- **Configuración de empresa/técnico**: Formulario con 11 campos, logo, persistencia JSON
+- **Cliente y equipo**: Formulario completo, detección automática de hardware via WMI
+- **Diagnóstico rápido**: Análisis no invasivo del sistema con alertas automáticas
+- **Programas de inicio**: Análisis de 6 fuentes, clasificación Microsoft/terceros
+- **Desactivación segura de inicio**: Backup, reversión, solo fuentes soportadas
+- **Limpieza de temporales**: Escaneo previo, selección, borrado seguro
+- **Optimización visual**: 8 ajustes predefinidos con backup y reversión
+- **Punto de restauración**: Verificación de permisos, creación via PowerShell/WMI
+- **Informe HTML profesional**: 9 secciones, logo embebido, recomendaciones automáticas
+- **Exportación a PDF**: Via WebView2, fallback si no disponible
+- **148 tests unitarios pasando**
+
+### Cambios técnicos
+
 - Refactorización: GetTechnicianNameAsync extraído a SettingsHelper compartido
 - Eliminación de duplicación de código en 5 servicios
 - Eliminación de carpetas vacías (Infrastructure/External, Infrastructure/Templates)
 - Documentación QA completa en docs/QA_V0_1_1.md
 
-### Fixed
+### Correcciones
+
 - Corregida referencia a AppSettings en SettingsHelper
 - Verificada compilación sin errores (0 errores)
 - Verificados 148 tests pasando (100%)
-
-### Documentación
-- QA_V0_1_1.md: checklist del flujo completo, riesgos, limitaciones, recomendaciones
-- CHANGELOG.md: versión 0.1.1 documentada
 
 ---
 
