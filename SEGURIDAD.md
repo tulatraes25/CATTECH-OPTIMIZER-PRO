@@ -546,5 +546,41 @@ Siempre backups antes de cualquier operación crítica.
 
 ---
 
+## Limpieza de Temporales
+
+### Ubicaciones permitidas (v0.1)
+
+| Ubicación | Riesgo | Notas |
+|-----------|--------|-------|
+| `%TEMP%` del usuario | Bajo | Seleccionado por defecto |
+| `C:\Windows\Temp` | Bajo | Requiere permisos de admin |
+| Miniaturas de Explorer | Bajo | Opcional, solo `thumbcache_*.db` |
+| Papelera de reciclaje | Medio | Opcional, no seleccionada por defecto |
+
+### Ubicaciones PROHIBIDAS (v0.1)
+
+- ❌ Descargas
+- ❌ Documentos
+- ❌ Escritorio
+- ❌ AppData completo
+- ❌ Perfiles de navegador
+- ❌ WinSxS
+- ❌ System32
+- ❌ Program Files
+- ❌ ProgramData completo
+- ❌ Carpetas de drivers
+- ❌ Carpetas de usuario completas
+
+### Reglas de seguridad
+
+1. **No limpiar automáticamente**: Siempre escanear primero
+2. **Confirmación obligatoria**: Resumen antes de borrar
+3. **No forzar borrado**: Omitir archivos bloqueados
+4. **Registro completo**: Todo queda registrado
+5. **No limpieza agresiva**: Solo archivos temporales seguros
+6. **Protección de archivos recientes**: No borrar archivos de los últimos 60 segundos
+
+---
+
 *Documento de seguridad - CATTECH OPTIMIZER PRO*  
 *Última actualización: 2024*

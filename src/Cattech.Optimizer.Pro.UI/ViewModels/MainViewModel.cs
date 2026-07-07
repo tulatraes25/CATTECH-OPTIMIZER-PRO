@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Cattech.Optimizer.Pro.Core.Interfaces;
+using Cattech.Optimizer.Pro.Infrastructure.Cleanup;
 using Cattech.Optimizer.Pro.Infrastructure.Data;
 using Cattech.Optimizer.Pro.Infrastructure.Diagnostics;
 using Cattech.Optimizer.Pro.Infrastructure.Hardware;
@@ -36,12 +37,14 @@ public partial class MainViewModel : ObservableObject
     private readonly IHardwareService _hardwareService;
     private readonly IDiagnosticService _diagnosticService;
     private readonly IStartupService _startupService;
+    private readonly ITempCleanupService _tempCleanupService;
 
     // ViewModels de secciones
     private CompanySettingsViewModel? _companySettingsViewModel;
     private ClientEquipmentViewModel? _clientEquipmentViewModel;
     private QuickDiagnosticViewModel? _quickDiagnosticViewModel;
     private StartupAnalysisViewModel? _startupAnalysisViewModel;
+    private TempCleanupViewModel? _tempCleanupViewModel;
 
     public MainViewModel()
     {
@@ -51,6 +54,7 @@ public partial class MainViewModel : ObservableObject
         _hardwareService = new WmiHardwareService();
         _diagnosticService = new DiagnosticService(_hardwareService);
         _startupService = new StartupService();
+        _tempCleanupService = new TempCleanupService();
         NavigateTo("Home");
     }
 
@@ -72,6 +76,7 @@ public partial class MainViewModel : ObservableObject
             "Home" => CreatePlaceholder("Inicio - Panel principal"),
             "Hardware" => CreatePlaceholder("Información de Hardware"),
             "Diagnostics" => CreateQuickDiagnosticView(),
+            "TempCleanup" => CreateTempCleanupView(),
             "Optimization" => CreatePlaceholder("Optimización"),
             "Reports" => CreatePlaceholder("Generación de Informes"),
             "Settings" => CreateCompanySettingsView(),
@@ -122,6 +127,16 @@ public partial class MainViewModel : ObservableObject
         return new StartupAnalysisView
         {
             DataContext = _startupAnalysisViewModel
+        };
+    }
+
+    private object CreateTempCleanupView()
+    {
+        _tempCleanupViewModel ??= new TempCleanupViewModel(_tempCleanupService);
+
+        return new TempCleanupView
+        {
+            DataContext = _tempCleanupViewModel
         };
     }
 

@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Data;
 using System.Windows.Media;
+using Cattech.Optimizer.Pro.Core.Models.Cleanup;
 
 namespace Cattech.Optimizer.Pro.UI.Converters;
 
@@ -180,6 +181,31 @@ public class RestoreTextConverter : IValueConverter
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
     {
         return value is true ? "Restaurable" : "Restaurado";
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+/// <summary>
+/// Convierte CleanupRiskLevel a Color de fondo. Low → verde, Medium → amarillo.
+/// </summary>
+public class RiskColorConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (value is CleanupRiskLevel risk)
+        {
+            return risk switch
+            {
+                CleanupRiskLevel.Low => new SolidColorBrush(Color.FromRgb(0x4C, 0xAF, 0x50)),
+                CleanupRiskLevel.Medium => new SolidColorBrush(Color.FromRgb(0xFF, 0x98, 0x00)),
+                _ => new SolidColorBrush(Color.FromRgb(0x9E, 0x9E, 0x9E))
+            };
+        }
+        return new SolidColorBrush(Color.FromRgb(0x9E, 0x9E, 0x9E));
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)

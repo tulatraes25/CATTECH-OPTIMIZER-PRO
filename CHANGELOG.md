@@ -10,6 +10,26 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 ## [Unreleased]
 
 ### Added
+- **Limpieza segura de temporales** (TempCleanupView)
+  - Escaneo previo de ubicaciones con tamaño estimado
+  - 4 targets predefinidos: %TEMP%, Windows\Temp, Miniaturas, Papelera
+  - Selección individual con checkboxes
+  - Botón "Seleccionar bajos riesgo" para selects rápidos
+  - Confirmación antes de limpiar
+  - Borrado seguro: archivos primero, carpetas vacías después
+  - Protección de archivos bloqueados, recientes (<60s) y protegidos
+  - Timeout de 30s por ubicación para evitar bloqueos
+  - Resultado: espacio liberado, archivos eliminados, omitidos, errores
+  - Persistencia en `data/cleanup-results/cleanup-result-YYYYMMDD-HHMMSS.json`
+  - Advertencias de seguridad en UI
+- TempCleanupTarget: modelo con Id, DisplayName, Path, RiskLevel, IsSystemLocation
+- TempCleanupResult: modelo con DeletedBytes, SkippedFiles, FailedFiles, Errors
+- CleanupTargets: targets predefinidos con validación de ubicaciones permitidas
+- ITempCleanupService: interfaz Scan/Cleanup/SaveResult/ListResults
+- TempCleanupService: implementación con EnumerationOptions, timeout, protección
+- TempCleanupViewModel con scan, select, clean, result display
+- RiskColorConverter
+- 17 tests nuevos (96 total)
 - **Desactivación segura de programas de inicio** (StartupAnalysisView)
   - Checkboxes de selección con verificación de Microsoft
   - Botón "Desactivar seleccionados" con confirmación

@@ -118,6 +118,10 @@
                             Command="{Binding NavigateCommand}" 
                             CommandParameter="Startup"
                             Height="45" />
+                    <Button Content="🧹 Limpieza" 
+                            Command="{Binding NavigateCommand}" 
+                            CommandParameter="TempCleanup"
+                            Height="45" />
                     <Button Content="⚡ Optimización" 
                             Style="{Binding Source={x:Static vm:MainViewModel.OptimizationButtonStyle}}"
                             Command="{Binding NavigateCommand}" 

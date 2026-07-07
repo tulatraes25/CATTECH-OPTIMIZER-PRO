@@ -218,6 +218,32 @@ Desde **🚀 Programas de inicio**, seleccioná entradas y desactivarlas con bac
 
 Los backups se guardan en `backups/startup/startup-backups.json`.
 
+## Limpieza segura de temporales
+
+Ir a **🧹 Limpieza** para escanear y limpiar archivos temporales de forma segura.
+
+**Ubicaciones limpiables:**
+- `%TEMP%` del usuario (seleccionado por defecto)
+- `C:\Windows\Temp` (requiere permisos de admin)
+- Miniaturas de Explorer (opcional)
+- Papelera de reciclaje (opcional, no seleccionada por defecto)
+
+**NO se limpia (por seguridad):**
+- Descargas, Documentos, Escritorio
+- AppData completo
+- Perfiles de navegador
+- WinSxS, System32, Program Files
+
+**Cómo funciona:**
+1. Click en "Escanear temporales"
+2. Revisar ubicaciones detectadas y tamaño
+3. Seleccionar qué limpiar
+4. Click en "Limpiar seleccionados"
+5. Confirmar en el diálogo
+6. Ver resultado: espacio liberado, omitidos, errores
+
+Los resultados se guardan en `data/cleanup-results/cleanup-result-YYYYMMDD-HHMMSS.json`.
+
 ---
 
 ## Estructura del proyecto
