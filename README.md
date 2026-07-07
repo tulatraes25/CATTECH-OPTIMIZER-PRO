@@ -352,9 +352,6 @@ Desde **📊 Informes**, podés exportar el informe HTML a PDF en formato A4.
 - Dependencia: Microsoft Edge (pre-instalado en Win10/11)
 - Ventajas: PDF real con cabecera `%PDF`, renderizado Chromium completo
 - Validación: Se verifica cabecera `%PDF` del archivo generado
-- Licencia: MIT (WebView2 NuGet)
-- Ventajas: Renderizado completo de HTML/CSS, PDF nativo A4
-- Dependencia: Edge WebView2 Runtime (pre-instalado en Win10/11)
 
 ---
 
@@ -437,9 +434,9 @@ Este proyecto está bajo la licencia MIT. Ver [LICENSE](LICENSE) para más detal
 |-------------|----------|
 | .NET 8 | MIT |
 | CommunityToolkit.Mvvm | MIT |
-| QuestPDF | MIT |
 | Serilog | Apache 2.0 |
 | LibreHardwareMonitorLib | MPL 2.0 |
+| Microsoft Edge | (pre-instalado, para exportación PDF) |
 
 Ver [AUDITORIA_REFERENCIAS.md](AUDITORIA_REFERENCIAS.md) para detalles completos.
 
@@ -458,7 +455,7 @@ Ver [AUDITORIA_REFERENCIAS.md](AUDITORIA_REFERENCIAS.md) para detalles completos
 - [ChrisTitusTech/winutil](https://github.com/ChrisTitusTech/winutil) - Inspiración para organización de módulos
 - [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) - Monitoreo de hardware
 - [smartmontools](https://github.com/smartmontools/smartmontools) - Diagnóstico SMART
-- [QuestPDF](https://github.com/SimplyBlues/QuestPDF) - Generación de PDF
+- Microsoft Edge - Exportación HTML a PDF
 
 ---
 

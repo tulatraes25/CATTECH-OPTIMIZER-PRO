@@ -81,6 +81,23 @@ public class PdfExportService : IPdfExportService
         return await ExportViaEdgeHeadlessAsync(htmlPath, outputPdfPath, edgePath);
     }
 
+    /// <summary>
+    /// Verifica si Microsoft Edge está disponible de forma síncrona.
+    /// </summary>
+    public static bool IsEdgeAvailable()
+    {
+        var commonPaths = new[]
+        {
+            @"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+            @"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                @"Microsoft\Edge\Application\msedge.exe")
+        };
+
+        return commonPaths.Any(File.Exists);
+    }
+
     /// <inheritdoc/>
     public string GetPdfOutputPath(string htmlPath)
     {
@@ -180,6 +197,23 @@ public class PdfExportService : IPdfExportService
 
     private static async Task<string?> GetEdgeExecutablePathWithWhereAsync()
     {
+        // 1. Buscar en ubicaciones comunes de Microsoft Edge
+        var commonPaths = new[]
+        {
+            @"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+            @"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                @"Microsoft\Edge\Application\msedge.exe")
+        };
+
+        foreach (var path in commonPaths)
+        {
+            if (File.Exists(path))
+                return path;
+        }
+
+        // 2. Intentar encontrar Edge en el PATH via where.exe
         try
         {
             using var process = new Process

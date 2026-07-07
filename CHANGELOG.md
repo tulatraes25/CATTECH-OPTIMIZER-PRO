@@ -22,7 +22,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - **Optimización visual**: 8 ajustes predefinidos con backup y reversión
 - **Punto de restauración**: Verificación de permisos, creación via PowerShell/WMI
 - **Informe HTML profesional**: 9 secciones, logo embebido, recomendaciones automáticas
-- **Exportación a PDF**: Via WebView2, fallback si no disponible
+- **Exportación a PDF**: Via Microsoft Edge headless, fallback si no disponible
 - **148 tests unitarios pasando**
 
 ### Cambios técnicos
@@ -42,8 +42,14 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - **PDF ahora genera archivos PDF reales** (no HTML renombrado)
 - Implementación corregida: Edge headless `--print-to-pdf` en lugar de fallback a HTML
 - Validación de cabecera `%PDF` en archivos generados
-- 11 tests nuevos de validación de PDF (159 total)
-- Mensajes de error claros cuando Edge no está disponible
+- Detección robusta de Microsoft Edge: rutas comunes + where.exe
+- Mensajes de error corregidos: Edge, no WebView2
+- 16 tests de validación PDF y Edge (164 total)
+
+### Documentation
+- Eliminadas todas las menciones a QuestPDF (no es dependencia actual)
+- Corregida documentación de PDF: Edge headless, no WebView2
+- README, CHANGELOG, QA, RELEASE_NOTES, ARQUITECTURA actualizados
 
 ---
 
@@ -52,14 +58,14 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 ### Added
 - **Exportación de informes a PDF** (ReportView)
   - Botón "Exportar PDF" en pantalla de informes
-  - Exportación via WebView2 (Chromium-based, MIT license)
-  - Verificación de disponibilidad de WebView2 Runtime
+  - Exportación via Microsoft Edge headless (`--print-to-pdf`)
+  - Verificación de disponibilidad de Microsoft Edge
   - Guardado en `reports/pdf/Informe_Tecnico_CATTECH_Cliente_YYYYMMDD-HHMMSS.pdf`
   - Si falla PDF, se conserva el HTML generado
   - Botón "Abrir PDF" para visor predeterminado
   - Actualización de GeneratedReportInfo con PdfPath
 - IPdfExportService: interfaz CanExport/ExportHtmlToPdf/GetPdfOutputPath/OpenPdf
-- PdfExportService: implementación con verificación de WebView2 y fallback
+- PdfExportService: implementación con verificación de Edge y fallback
 - PdfExporterInfo: modelo con IsAvailable, StatusMessage
 - 9 tests nuevos (148 total)
 - **Informe técnico HTML profesional** (ReportView)

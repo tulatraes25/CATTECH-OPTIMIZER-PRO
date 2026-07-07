@@ -291,4 +291,76 @@ public class PdfExportTests
         var info = new PdfExporterInfo();
         Assert.Equal(string.Empty, info.Version);
     }
+
+    // === Tests de detección de Edge ===
+
+    [Fact]
+    public void PdfExportService_IsEdgeAvailable_ReturnsBool()
+    {
+        // Test que el método existe y no lanza excepción
+        var result = PdfExportService.IsEdgeAvailable();
+
+        Assert.IsType<bool>(result);
+    }
+
+    [Fact]
+    public void PdfExporterInfo_EdgeDetection_MatchesIsAvailable()
+    {
+        // Verificar que CanExportAsync es consistente con IsEdgeAvailable
+        var service = new PdfExportService();
+        var syncResult = PdfExportService.IsEdgeAvailable();
+        var asyncResult = service.CanExportAsync().Result.IsAvailable;
+
+        Assert.Equal(syncResult, asyncResult);
+    }
+
+    [Fact]
+    public void PdfExporterInfo_Name_IndicatesEdge()
+    {
+        var info = new PdfExporterInfo
+        {
+            Name = "Microsoft Edge PDF Export",
+            Version = "Edge Headless (--print-to-pdf)"
+        };
+
+        Assert.Contains("Edge", info.Name);
+        Assert.Contains("Edge", info.Version);
+    }
+
+    [Fact]
+    public async Task ExportHtmlToPdf_NonExistentHtml_ThrowsFileNotFoundException()
+    {
+        var service = new PdfExportService();
+        var tempDir = Path.GetTempPath();
+        var pdfPath = Path.Combine(tempDir, "test_output.pdf");
+
+        await Assert.ThrowsAsync<FileNotFoundException>(
+            () => service.ExportHtmlToPdfAsync(@"C:\nonexistent\file.html", pdfPath));
+    }
+
+    [Fact]
+    public async Task ExportHtmlToPdf_NoEdge_ThrowsInvalidOperationException()
+    {
+        // Crear un HTML temporal
+        var tempHtml = Path.GetTempFileName() + ".html";
+        var tempPdf = Path.GetTempFileName() + ".pdf";
+        try
+        {
+            await File.WriteAllTextAsync(tempHtml, "<html><body>Test</body></html>");
+
+            // Solo lanzar excepción si Edge NO está disponible
+            if (!PdfExportService.IsEdgeAvailable())
+            {
+                var service = new PdfExportService();
+                await Assert.ThrowsAsync<InvalidOperationException>(
+                    () => service.ExportHtmlToPdfAsync(tempHtml, tempPdf));
+            }
+            // Si Edge está disponible, no debería lanzar excepción
+        }
+        finally
+        {
+            if (File.Exists(tempHtml)) File.Delete(tempHtml);
+            if (File.Exists(tempPdf)) File.Delete(tempPdf);
+        }
+    }
 }

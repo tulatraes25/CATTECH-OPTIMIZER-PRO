@@ -41,7 +41,7 @@ Objetivo: Definir estructura, tecnologías y módulos del proyecto.
 │  MVVM Framework:  CommunityToolkit.Mvvm                     │
 │  DI Container:    Microsoft.Extensions.DependencyInjection  │
 │  Logging:         Serilog +Seq                              │
-│  PDF Generation:  QuestPDF (open source, MIT)               │
+│  PDF Generation:  Microsoft Edge headless (--print-to-pdf)         │
 │  JSON:            System.Text.Json                          │
 │  Hardware:        LibreHardwareMonitorLib (NuGet)           │
 │  Diagnostics:     smartctl.exe (externo)                    │
@@ -358,7 +358,7 @@ CATTECH-OPTIMIZER-PRO/
 │     │ Report Gen  │──► ReportService                           │
 │     │             │    ├── Recopila datos                      │
 │     │             │    ├── Genera HTML                         │
-│     │             │    └── Convierte a PDF (QuestPDF)          │
+│     │             │    └── Convierte a PDF (Edge headless)          │
 │     └──────┬──────┘                                            │
 │            │                                                    │
 │     ┌──────▼──────┐                                            │
@@ -518,7 +518,7 @@ ManagementBaseObject outParams = restorePoint.InvokeMethod("CreateRestorePoint",
 **Componentes**:
 - `ReportService.cs`: Orquestación
 - `ReportHtmlTemplate.cs`: Generación HTML
-- `ReportPdfTemplate.cs`: Conversión PDF (QuestPDF)
+- `ReportPdfTemplate.cs`: Conversión PDF (Microsoft Edge headless)
 - `report-html.html`: Plantilla HTML
 
 **Contenido del informe**:
@@ -546,7 +546,7 @@ ManagementBaseObject outParams = restorePoint.InvokeMethod("CreateRestorePoint",
 | .NET 8 | MIT | Runtime | Ninguna |
 | WPF | - | UI Framework | Parte de .NET |
 | CommunityToolkit.Mvvm | MIT | MVVM | Ninguna |
-| QuestPDF | MIT | PDF Generation | Ninguna |
+| Microsoft Edge | (pre-instalado) | PDF Generation | Edge headless required |
 | Serilog | Apache 2.0 | Logging | Attribution |
 | LibreHardwareMonitorLib | MPL 2.0 | Hardware | Attribution, share changes |
 | smartctl.exe | GPL-2.0 | SMART | Binario externo, no vincular |
@@ -584,7 +584,7 @@ SOFTWARE.
 
 1. **LibreHardwareMonitorLib**: Incluir attribution en About/Settings
 2. **Serilog**: Incluir en ThirdPartyNotices.txt
-3. **QuestPDF**: Incluir en ThirdPartyNotices.txt
+3. **Microsoft Edge**: No requiere atribución (pre-instalado en Win10/11)
 4. **smartctl.exe**: Distribuir binario con licencia GPL-2.0
 
 ---
@@ -608,7 +608,7 @@ SOFTWARE.
 - Reutilización de ViewModels
 - Comunidad activa (CommunityToolkit.Mvvm)
 
-### 6.3 Generación de PDF: QuestPDF
+### 6.3 Generación de PDF: Microsoft Edge Headless
 
 **Justificación**:
 - Open source (MIT)

@@ -121,12 +121,12 @@ src/Cattech.Optimizer.Pro.UI/Views/Optimization/OptimizationView.xaml
 ```
 
 #### 8. Generación de Informe
-- [ ] Generación de HTML con datos completos
-- [ ] Conversión a PDF (QuestPDF)
-- [ ] Logo de empresa en encabezado
-- [ ] Datos del técnico y cliente
-- [ ] Resumen ejecutivo
-- [ ] Detalles de hardware
+- [x] Generación de HTML con datos completos
+- [x] Conversión a PDF (Microsoft Edge headless)
+- [x] Logo de empresa en encabezado
+- [x] Datos del técnico y cliente
+- [x] Resumen ejecutivo
+- [x] Detalles de hardware
 - [ ] Acciones realizadas
 - [ ] Botón de guardar/abrir
 
@@ -156,7 +156,6 @@ templates/report-html.html
 <ItemGroup>
   <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
   <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
-  <PackageReference Include="QuestPDF" Version="2024.1.0" />
   <PackageReference Include="Serilog" Version="3.1.1" />
   <PackageReference Include="Serilog.Sinks.File" Version="5.0.0" />
   <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
@@ -521,8 +520,8 @@ src/Cattech.Optimizer.Pro.UI/Converters/LocalizationConverter.cs
 4. **SMART**: smartctl.exe externo
    - Justificación: Estándar de la industria, licencia GPL
 
-5. **PDF**: QuestPDF
-   - Justificación: Open source, MIT, sin dependencias externas
+5. **PDF**: Microsoft Edge headless
+   - Justificación: PDF real, renderizado Chromium, pre-instalado en Win10/11
 
 6. **Logging**: Serilog
    - Justificación: Estructurado, múltiples sinks, alto rendimiento

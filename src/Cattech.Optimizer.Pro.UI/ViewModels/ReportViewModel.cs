@@ -420,7 +420,7 @@ public partial class ReportViewModel : ObservableObject
             else
             {
                 PdfStatusText = "Error al exportar";
-                ShowError("No se pudo generar el PDF. Verifique que WebView2 Runtime esté instalado.");
+                ShowError("No se pudo generar el PDF. Verifique que Microsoft Edge esté instalado.");
             }
         }
         catch (Exception ex)
