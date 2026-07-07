@@ -1,0 +1,296 @@
+<UserControl x:Class="Cattech.Optimizer.Pro.UI.Views.VisualOptimizationView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:converters="clr-namespace:Cattech.Optimizer.Pro.UI.Converters"
+             xmlns:vo="clr-namespace:Cattech.Optimizer.Pro.Core.Models.VisualOptimization;assembly=Cattech.Optimizer.Pro.Core">
+
+    <UserControl.Resources>
+        <converters:BoolToVisibilityConverter x:Key="BoolToVis" />
+        <converters:InvertBoolConverter x:Key="InvertBool" />
+        <converters:StringToVisibilityConverter x:Key="StringToVis" />
+        <converters:ZeroToVisibilityConverter x:Key="ZeroToVis" />
+        <converters:VisualRiskColorConverter x:Key="VisualRiskColorConverter" />
+        <converters:BoolToVisYesNoConverter x:Key="BoolToVisYesNo" />
+
+        <Style x:Key="ColumnHeaderStyle" TargetType="DataGridColumnHeader">
+            <Setter Property="Background" Value="#F0F0F0" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Padding" Value="10,8" />
+        </Style>
+    </UserControl.Resources>
+
+    <Grid Margin="30">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Row 0: Título -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,10">
+            <TextBlock Text="Optimización Visual Segura" FontSize="26" FontWeight="Bold" Foreground="#1B1B1B" />
+            <TextBlock Text="Ajustes visuales para mejorar rendimiento sin modificar resolución, drivers ni accesibilidad."
+                       FontSize="13" Foreground="#666" Margin="0,5,0,0" />
+        </StackPanel>
+
+        <!-- Row 1: Mensajes -->
+        <StackPanel Grid.Row="1">
+            <Border CornerRadius="6" Padding="12,10" Margin="0,0,0,10"
+                    Visibility="{Binding IsSuccess, Converter={StaticResource BoolToVis}}"
+                    Background="#E6F4EA" BorderBrush="#34A853" BorderThickness="1">
+                <TextBlock Text="{Binding StatusMessage}" Foreground="#1E7E34" FontWeight="SemiBold" />
+            </Border>
+            <Border CornerRadius="6" Padding="12,10" Margin="0,0,0,10"
+                    Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}"
+                    Background="#FDECEA" BorderBrush="#D93025" BorderThickness="1">
+                <TextBlock Text="{Binding ErrorMessage}" Foreground="#C62828" FontWeight="SemiBold" />
+            </Border>
+        </StackPanel>
+
+        <!-- Row 2: Botones principales -->
+        <Grid Grid.Row="2" Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="10" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="10" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="10" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="10" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <Button Grid.Column="0" Content="🔍 Analizar ajustes"
+                    Command="{Binding AnalyzeCommand}" Padding="16,8" FontSize="12" FontWeight="SemiBold"
+                    Background="#0078D4" Foreground="White" BorderThickness="0"
+                    IsEnabled="{Binding IsRunning, Converter={StaticResource InvertBool}}" />
+
+            <Button Grid.Column="2" Content="✅ Aplicar seleccionados"
+                    Command="{Binding ApplyCommand}" Padding="16,8" FontSize="12" FontWeight="SemiBold"
+                    Background="#2E7D32" Foreground="White" BorderThickness="0"
+                    IsEnabled="{Binding HasResults}" />
+
+            <Button Grid.Column="4" Content="Seleccionar seguros"
+                    Command="{Binding SelectAllSafeCommand}" Padding="12,8" FontSize="11"
+                    Background="#F3F3F3" Foreground="#333" BorderBrush="#CCC" BorderThickness="1" />
+
+            <Button Grid.Column="6" Content="Limpiar selección"
+                    Command="{Binding DeselectAllCommand}" Padding="12,8" FontSize="11"
+                    Background="#F3F3F3" Foreground="#333" BorderBrush="#CCC" BorderThickness="1" />
+
+            <Button Grid.Column="8" Content="📋 Backups"
+                    Command="{Binding LoadBackupsCommand}" Padding="12,8" FontSize="11"
+                    Background="#F3F3F3" Foreground="#333" BorderBrush="#CCC" BorderThickness="1" />
+
+            <StackPanel Grid.Column="10" Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock FontSize="12" Foreground="#666">
+                    <Run Text="{Binding SelectedCount, Mode=OneWay}" FontWeight="Bold" />
+                    <Run Text=" seleccionados | " />
+                    <Run Text="{Binding AlreadyOptimizedCount, Mode=OneWay}" />
+                    <Run Text=" ya optimizados" />
+                </TextBlock>
+            </StackPanel>
+        </Grid>
+
+        <!-- Row 3: Advertencia de seguridad -->
+        <Border Grid.Row="3" Background="#E3F2FD" BorderBrush="#42A5F5" BorderThickness="1"
+                CornerRadius="6" Padding="12,8" Margin="0,0,0,10"
+                Visibility="{Binding HasResults, Converter={StaticResource BoolToVis}}">
+            <TextBlock FontSize="11" Foreground="#1565C0">
+                <Run Text="ℹ️ " FontWeight="Bold" />
+                <Run Text="Estos cambios priorizan rendimiento visual sin modificar resolución, drivers, servicios ni accesibilidad. " />
+                <Run Text="Se crea backup de cada valor antes de modificarlo. Reversible en cualquier momento." />
+            </TextBlock>
+        </Border>
+
+        <!-- Row 4: Contenido principal -->
+        <Grid Grid.Row="4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="280" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Panel izquierdo: Lista de ajustes -->
+            <Border Grid.Column="0" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
+                    Padding="15" Margin="0,0,10,0" Background="White">
+                <StackPanel>
+                    <TextBlock Text="AJUSTES DISPONIBLES" FontSize="12" FontWeight="Bold"
+                               Foreground="#0078D4" Margin="0,0,0,10" />
+
+                    <TextBlock Text="Ejecutá un análisis primero" FontSize="12" Foreground="#999"
+                               Visibility="{Binding HasResults, Converter={StaticResource InvertBool}}" />
+
+                    <ItemsControl ItemsSource="{Binding Settings}" MaxHeight="500">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vo:VisualOptimizationSetting}">
+                                <Border BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
+                                        Padding="12,10" Margin="0,0,0,8" Background="White">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <CheckBox Grid.Column="0"
+                                                  IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                  IsEnabled="{Binding IsSupported}"
+                                                  VerticalAlignment="Top" Margin="0,2,10,0"
+                                                  Command="{Binding DataContext.ToggleSettingCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                  CommandParameter="{Binding}" />
+
+                                        <StackPanel Grid.Column="1">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="{Binding DisplayName}" FontSize="13" FontWeight="SemiBold" />
+                                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                                    <Border CornerRadius="3" Padding="5,2" Margin="2,0"
+                                                            Background="{Binding RiskLevel, Converter={StaticResource VisualRiskColorConverter}}">
+                                                        <TextBlock Text="{Binding RiskLevel}" FontSize="9" Foreground="White" />
+                                                    </Border>
+                                                    <Border CornerRadius="3" Padding="5,2"
+                                                            Background="#E8F5E9" Visibility="{Binding IsAlreadyOptimized, Converter={StaticResource BoolToVis}}">
+                                                        <TextBlock Text="Ya optimizado" FontSize="9" Foreground="#2E7D32" />
+                                                    </Border>
+                                                </StackPanel>
+                                            </Grid>
+                                            <TextBlock Text="{Binding Description}" FontSize="11" Foreground="#666"
+                                                       TextWrapping="Wrap" Margin="0,4,0,0" />
+                                            <Grid Margin="0,6,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="15" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="15" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" FontSize="10" Foreground="#555">
+                                                    <Run Text="Actual: " />
+                                                    <Run Text="{Binding CurrentValue, Mode=OneWay}" FontWeight="SemiBold" />
+                                                </TextBlock>
+                                                <TextBlock Grid.Column="2" FontSize="10" Foreground="#2E7D32">
+                                                    <Run Text="Recomendado: " />
+                                                    <Run Text="{Binding RecommendedValue, Mode=OneWay}" FontWeight="SemiBold" />
+                                                </TextBlock>
+                                                <TextBlock Grid.Column="4" FontSize="9" Foreground="#999"
+                                                           Visibility="{Binding Notes, Converter={StaticResource StringToVis}}">
+                                                    <Run Text="{Binding Notes, Mode=OneWay}" FontStyle="Italic" />
+                                                </TextBlock>
+                                            </Grid>
+                                            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                                <Border CornerRadius="3" Padding="4,1" Background="#FFF3E0" Margin="0,0,4,0"
+                                                        Visibility="{Binding RequiresRestart, Converter={StaticResource BoolToVis}}">
+                                                    <TextBlock Text="Requiere reinicio" FontSize="9" Foreground="#E65100" />
+                                                </Border>
+                                                <Border CornerRadius="3" Padding="4,1" Background="#E8EAF6"
+                                                        Visibility="{Binding RequiresSignOut, Converter={StaticResource BoolToVis}}">
+                                                    <TextBlock Text="Requiere cerrar sesión" FontSize="9" Foreground="#283593" />
+                                                </Border>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <!-- Panel derecho: Resultado + Backups -->
+            <Border Grid.Column="1" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
+                    Padding="15" Background="#FAFAFA">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <!-- Resultado -->
+                        <TextBlock Text="RESULTADO" FontSize="12" FontWeight="Bold"
+                                   Foreground="#0078D4" Margin="0,0,0,10"
+                                   Visibility="{Binding HasResult, Converter={StaticResource BoolToVis}}" />
+
+                        <TextBlock Text="{Binding ResultSummary}" FontSize="13" FontWeight="SemiBold"
+                                   TextWrapping="Wrap" Margin="0,0,0,6"
+                                   Visibility="{Binding HasResult, Converter={StaticResource BoolToVis}}" />
+
+                        <TextBlock Text="{Binding ResultDetails}" FontSize="11" Foreground="#666"
+                                   TextWrapping="Wrap" Margin="0,0,0,10"
+                                   Visibility="{Binding HasResult, Converter={StaticResource BoolToVis}}" />
+
+                        <StackPanel Visibility="{Binding HasResult, Converter={StaticResource BoolToVis}}">
+                            <Grid Margin="0,0,0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="Aplicados:" FontSize="11" Foreground="#555" />
+                                <TextBlock Text="{Binding ResultAppliedCount}" FontSize="11" FontWeight="SemiBold" Foreground="#2E7D32" Grid.Column="1" /></Grid>
+                            <Grid Margin="0,0,0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="Omitidos:" FontSize="11" Foreground="#555" />
+                                <TextBlock Text="{Binding ResultSkippedCount}" FontSize="11" FontWeight="SemiBold" Foreground="#E65100" Grid.Column="1" /></Grid>
+                            <Grid Margin="0,0,0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="Fallidos:" FontSize="11" Foreground="#555" />
+                                <TextBlock Text="{Binding ResultFailedCount}" FontSize="11" FontWeight="SemiBold" Foreground="#C62828" Grid.Column="1" /></Grid>
+                            <Grid Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="Reiniciar:" FontSize="11" Foreground="#555" />
+                                <TextBlock Text="{Binding RequiresRestart, Converter={StaticResource BoolToVisYesNo}}" FontSize="11" FontWeight="SemiBold" Grid.Column="1" /></Grid>
+                            <Grid Margin="0,0,0,12"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="Cerrar sesión:" FontSize="11" Foreground="#555" />
+                                <TextBlock Text="{Binding RequiresSignOut, Converter={StaticResource BoolToVisYesNo}}" FontSize="11" FontWeight="SemiBold" Grid.Column="1" /></Grid>
+                        </StackPanel>
+
+                        <Separator Background="#E0E0E0" Margin="0,0,0,12"
+                                   Visibility="{Binding ShowBackups, Converter={StaticResource BoolToVis}}" />
+
+                        <!-- Backups -->
+                        <StackPanel Visibility="{Binding ShowBackups, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="BACKUPS" FontSize="12" FontWeight="Bold"
+                                       Foreground="#0078D4" Margin="0,0,0,8" />
+
+                            <TextBlock Text="No hay backups" FontSize="11" Foreground="#999"
+                                       Visibility="{Binding Backups.Count, Converter={StaticResource ZeroToVis}}" />
+
+                            <ItemsControl ItemsSource="{Binding Backups}" MaxHeight="200">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type vo:VisualOptimizationBackup}">
+                                        <Border BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="4"
+                                                Padding="8,6" Margin="0,0,0,6" Background="White">
+                                            <StackPanel>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Text="{Binding SettingName}" FontSize="11" FontWeight="SemiBold" />
+                                                    <Border Grid.Column="1" CornerRadius="3" Padding="4,1"
+                                                            Background="{Binding CanRestore, Converter={StaticResource RestoreColorConverter}}">
+                                                        <TextBlock Text="{Binding CanRestore, Converter={StaticResource RestoreTextConverter}}"
+                                                                   FontSize="9" Foreground="White" />
+                                                    </Border>
+                                                </Grid>
+                                                <TextBlock Text="{Binding CreatedAt, StringFormat='Aplicado: {0:dd/MM/yyyy HH:mm}'}"
+                                                           FontSize="9" Foreground="#999" />
+                                                <TextBlock Text="{Binding AppliedBy}" FontSize="9" Foreground="#999"
+                                                           Visibility="{Binding AppliedBy, Converter={StaticResource StringToVis}}" />
+                                                <Button Content="Restaurar" FontSize="10" Padding="8,3" Margin="0,4,0,0"
+                                                        Background="#E8F5E9" Foreground="#2E7D32" BorderBrush="#A5D6A7"
+                                                        BorderThickness="1" HorizontalAlignment="Left"
+                                                        Command="{Binding DataContext.RestoreBackupCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                        CommandParameter="{Binding}"
+                                                        IsEnabled="{Binding CanRestore}"
+                                                        Visibility="{Binding CanRestore, Converter={StaticResource BoolToVis}}" />
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

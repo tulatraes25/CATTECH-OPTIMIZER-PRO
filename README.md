@@ -244,6 +244,35 @@ Ir a **🧹 Limpieza** para escanear y limpiar archivos temporales de forma segu
 
 Los resultados se guardan en `data/cleanup-results/cleanup-result-YYYYMMDD-HHMMSS.json`.
 
+## Optimización visual segura
+
+Ir a **⚡ Optimización** para aplicar ajustes visuales que mejoran el rendimiento.
+
+**Ajustes disponibles:**
+- Desactivar animaciones de ventanas
+- Desactivar animaciones de menús
+- Desactivar sombras del mouse
+- Configurar mostrar contenido al arrastrar
+- Mantener suavizado de fuentes (ClearType)
+- Desactivar Aero Peek
+- Desactivar animaciones de minimizar/maximizar
+
+**Cómo funciona:**
+1. Click en "Analizar ajustes"
+2. Revisar estado actual y valores recomendados
+3. Seleccionar ajustes a aplicar
+4. Click en "Aplicar seleccionados"
+5. Confirmar en el diálogo
+6. Ver resultado: aplicados, omitidos, fallidos
+
+**Seguridad:**
+- Backup de cada valor antes de modificar
+- Reversión desde backups
+- No se cambia resolución, drivers ni accesibilidad
+- Requiere reinicio/cierre de sesión para algunos ajustes
+
+Los backups se guardan en `backups/visual/visual-backups.json`.
+
 ---
 
 ## Estructura del proyecto

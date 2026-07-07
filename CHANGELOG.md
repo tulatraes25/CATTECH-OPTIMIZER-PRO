@@ -10,6 +10,26 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 ## [Unreleased]
 
 ### Added
+- **Optimización visual segura** (VisualOptimizationView)
+  - 8 ajustes visuales predefinidos (animaciones, sombras, transparencias, fuentes)
+  - Análisis del estado actual de cada ajuste
+  - Selección individual con checkboxes
+  - Botón "Seleccionar seguros" para selects rápidos
+  - Backup automático de cada valor antes de modificar
+  - Reversión desde backups con un click
+  - Persistencia en backups/visual/visual-backups.json
+  - Detección de compatibilidad con Windows
+  - Indicadores de "Ya optimizado", "Requiere reinicio", "Requiere cerrar sesión"
+  - Resultado: aplicados, omitidos, fallidos, requiere reinicio
+  - NO modifica: resolución, drivers, servicios, accesibilidad, Defender
+- VisualOptimizationSetting: modelo con RegistryPath, CurrentValue, RecommendedValue
+- VisualOptimizationBackup: modelo con CanRestore, RestoredAt
+- VisualOptimizationResult: modelo con AppliedCount, RequiresRestart, Errors
+- IVisualOptimizationService: interfaz Analyze/Apply/Restore/SaveResult
+- VisualOptimizationService: implementación con Registry read/write
+- VisualOptimizationViewModel con scan, select, apply, backup, restore
+- VisualRiskColorConverter, BoolToVisYesNoConverter
+- 16 tests nuevos (112 total)
 - **Limpieza segura de temporales** (TempCleanupView)
   - Escaneo previo de ubicaciones con tamaño estimado
   - 4 targets predefinidos: %TEMP%, Windows\Temp, Miniaturas, Papelera

@@ -582,5 +582,38 @@ Siempre backups antes de cualquier operación crítica.
 
 ---
 
+## Optimización Visual
+
+### Reglas de seguridad
+
+1. **Backup obligatorio**: Cada valor se guarda antes de modificar
+2. **Reversión posible**: Todos los cambios son reversibles desde backups
+3. **No cambiar resolución**: Nunca se modifica la resolución de pantalla
+4. **No modificar drivers**: Nunca se tocan drivers de video
+5. **No tocar servicios**: Nunca se desactivan servicios
+6. **No tocar accesibilidad**: Se mantiene soporte de accesibilidad
+7. **Confirmación obligatoria**: Resumen antes de aplicar
+8. **Solo ajustes documentados**: Cada registro está documentado en código
+
+### Ajustes permitidos (v0.1)
+- Animaciones de ventanas/menús
+- Sombras del mouse
+- Contenido al arrastrar ventanas
+- Suavizado de fuentes (ClearType)
+- Aero Peek
+- Animaciones de minimizar/maximizar
+
+### Ajustes PROHIBIDOS
+- ❌ Resolución de pantalla
+- ❌ Escalado DPI
+- ❌ Drivers de video
+- ❌ Servicios del sistema
+- ❌ Configuración de accesibilidad
+- ❌ Temas personales del usuario
+- ❌ Configuración de Windows Defender
+- ❌ Configuración de Windows Update
+
+---
+
 *Documento de seguridad - CATTECH OPTIMIZER PRO*  
 *Última actualización: 2024*

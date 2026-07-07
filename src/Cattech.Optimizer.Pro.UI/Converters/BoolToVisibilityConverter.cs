@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Data;
 using System.Windows.Media;
 using Cattech.Optimizer.Pro.Core.Models.Cleanup;
+using Cattech.Optimizer.Pro.Core.Models.VisualOptimization;
 
 namespace Cattech.Optimizer.Pro.UI.Converters;
 
@@ -206,6 +207,47 @@ public class RiskColorConverter : IValueConverter
             };
         }
         return new SolidColorBrush(Color.FromRgb(0x9E, 0x9E, 0x9E));
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+/// <summary>
+/// Convierte VisualRiskLevel a Color de fondo. Low → verde, Medium → amarillo.
+/// </summary>
+public class VisualRiskColorConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (value is VisualRiskLevel risk)
+        {
+            return risk switch
+            {
+                VisualRiskLevel.Low => new SolidColorBrush(Color.FromRgb(0x4C, 0xAF, 0x50)),
+                VisualRiskLevel.Medium => new SolidColorBrush(Color.FromRgb(0xFF, 0x98, 0x00)),
+                _ => new SolidColorBrush(Color.FromRgb(0x9E, 0x9E, 0x9E))
+            };
+        }
+        return new SolidColorBrush(Color.FromRgb(0x9E, 0x9E, 0x9E));
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+/// <summary>
+/// Convierte bool a string "Sí"/"No".
+/// </summary>
+public class BoolToVisYesNoConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        return value is true ? "Sí" : "No";
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)

@@ -8,6 +8,7 @@ using Cattech.Optimizer.Pro.Infrastructure.Data;
 using Cattech.Optimizer.Pro.Infrastructure.Diagnostics;
 using Cattech.Optimizer.Pro.Infrastructure.Hardware;
 using Cattech.Optimizer.Pro.Infrastructure.Startup;
+using Cattech.Optimizer.Pro.Infrastructure.VisualOptimization;
 using Cattech.Optimizer.Pro.UI.Views;
 
 namespace Cattech.Optimizer.Pro.UI.ViewModels;
@@ -38,6 +39,7 @@ public partial class MainViewModel : ObservableObject
     private readonly IDiagnosticService _diagnosticService;
     private readonly IStartupService _startupService;
     private readonly ITempCleanupService _tempCleanupService;
+    private readonly IVisualOptimizationService _visualOptimizationService;
 
     // ViewModels de secciones
     private CompanySettingsViewModel? _companySettingsViewModel;
@@ -45,6 +47,7 @@ public partial class MainViewModel : ObservableObject
     private QuickDiagnosticViewModel? _quickDiagnosticViewModel;
     private StartupAnalysisViewModel? _startupAnalysisViewModel;
     private TempCleanupViewModel? _tempCleanupViewModel;
+    private VisualOptimizationViewModel? _visualOptimizationViewModel;
 
     public MainViewModel()
     {
@@ -55,6 +58,7 @@ public partial class MainViewModel : ObservableObject
         _diagnosticService = new DiagnosticService(_hardwareService);
         _startupService = new StartupService();
         _tempCleanupService = new TempCleanupService();
+        _visualOptimizationService = new VisualOptimizationService();
         NavigateTo("Home");
     }
 
@@ -77,7 +81,7 @@ public partial class MainViewModel : ObservableObject
             "Hardware" => CreatePlaceholder("Información de Hardware"),
             "Diagnostics" => CreateQuickDiagnosticView(),
             "TempCleanup" => CreateTempCleanupView(),
-            "Optimization" => CreatePlaceholder("Optimización"),
+            "Optimization" => CreateVisualOptimizationView(),
             "Reports" => CreatePlaceholder("Generación de Informes"),
             "Settings" => CreateCompanySettingsView(),
             "ClientEquipment" => CreateClientEquipmentView(),
@@ -137,6 +141,16 @@ public partial class MainViewModel : ObservableObject
         return new TempCleanupView
         {
             DataContext = _tempCleanupViewModel
+        };
+    }
+
+    private object CreateVisualOptimizationView()
+    {
+        _visualOptimizationViewModel ??= new VisualOptimizationViewModel(_visualOptimizationService);
+
+        return new VisualOptimizationView
+        {
+            DataContext = _visualOptimizationViewModel
         };
     }
 
