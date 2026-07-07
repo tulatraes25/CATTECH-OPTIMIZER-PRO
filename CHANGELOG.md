@@ -38,6 +38,13 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - Verificada compilación sin errores (0 errores)
 - Verificados 148 tests pasando (100%)
 
+### Fixed (PDF)
+- **PDF ahora genera archivos PDF reales** (no HTML renombrado)
+- Implementación corregida: Edge headless `--print-to-pdf` en lugar de fallback a HTML
+- Validación de cabecera `%PDF` en archivos generados
+- 11 tests nuevos de validación de PDF (159 total)
+- Mensajes de error claros cuando Edge no está disponible
+
 ---
 
 ## [Unreleased]

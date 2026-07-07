@@ -343,12 +343,15 @@ Desde **📊 Informes**, podés exportar el informe HTML a PDF en formato A4.
 `Informe_Tecnico_CATTECH_Cliente_YYYYMMDD-HHMMSS.pdf`
 
 **Requisitos:**
-- Microsoft Edge WebView2 Runtime (pre-instalado en Windows 10/11)
+- Microsoft Edge instalado (pre-instalado en Windows 10/11)
 - Si no está instalado, se muestra advertencia clara
 - Si falla la exportación, se conserva el HTML generado
 
 **Decisión técnica:**
-- Método: WebView2 (Chromium-based) para renderizado HTML → PDF
+- Método: Microsoft Edge en modo headless (`--print-to-pdf`)
+- Dependencia: Microsoft Edge (pre-instalado en Win10/11)
+- Ventajas: PDF real con cabecera `%PDF`, renderizado Chromium completo
+- Validación: Se verifica cabecera `%PDF` del archivo generado
 - Licencia: MIT (WebView2 NuGet)
 - Ventajas: Renderizado completo de HTML/CSS, PDF nativo A4
 - Dependencia: Edge WebView2 Runtime (pre-instalado en Win10/11)

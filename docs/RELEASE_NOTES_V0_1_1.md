@@ -1,6 +1,6 @@
 # Release Notes - CATTECH OPTIMIZER PRO v0.1.1
 
-**Fecha**: 2024  
+**Fecha**: 2026  
 **Tipo**: MVP Estabilizado  
 **Tag**: v0.1.1-mvp
 
@@ -78,7 +78,7 @@ CATTECH OPTIMIZER PRO v0.1.1 es la primera versión estable del MVP. Incluye tod
 
 ## Limitaciones Conocidas
 
-1. **WebView2 Runtime**: Requiere Edge WebView2 Runtime para exportar PDF (pre-instalado en Win10/11)
+1. **Microsoft Edge**: Requiere Microsoft Edge instalado para exportar PDF (pre-instalado en Win10/11)
 2. **Permisos**: Algunas funciones requieren administrador (punto de restauración, Windows\Temp)
 3. **Frecuencia**: Windows limita puntos de restauración a 1 por día
 4. **Logo**: Se guarda como ruta absoluta (pendiente: copiar a carpeta interna)
@@ -94,7 +94,7 @@ CATTECH OPTIMIZER PRO v0.1.1 es la primera versión estable del MVP. Incluye tod
 |------------|-----------|
 | **SO** | Windows 10 (1809+) / Windows 11 |
 | **.NET** | .NET 8 Desktop Runtime |
-| **PDF** | Microsoft Edge WebView2 Runtime (pre-instalado en Win10/11) |
+| **PDF** | Microsoft Edge instalado (pre-instalado en Win10/11) |
 | **Permisos** | Administrador para algunas funciones |
 | **RAM** | 512 MB mínimo, 1 GB recomendado |
 | **Disco** | 100 MB para instalación + espacio para reportes |
@@ -137,7 +137,7 @@ e777abb docs: fix README commands and verify initial build
 - ChrisTitusTech/winutil - Inspiración para organización de módulos
 - LibreHardwareMonitor - Monitoreo de hardware
 - smartmontools - Diagnóstico SMART
-- QuestPDF - Generación de PDF
+- Microsoft Edge - Exportación HTML a PDF
 - WebView2 - Exportación HTML a PDF
 
 ---

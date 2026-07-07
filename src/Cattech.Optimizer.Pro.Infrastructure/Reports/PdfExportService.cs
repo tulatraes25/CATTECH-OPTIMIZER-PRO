@@ -1,12 +1,14 @@
 using System.Diagnostics;
 using System.IO;
+using System.Text;
 using Cattech.Optimizer.Pro.Core.Interfaces;
 
 namespace Cattech.Optimizer.Pro.Infrastructure.Reports;
 
 /// <summary>
 /// Implementación de IPdfExportService.
-/// Exporta HTML a PDF usando WebView2 (Chromium).
+/// Genera PDFs reales usando Microsoft Edge en modo headless (--print-to-pdf).
+/// Requiere Microsoft Edge instalado (pre-instalado en Windows 10/11).
 /// </summary>
 public class PdfExportService : IPdfExportService
 {
@@ -20,33 +22,27 @@ public class PdfExportService : IPdfExportService
     }
 
     /// <inheritdoc/>
-    public Task<PdfExporterInfo> CanExportAsync()
+    public async Task<PdfExporterInfo> CanExportAsync()
     {
         var info = new PdfExporterInfo
         {
-            Name = "WebView2 PDF Export",
-            Version = "Chromium-based"
+            Name = "Microsoft Edge PDF Export",
+            Version = "Edge Headless (--print-to-pdf)"
         };
 
         try
         {
-            // Verificar si WebView2 Runtime está disponible
-            // En Windows 10/11 moderno, Edge WebView2 Runtime está pre-instalado
-            var webView2Path = GetWebView2RuntimePath();
+            var edgePath = await GetEdgeExecutablePathWithWhereAsync();
 
-            if (!string.IsNullOrEmpty(webView2Path) && File.Exists(webView2Path))
+            if (!string.IsNullOrEmpty(edgePath) && File.Exists(edgePath))
             {
                 info.IsAvailable = true;
-                info.StatusMessage = "WebView2 Runtime detectado. Exportación PDF disponible.";
+                info.StatusMessage = "Microsoft Edge detectado. Exportación PDF disponible.";
             }
             else
             {
-                // Intentar verificar por registro
-                var isRegistered = CheckWebView2Registration();
-                info.IsAvailable = isRegistered;
-                info.StatusMessage = isRegistered
-                    ? "WebView2 Runtime disponible (verificado por registro)."
-                    : "WebView2 Runtime no detectado. Instalar Microsoft Edge WebView2 Runtime.";
+                info.IsAvailable = false;
+                info.StatusMessage = "Microsoft Edge no detectado. Se requiere Edge para exportar PDF.";
             }
         }
         catch (Exception ex)
@@ -55,7 +51,7 @@ public class PdfExportService : IPdfExportService
             info.StatusMessage = $"Error al verificar: {ex.Message}";
         }
 
-        return Task.FromResult(info);
+        return info;
     }
 
     /// <inheritdoc/>
@@ -71,25 +67,18 @@ public class PdfExportService : IPdfExportService
             Directory.CreateDirectory(outputDir);
         }
 
-        try
+        var edgePath = await GetEdgeExecutablePathWithWhereAsync();
+
+        if (string.IsNullOrEmpty(edgePath) || !File.Exists(edgePath))
         {
-            // Método 1: Usar PowerShell con WebView2
-            return await ExportViaPowerShellAsync(htmlPath, outputPdfPath);
+            throw new InvalidOperationException(
+                "Microsoft Edge no está instalado. " +
+                "Se requiere Microsoft Edge para exportar PDF. " +
+                "Instale Microsoft Edge o use la exportación HTML.");
         }
-        catch (Exception ex)
-        {
-            // Método 2: Fallback a conversión básica
-            try
-            {
-                return await ExportViaBasicConversionAsync(htmlPath, outputPdfPath);
-            }
-            catch
-            {
-                throw new InvalidOperationException(
-                    $"No se pudo exportar a PDF. Error original: {ex.Message}. " +
-                    "Verifique que Microsoft Edge WebView2 Runtime esté instalado.");
-            }
-        }
+
+        // Usar Edge en modo headless con --print-to-pdf
+        return await ExportViaEdgeHeadlessAsync(htmlPath, outputPdfPath, edgePath);
     }
 
     /// <inheritdoc/>
@@ -118,33 +107,24 @@ public class PdfExportService : IPdfExportService
 
     // --- Métodos internos ---
 
-    private static async Task<bool> ExportViaPowerShellAsync(string htmlPath, string outputPdfPath)
+    private static async Task<bool> ExportViaEdgeHeadlessAsync(string htmlPath, string outputPdfPath, string edgePath)
     {
-        // Usar PowerShell con .NET para crear PDF desde HTML
-        // Este método usa una conversión simple que no requiere WebView2
-        var script = $@"
-Add-Type -AssemblyName System.Drawing
-Add-Type -AssemblyName System.Drawing.Printing
+        // Convertir ruta a formato file:// URI para Edge
+        var fileUri = new Uri(htmlPath).AbsoluteUri;
 
-# Leer el HTML
-$htmlContent = Get-Content -Path '{htmlPath.Replace("'", "''")}' -Raw
-
-# Crear documento PDF usando .NET
-$pdfPath = '{outputPdfPath.Replace("'", "''")}'
-
-# Por ahora, crear un archivo de texto como placeholder
-# En producción, esto se conectaría con WebView2
-$htmlContent | Out-File -FilePath $pdfPath -Encoding UTF8
-
-Write-Output 'PDF generado correctamente'
-";
+        // Usar Edge en modo headless con --print-to-pdf
+        // Nota: --no-pdf-header-footer evita agregar numeración de página predeterminada
+        var arguments = $"--headless --disable-gpu --no-sandbox " +
+                        $"--print-to-pdf=\"{outputPdfPath}\" " +
+                        $"--no-pdf-header-footer " +
+                        $"\"{fileUri}\"";
 
         using var process = new Process
         {
             StartInfo = new ProcessStartInfo
             {
-                FileName = "powershell.exe",
-                Arguments = $"-Command \"{script.Replace("\"", "\\\"")}\"",
+                FileName = edgePath,
+                Arguments = arguments,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
@@ -153,104 +133,41 @@ Write-Output 'PDF generado correctamente'
         };
 
         process.Start();
-        var output = await process.StandardOutput.ReadToEndAsync();
-        var error = await process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
 
-        if (process.ExitCode == 0 && File.Exists(outputPdfPath))
+        // Esperar con timeout de 30 segundos
+        try
         {
-            return true;
+            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30));
+        }
+        catch (TimeoutException)
+        {
+            try { process.Kill(); } catch { }
+            throw new TimeoutException("La exportación a PDF tomó demasiado tiempo (30s).");
         }
 
-        // Si PowerShell falla, usar método básico
-        return await ExportViaBasicConversionAsync(htmlPath, outputPdfPath);
-    }
-
-    private static async Task<bool> ExportViaBasicConversionAsync(string htmlPath, string outputPdfPath)
-    {
-        // Método de fallback: copiar HTML como archivo de texto
-        // Esto no genera un PDF real, pero preserva el contenido
-        // En producción, se usaría WebView2 o librería dedicada
-
-        var htmlContent = await File.ReadAllTextAsync(htmlPath);
-
-        // Crear un archivo que pueda ser impreso desde el navegador
-        var printReadyHtml = WrapForPrinting(htmlContent);
-        await File.WriteAllTextAsync(outputPdfPath, printReadyHtml);
-
-        return File.Exists(outputPdfPath);
-    }
-
-    private static string WrapForPrinting(string htmlContent)
-    {
-        // Agregar meta tags para impresión si no existen
-        if (!htmlContent.Contains("@page"))
+        // Verificar que el archivo PDF se creó y tiene cabecera válida
+        if (File.Exists(outputPdfPath))
         {
-            var printStyles = @"
-<style>
-    @page { size: A4; margin: 15mm; }
-    @media print {
-        body { padding: 0; margin: 0; }
-        .no-print { display: none; }
-    }
-</style>";
-            htmlContent = htmlContent.Replace("</head>", $"{printStyles}</head>");
+            return await ValidatePdfFileAsync(outputPdfPath);
         }
 
-        return htmlContent;
+        return false;
     }
 
-    private static string? GetWebView2RuntimePath()
-    {
-        // Buscar Edge WebView2 Runtime en ubicaciones comunes
-        var paths = new[]
-        {
-            @"C:\Program Files (x86)\Microsoft\EdgeWebView\Application",
-            @"C:\Program Files\Microsoft\EdgeWebView\Application"
-        };
-
-        foreach (var basePath in paths)
-        {
-            if (Directory.Exists(basePath))
-            {
-                var versions = Directory.GetDirectories(basePath)
-                    .OrderByDescending(d => d)
-                    .FirstOrDefault();
-
-                if (versions != null)
-                {
-                    var edgeExe = Path.Combine(versions, "msedgewebview2.exe");
-                    if (File.Exists(edgeExe))
-                        return edgeExe;
-                }
-            }
-        }
-
-        return null;
-    }
-
-    private static bool CheckWebView2Registration()
+    /// <summary>
+    /// Valida que un archivo PDF tenga cabecera válida (%PDF).
+    /// </summary>
+    public static async Task<bool> ValidatePdfFileAsync(string pdfPath)
     {
         try
         {
-            // Verificar por registro de Windows
-            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
-                @"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BEB-235B8DB51B8F}");
+            using var stream = new FileStream(pdfPath, FileMode.Open, FileAccess.Read);
+            var buffer = new byte[5];
 
-            if (key != null)
+            if (await stream.ReadAsync(buffer.AsMemory(0, 5)) >= 5)
             {
-                var pv = key.GetValue("pv")?.ToString();
-                return !string.IsNullOrEmpty(pv);
-            }
-
-            // Verificar versión x64
-            using var key64 = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
-                @"SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BEB-235B8DB51B8F}");
-
-            if (key64 != null)
-            {
-                var pv = key64.GetValue("pv")?.ToString();
-                return !string.IsNullOrEmpty(pv);
+                var header = Encoding.ASCII.GetString(buffer);
+                return header.StartsWith("%PDF");
             }
 
             return false;
@@ -259,5 +176,38 @@ Write-Output 'PDF generado correctamente'
         {
             return false;
         }
+    }
+
+    private static async Task<string?> GetEdgeExecutablePathWithWhereAsync()
+    {
+        try
+        {
+            using var process = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "where.exe",
+                    Arguments = "msedge.exe",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
+            };
+
+            process.Start();
+            var output = await process.StandardOutput.ReadToEndAsync();
+            await process.WaitForExitAsync();
+
+            if (process.ExitCode == 0 && !string.IsNullOrWhiteSpace(output))
+            {
+                var firstLine = output.Split('\n')[0].Trim();
+                if (File.Exists(firstLine))
+                    return firstLine;
+            }
+        }
+        catch { }
+
+        return null;
     }
 }
