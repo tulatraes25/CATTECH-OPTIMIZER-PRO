@@ -19,6 +19,7 @@ namespace Cattech.Optimizer.Pro.UI.ViewModels;
 public partial class ReportViewModel : ObservableObject
 {
     private readonly IReportGenerationService _reportService;
+    private readonly IPdfExportService _pdfExportService;
     private readonly ISettingsService _settingsService;
     private readonly IServiceReportService _serviceReportService;
     private readonly IDiagnosticService _diagnosticService;
@@ -138,8 +139,23 @@ public partial class ReportViewModel : ObservableObject
     [ObservableProperty]
     private string _lastReportPath = string.Empty;
 
+    // --- PDF ---
+
+    [ObservableProperty]
+    private string _lastPdfPath = string.Empty;
+
+    [ObservableProperty]
+    private bool _hasGeneratedPdf;
+
+    [ObservableProperty]
+    private bool _isExportingPdf;
+
+    [ObservableProperty]
+    private string _pdfStatusText = string.Empty;
+
     public ReportViewModel(
         IReportGenerationService reportService,
+        IPdfExportService pdfExportService,
         ISettingsService settingsService,
         IServiceReportService serviceReportService,
         IDiagnosticService diagnosticService,
@@ -149,6 +165,7 @@ public partial class ReportViewModel : ObservableObject
         IRestorePointService restorePointService)
     {
         _reportService = reportService;
+        _pdfExportService = pdfExportService;
         _settingsService = settingsService;
         _serviceReportService = serviceReportService;
         _diagnosticService = diagnosticService;
@@ -340,6 +357,135 @@ public partial class ReportViewModel : ObservableObject
     private async Task OpenReportsFolderAsync()
     {
         await _reportService.OpenReportsFolderAsync();
+    }
+
+    /// <summary>
+    /// Exporta el informe a PDF.
+    /// </summary>
+    [RelayCommand]
+    private async Task ExportPdfAsync()
+    {
+        // Si no hay HTML generado, generarlo primero
+        if (string.IsNullOrEmpty(LastReportPath) || !File.Exists(LastReportPath))
+        {
+            StatusText = "Generando HTML primero...";
+            try
+            {
+                var options = BuildReportOptions();
+                LastReportPath = await _reportService.GenerateHtmlReportAsync(options);
+                HasGeneratedReport = true;
+            }
+            catch (Exception ex)
+            {
+                ShowError($"Error al generar HTML: {ex.Message}");
+                return;
+            }
+        }
+
+        ClearMessages();
+        IsExportingPdf = true;
+        PdfStatusText = "Exportando PDF...";
+
+        try
+        {
+            var pdfPath = _pdfExportService.GetPdfOutputPath(LastReportPath);
+
+            // Asegurar que el directorio existe
+            var pdfDir = Path.GetDirectoryName(pdfPath);
+            if (!string.IsNullOrEmpty(pdfDir) && !Directory.Exists(pdfDir))
+            {
+                Directory.CreateDirectory(pdfDir);
+            }
+
+            var success = await _pdfExportService.ExportHtmlToPdfAsync(LastReportPath, pdfPath);
+
+            if (success && File.Exists(pdfPath))
+            {
+                LastPdfPath = pdfPath;
+                HasGeneratedPdf = true;
+                PdfStatusText = "PDF generado";
+                ShowSuccess($"PDF guardado: {Path.GetFileName(pdfPath)}");
+
+                // Actualizar info del informe
+                var info = new GeneratedReportInfo
+                {
+                    ClientName = SelectedServiceReport?.Client?.Name ?? "Sin cliente",
+                    EquipmentName = $"{SelectedServiceReport?.Equipment?.Brand} {SelectedServiceReport?.Equipment?.Model}",
+                    HtmlPath = LastReportPath,
+                    PdfPath = pdfPath,
+                    Notes = FinalObservations
+                };
+                await _reportService.SaveReportInfoAsync(info);
+            }
+            else
+            {
+                PdfStatusText = "Error al exportar";
+                ShowError("No se pudo generar el PDF. Verifique que WebView2 Runtime esté instalado.");
+            }
+        }
+        catch (Exception ex)
+        {
+            PdfStatusText = "Error al exportar";
+            ShowError($"Error al exportar PDF: {ex.Message}");
+        }
+        finally
+        {
+            IsExportingPdf = false;
+        }
+    }
+
+    /// <summary>
+    /// Abre el último PDF generado.
+    /// </summary>
+    [RelayCommand]
+    private async Task OpenPdfAsync()
+    {
+        if (!string.IsNullOrEmpty(LastPdfPath))
+        {
+            await _pdfExportService.OpenPdfAsync(LastPdfPath);
+        }
+    }
+
+    /// <summary>
+    /// Construye las opciones del informe desde los datos actuales.
+    /// </summary>
+    private async Task<ReportGenerationOptions> BuildReportOptionsAsync()
+    {
+        return new ReportGenerationOptions
+        {
+            Settings = await _settingsService.LoadSettingsAsync(),
+            ServiceReport = SelectedServiceReport,
+            DiagnosticReport = SelectedDiagnosticReport,
+            StartupAnalysis = SelectedStartupAnalysis,
+            CleanupResult = SelectedCleanupResult,
+            VisualOptimizationResult = SelectedVisualOptimizationResult,
+            RestorePointResult = SelectedRestorePointResult,
+            FinalObservations = FinalObservations,
+            IncludeCompany = IncludeCompany,
+            IncludeClient = IncludeClient,
+            IncludeDiagnostic = IncludeDiagnostic,
+            IncludeStartup = IncludeStartup,
+            IncludeCleanup = IncludeCleanup,
+            IncludeVisualOptimization = IncludeVisualOptimization,
+            IncludeRestorePoint = IncludeRestorePoint,
+            IncludeRecommendations = IncludeRecommendations
+        };
+    }
+
+    private ReportGenerationOptions BuildReportOptions()
+    {
+        return new ReportGenerationOptions
+        {
+            IncludeCompany = IncludeCompany,
+            IncludeClient = IncludeClient,
+            IncludeDiagnostic = IncludeDiagnostic,
+            IncludeStartup = IncludeStartup,
+            IncludeCleanup = IncludeCleanup,
+            IncludeVisualOptimization = IncludeVisualOptimization,
+            IncludeRestorePoint = IncludeRestorePoint,
+            IncludeRecommendations = IncludeRecommendations,
+            FinalObservations = FinalObservations
+        };
     }
 
     private void ShowSuccess(string message)

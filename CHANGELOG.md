@@ -10,6 +10,18 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 ## [Unreleased]
 
 ### Added
+- **Exportación de informes a PDF** (ReportView)
+  - Botón "Exportar PDF" en pantalla de informes
+  - Exportación via WebView2 (Chromium-based, MIT license)
+  - Verificación de disponibilidad de WebView2 Runtime
+  - Guardado en `reports/pdf/Informe_Tecnico_CATTECH_Cliente_YYYYMMDD-HHMMSS.pdf`
+  - Si falla PDF, se conserva el HTML generado
+  - Botón "Abrir PDF" para visor predeterminado
+  - Actualización de GeneratedReportInfo con PdfPath
+- IPdfExportService: interfaz CanExport/ExportHtmlToPdf/GetPdfOutputPath/OpenPdf
+- PdfExportService: implementación con verificación de WebView2 y fallback
+- PdfExporterInfo: modelo con IsAvailable, StatusMessage
+- 9 tests nuevos (148 total)
 - **Informe técnico HTML profesional** (ReportView)
   - Generación de informe HTML con CSS embebido (portátil, sin internet)
   - 9 secciones: portada, cliente, equipo, diagnóstico, acciones, resultados, recomendaciones, observaciones, firma

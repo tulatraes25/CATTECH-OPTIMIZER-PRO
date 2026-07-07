@@ -140,13 +140,13 @@ templates/report-html.html
 
 ### Criterios de Aceptación v0.1
 
-- [ ] La aplicación compila sin errores
+- [x] La aplicación compila sin errores
 - [ ] Se ejecuta como administrador sin crash
 - [ ] Detección de hardware funciona en 3+ máquinas diferentes
 - [ ] Limpieza de temporales libera espacio sin eliminar archivos del usuario
 - [ ] Punto de restauración se crea exitosamente
-- [ ] Informe HTML se genera correctamente
-- [ ] Informe PDF se genera correctamente
+- [x] Informe HTML se genera correctamente
+- [x] Informe PDF se genera correctamente
 - [ ] Logging funciona sin saturar disco
 - [ ] No ejecuta cambios destructivos sin confirmación
 

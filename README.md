@@ -329,6 +329,30 @@ Ir a **📊 Informes** para generar un informe profesional en HTML.
 
 Los informes se guardan en `reports/html/Informe_Tecnico_CATTECH_Cliente_YYYYMMDD-HHMMSS.html`.
 
+## Exportación a PDF
+
+Desde **📊 Informes**, podés exportar el informe HTML a PDF en formato A4.
+
+**Cómo funciona:**
+1. Generar el informe HTML primero (o hacerlo automáticamente)
+2. Click en "Exportar PDF"
+3. El PDF se guarda en `reports/pdf/`
+4. Abrir y verificar el PDF generado
+
+**Nombre del PDF:**
+`Informe_Tecnico_CATTECH_Cliente_YYYYMMDD-HHMMSS.pdf`
+
+**Requisitos:**
+- Microsoft Edge WebView2 Runtime (pre-instalado en Windows 10/11)
+- Si no está instalado, se muestra advertencia clara
+- Si falla la exportación, se conserva el HTML generado
+
+**Decisión técnica:**
+- Método: WebView2 (Chromium-based) para renderizado HTML → PDF
+- Licencia: MIT (WebView2 NuGet)
+- Ventajas: Renderizado completo de HTML/CSS, PDF nativo A4
+- Dependencia: Edge WebView2 Runtime (pre-instalado en Win10/11)
+
 ---
 
 ## Estructura del proyecto

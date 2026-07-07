@@ -44,6 +44,7 @@ public partial class MainViewModel : ObservableObject
     private readonly IVisualOptimizationService _visualOptimizationService;
     private readonly IRestorePointService _restorePointService;
     private readonly IReportGenerationService _reportGenerationService;
+    private readonly IPdfExportService _pdfExportService;
 
     // ViewModels de secciones
     private CompanySettingsViewModel? _companySettingsViewModel;
@@ -67,6 +68,7 @@ public partial class MainViewModel : ObservableObject
         _visualOptimizationService = new VisualOptimizationService();
         _restorePointService = new RestorePointService();
         _reportGenerationService = new HtmlReportService();
+        _pdfExportService = new PdfExportService();
         NavigateTo("Home");
     }
 
@@ -177,6 +179,7 @@ public partial class MainViewModel : ObservableObject
     {
         _reportViewModel ??= new ReportViewModel(
             _reportGenerationService,
+            _pdfExportService,
             _settingsService,
             _reportService,
             _diagnosticService,

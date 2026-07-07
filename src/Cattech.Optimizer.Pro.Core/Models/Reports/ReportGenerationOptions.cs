@@ -130,6 +130,11 @@ public class GeneratedReportInfo
     public string HtmlPath { get; set; } = string.Empty;
 
     /// <summary>
+    /// Ruta del archivo PDF generado.
+    /// </summary>
+    public string PdfPath { get; set; } = string.Empty;
+
+    /// <summary>
     /// Secciones incluidas.
     /// </summary>
     public List<string> IncludedSections { get; set; } = new();
