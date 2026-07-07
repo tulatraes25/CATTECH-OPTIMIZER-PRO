@@ -298,6 +298,37 @@ Ir a **🛡️ Punto de restauración** para crear un punto de restauración de 
 
 Los resultados se guardan en `data/restore-points/restore-point-result-YYYYMMDD-HHMMSS.json`.
 
+## Informe técnico HTML
+
+Ir a **📊 Informes** para generar un informe profesional en HTML.
+
+**Secciones del informe:**
+1. Portada con logo, empresa, técnico y fecha
+2. Datos del cliente y equipo
+3. Diagnóstico inicial (RAM, disco, inicio, seguridad)
+4. Acciones realizadas (limpieza, optimización, restauración)
+5. Resultados y espacio liberado
+6. Recomendaciones automáticas
+7. Observaciones finales del técnico
+8. Firma
+
+**Cómo funciona:**
+1. Click en "Cargar datos" para buscar información disponible
+2. Seleccionar qué secciones incluir
+3. Seleccionar datos específicos (cliente, diagnóstico, etc.)
+4. Agregar observaciones finales
+5. Click en "Generar informe"
+6. Abrir y verificar el HTML generado
+
+**Recomendaciones automáticas:**
+- RAM ≤ 4 GB: recomendar ampliar
+- Disco HDD: recomendar SSD
+- Espacio libre < 15%: recomendar liberar
+- Muchos programas al inicio: recomendar reducir
+- Temporales > 2 GB: recomendar mantenimiento
+
+Los informes se guardan en `reports/html/Informe_Tecnico_CATTECH_Cliente_YYYYMMDD-HHMMSS.html`.
+
 ---
 
 ## Estructura del proyecto

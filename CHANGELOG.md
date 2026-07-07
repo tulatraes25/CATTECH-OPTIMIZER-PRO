@@ -10,6 +10,24 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 ## [Unreleased]
 
 ### Added
+- **Informe técnico HTML profesional** (ReportView)
+  - Generación de informe HTML con CSS embebido (portátil, sin internet)
+  - 9 secciones: portada, cliente, equipo, diagnóstico, acciones, resultados, recomendaciones, observaciones, firma
+  - Selección de datos desde todos los módulos (cliente, diagnóstico, inicio, limpieza, optimización, restauración)
+  - Checkboxes para incluir/excluir secciones
+  - Logo embebido como base64 para portabilidad
+  - Recomendaciones automáticas basadas en datos (RAM, disco, inicio, temporales)
+  - Diseño profesional preparado para A4
+  - Persistencia en `reports/html/Informe_Tecnico_CATTECH_Cliente_YYYYMMDD-HHMMSS.json`
+  - Abrir informe en navegador y abrir carpeta de informes
+- ReportGenerationOptions: modelo con Settings, ServiceReport, DiagnosticReport, secciones
+- GeneratedReportInfo: modelo con Id, ClientName, HtmlPath, IncludedSections
+- ReportRecommendation: modelo para recomendaciones automáticas
+- IReportGenerationService: interfaz Generate/SaveInfo/List/Open
+- HtmlReportService: implementación con plantilla HTML embebida
+- ReportRecommendationEngine: motor de recomendaciones automáticas
+- ReportViewModel con carga de datos, selección, generación
+- 12 tests nuevos (139 total)
 - **Punto de restauración** (RestorePointView)
   - Verificación de estado: permisos, servicio, protección del sistema
   - Creación de puntos de restauración via PowerShell (Checkpoint-Computer) o WMI

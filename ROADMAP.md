@@ -24,12 +24,12 @@ Basic  Hardware  Repair            USB     Completa
 
 ### Funcionalidades Incluidas
 
-#### 1. Configuración de Empresa/Técnico
-- [ ] Formulario para datos de empresa
-- [ ] Subida de logo (JPG/PNG)
-- [ ] Datos de técnico (nombre, ID, email)
-- [ ] Persistencia en `company.json`
-- [ ] Preview del logo en UI
+#### 1. Configuración de Empresa/Técnico ✅
+- [x] Formulario para datos de empresa
+- [x] Subida de logo (JPG/PNG)
+- [x] Datos de técnico (nombre, ID, email)
+- [x] Persistencia en `company.json`
+- [x] Preview del logo en UI
 
 **Archivos afectados**:
 ```
@@ -39,12 +39,12 @@ src/Cattech.Optimizer.Pro.Infrastructure/Data/SettingsRepository.cs
 config/company.json
 ```
 
-#### 2. Datos de Cliente/Equipo
-- [ ] Formulario de cliente (nombre, email, teléfono)
-- [ ] Formulario de equipo (marca, modelo, serial, OS)
-- [ ] Campo de motivo de visita
-- [ ] Campo de notas del técnico
-- [ ] Asociación cliente-equipo-report
+#### 2. Datos de Cliente/Equipo ✅
+- [x] Formulario de cliente (nombre, email, teléfono)
+- [x] Formulario de equipo (marca, modelo, serial, OS)
+- [x] Campo de motivo de visita
+- [x] Campo de notas del técnico
+- [x] Asociación cliente-equipo-report
 
 **Archivos afectados**:
 ```
