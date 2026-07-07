@@ -7,6 +7,26 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ---
 
+## [0.1.1] - 2024
+
+### Changed
+- **Estabilización del MVP v0.1**
+- Refactorización: GetTechnicianNameAsync extraído a SettingsHelper compartido
+- Eliminación de duplicación de código en 5 servicios
+- Eliminación de carpetas vacías (Infrastructure/External, Infrastructure/Templates)
+- Documentación QA completa en docs/QA_V0_1_1.md
+
+### Fixed
+- Corregida referencia a AppSettings en SettingsHelper
+- Verificada compilación sin errores (0 errores)
+- Verificados 148 tests pasando (100%)
+
+### Documentación
+- QA_V0_1_1.md: checklist del flujo completo, riesgos, limitaciones, recomendaciones
+- CHANGELOG.md: versión 0.1.1 documentada
+
+---
+
 ## [Unreleased]
 
 ### Added

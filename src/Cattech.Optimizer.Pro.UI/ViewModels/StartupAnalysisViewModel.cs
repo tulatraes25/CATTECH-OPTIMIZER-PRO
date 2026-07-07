@@ -409,13 +409,8 @@ public partial class StartupAnalysisViewModel : ObservableObject
 
     private static async Task<string> GetTechnicianNameAsync()
     {
-        try
-        {
-            var settingsService = new Infrastructure.Data.JsonSettingsService();
-            var settings = await settingsService.LoadSettingsAsync();
-            return settings.Company.TechnicianName;
-        }
-        catch { return string.Empty; }
+        return await Infrastructure.Helpers.SettingsHelper.GetTechnicianNameAsync(
+            new Infrastructure.Data.JsonSettingsService());
     }
 
     private void ShowSuccess(string message)

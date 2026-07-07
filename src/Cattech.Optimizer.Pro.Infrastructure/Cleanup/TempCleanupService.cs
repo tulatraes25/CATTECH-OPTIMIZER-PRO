@@ -488,13 +488,7 @@ public class TempCleanupService : ITempCleanupService
 
     private static async Task<string> GetTechnicianNameAsync()
     {
-        try
-        {
-            var settingsService = new Data.JsonSettingsService();
-            var settings = await settingsService.LoadSettingsAsync();
-            return settings.Company.TechnicianName;
-        }
-        catch { return string.Empty; }
+        return await Helpers.SettingsHelper.GetTechnicianNameAsync(new Data.JsonSettingsService());
     }
 
     private static void EnsureDirectoryExists(string path)
