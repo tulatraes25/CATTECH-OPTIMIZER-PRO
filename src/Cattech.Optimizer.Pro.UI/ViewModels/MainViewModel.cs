@@ -7,6 +7,7 @@ using Cattech.Optimizer.Pro.Infrastructure.Cleanup;
 using Cattech.Optimizer.Pro.Infrastructure.Data;
 using Cattech.Optimizer.Pro.Infrastructure.Diagnostics;
 using Cattech.Optimizer.Pro.Infrastructure.Hardware;
+using Cattech.Optimizer.Pro.Infrastructure.RestorePoint;
 using Cattech.Optimizer.Pro.Infrastructure.Startup;
 using Cattech.Optimizer.Pro.Infrastructure.VisualOptimization;
 using Cattech.Optimizer.Pro.UI.Views;
@@ -40,6 +41,7 @@ public partial class MainViewModel : ObservableObject
     private readonly IStartupService _startupService;
     private readonly ITempCleanupService _tempCleanupService;
     private readonly IVisualOptimizationService _visualOptimizationService;
+    private readonly IRestorePointService _restorePointService;
 
     // ViewModels de secciones
     private CompanySettingsViewModel? _companySettingsViewModel;
@@ -48,6 +50,7 @@ public partial class MainViewModel : ObservableObject
     private StartupAnalysisViewModel? _startupAnalysisViewModel;
     private TempCleanupViewModel? _tempCleanupViewModel;
     private VisualOptimizationViewModel? _visualOptimizationViewModel;
+    private RestorePointViewModel? _restorePointViewModel;
 
     public MainViewModel()
     {
@@ -59,6 +62,7 @@ public partial class MainViewModel : ObservableObject
         _startupService = new StartupService();
         _tempCleanupService = new TempCleanupService();
         _visualOptimizationService = new VisualOptimizationService();
+        _restorePointService = new RestorePointService();
         NavigateTo("Home");
     }
 
@@ -82,6 +86,7 @@ public partial class MainViewModel : ObservableObject
             "Diagnostics" => CreateQuickDiagnosticView(),
             "TempCleanup" => CreateTempCleanupView(),
             "Optimization" => CreateVisualOptimizationView(),
+            "RestorePoint" => CreateRestorePointView(),
             "Reports" => CreatePlaceholder("Generación de Informes"),
             "Settings" => CreateCompanySettingsView(),
             "ClientEquipment" => CreateClientEquipmentView(),
@@ -151,6 +156,16 @@ public partial class MainViewModel : ObservableObject
         return new VisualOptimizationView
         {
             DataContext = _visualOptimizationViewModel
+        };
+    }
+
+    private object CreateRestorePointView()
+    {
+        _restorePointViewModel ??= new RestorePointViewModel(_restorePointService);
+
+        return new RestorePointView
+        {
+            DataContext = _restorePointViewModel
         };
     }
 

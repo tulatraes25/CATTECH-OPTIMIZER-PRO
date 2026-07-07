@@ -10,6 +10,23 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 ## [Unreleased]
 
 ### Added
+- **Punto de restauración** (RestorePointView)
+  - Verificación de estado: permisos, servicio, protección del sistema
+  - Creación de puntos de restauración via PowerShell (Checkpoint-Computer) o WMI
+  - Nombre estándar: "CATTECH Optimizer Pro - Antes de mantenimiento - yyyy-MM-dd HH:mm"
+  - Manejo de errores: permisos insuficientes, protección deshabilitada, frecuencia limitada
+  - Historial de intentos con resultado
+  - Persistencia en `data/restore-points/restore-point-result-YYYYMMDD-HHMMSS.json`
+  - Panel de estado con indicadores de color
+  - Advertencias de seguridad sobre limitaciones de Windows
+- RestorePointStatus: modelo con IsAdministrator, IsSystemRestoreAvailable, IsProtectionEnabled
+- RestorePointResult: modelo con Success, ErrorMessage, ErrorCode, MethodUsed
+- RestorePointMethod: enum Unknown/PowerShellCheckpoint/WmiSystemRestore
+- IRestorePointService: interfaz CheckStatus/Create/SaveResult/ListResults
+- RestorePointService: implementación con PowerShell y WMI
+- RestorePointViewModel con check status, create, history
+- 6 convertidores nuevos: AdminColor, StatusColor, CanCreateColor, CanCreateText, ResultColor, SuccessText
+- 15 tests nuevos (127 total)
 - **Optimización visual segura** (VisualOptimizationView)
   - 8 ajustes visuales predefinidos (animaciones, sombras, transparencias, fuentes)
   - Análisis del estado actual de cada ajuste

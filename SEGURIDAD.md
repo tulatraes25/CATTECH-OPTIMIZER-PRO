@@ -615,5 +615,28 @@ Siempre backups antes de cualquier operación crítica.
 
 ---
 
+## Puntos de Restauración
+
+### Reglas de seguridad
+
+1. **No crear automáticamente**: Siempre requiere acción explícita del técnico
+2. **Confirmación obligatoria**: Resumen antes de crear
+3. **No habilitar protección**: No se modifica la configuración de Restaurar sistema
+4. **No eliminar puntos**: Nunca se borran puntos de restauración existentes
+5. **Verificar permisos**: Requiere administrador
+6. **Registrar todo**: Cada intento queda registrado con resultado
+7. **No bloquear la app**: Si falla, la app continúa funcionando
+
+### Errores manejados
+- Permisos insuficientes
+- Protección del sistema deshabilitada
+- Frecuencia limitada por Windows (máximo 1 por día)
+- Servicio de Restaurar sistema no disponible
+
+### Nombre del punto
+Formato estándar: `CATTECH Optimizer Pro - Antes de mantenimiento - yyyy-MM-dd HH:mm`
+
+---
+
 *Documento de seguridad - CATTECH OPTIMIZER PRO*  
 *Última actualización: 2024*

@@ -127,6 +127,10 @@
                             Command="{Binding NavigateCommand}" 
                             CommandParameter="Optimization"
                             Height="45" />
+                    <Button Content="🛡️ Punto de restauración" 
+                            Command="{Binding NavigateCommand}" 
+                            CommandParameter="RestorePoint"
+                            Height="45" />
                     <Button Content="📊 Informes" 
                             Style="{Binding Source={x:Static vm:MainViewModel.ReportsButtonStyle}}"
                             Command="{Binding NavigateCommand}" 

@@ -273,6 +273,31 @@ Ir a **⚡ Optimización** para aplicar ajustes visuales que mejoran el rendimie
 
 Los backups se guardan en `backups/visual/visual-backups.json`.
 
+## Punto de restauración
+
+Ir a **🛡️ Punto de restauración** para crear un punto de restauración de Windows antes de aplicar cambios importantes.
+
+**Cómo funciona:**
+1. Click en "Verificar estado"
+2. Revisar: permisos, servicio, protección del sistema
+3. Ingresar nombre descriptivo
+4. Click en "Crear punto de restauración"
+5. Confirmar en el diálogo
+6. Ver resultado
+
+**Estado verificado:**
+- Permisos de administrador
+- Disponibilidad del servicio de Restaurar sistema
+- Estado de la protección del sistema
+
+**Errores manejados:**
+- Permisos insuficientes
+- Protección del sistema deshabilitada
+- Frecuencia limitada por Windows
+- Servicio no disponible
+
+Los resultados se guardan en `data/restore-points/restore-point-result-YYYYMMDD-HHMMSS.json`.
+
 ---
 
 ## Estructura del proyecto

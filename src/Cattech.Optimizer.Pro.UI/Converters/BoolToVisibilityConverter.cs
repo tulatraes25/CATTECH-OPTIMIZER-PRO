@@ -255,3 +255,109 @@ public class BoolToVisYesNoConverter : IValueConverter
         throw new NotImplementedException();
     }
 }
+
+/// <summary>
+/// Convierte bool (IsAdministrator) a Color. true → verde, false → rojo.
+/// </summary>
+public class AdminColorConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        return value is true
+            ? new SolidColorBrush(Color.FromRgb(0x4C, 0xAF, 0x50))
+            : new SolidColorBrush(Color.FromRgb(0xF4, 0x43, 0x36));
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+/// <summary>
+/// Convierte bool a Color para estado. true → verde, false → rojo.
+/// </summary>
+public class StatusColorConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        return value is true
+            ? new SolidColorBrush(Color.FromRgb(0x4C, 0xAF, 0x50))
+            : new SolidColorBrush(Color.FromRgb(0xF4, 0x43, 0x36));
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+/// <summary>
+/// Convierte bool (CanCreate) a Color. true → azul, false → gris.
+/// </summary>
+public class CanCreateColorConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        return value is true
+            ? new SolidColorBrush(Color.FromRgb(0x00, 0x78, 0xD4))
+            : new SolidColorBrush(Color.FromRgb(0x9E, 0x9E, 0x9E));
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+/// <summary>
+/// Convierte bool (CanCreate) a texto descriptivo.
+/// </summary>
+public class CanCreateTextConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        return value is true
+            ? "✅ Listo para crear punto de restauración"
+            : "❌ No se puede crear punto de restauración";
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+/// <summary>
+/// Convierte bool (Success) a Color para resultado. true → verde, false → rojo.
+/// </summary>
+public class ResultColorConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        return value is true
+            ? new SolidColorBrush(Color.FromRgb(0x4C, 0xAF, 0x50))
+            : new SolidColorBrush(Color.FromRgb(0xF4, 0x43, 0x36));
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+/// <summary>
+/// Convierte bool (Success) a texto de estado.
+/// </summary>
+public class SuccessTextConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        return value is true ? "Exitoso" : "Fallido";
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
