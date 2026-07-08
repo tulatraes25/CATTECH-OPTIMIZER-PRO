@@ -23,7 +23,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - **Punto de restauración**: Verificación de permisos, creación via PowerShell/WMI
 - **Informe HTML profesional**: 9 secciones, logo embebido, recomendaciones automáticas
 - **Exportación a PDF**: Via Microsoft Edge headless, fallback si no disponible
-- **148 tests unitarios pasando**
+- **164 tests unitarios pasando**
 
 ### Cambios técnicos
 
@@ -36,7 +36,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 - Corregida referencia a AppSettings en SettingsHelper
 - Verificada compilación sin errores (0 errores)
-- Verificados 148 tests pasando (100%)
+- Verificados 164 tests pasando (100%)
 
 ### Fixed (PDF)
 - **PDF ahora genera archivos PDF reales** (no HTML renombrado)
@@ -72,7 +72,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - IPdfExportService: interfaz CanExport/ExportHtmlToPdf/GetPdfOutputPath/OpenPdf
 - PdfExportService: implementación con verificación de Edge y fallback
 - PdfExporterInfo: modelo con IsAvailable, StatusMessage
-- 9 tests nuevos (148 total)
+- 20 tests nuevos (164 total)
 - **Informe técnico HTML profesional** (ReportView)
   - Generación de informe HTML con CSS embebido (portátil, sin internet)
   - 9 secciones: portada, cliente, equipo, diagnóstico, acciones, resultados, recomendaciones, observaciones, firma
