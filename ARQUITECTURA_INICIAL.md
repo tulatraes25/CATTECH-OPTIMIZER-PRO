@@ -1,7 +1,7 @@
 # Arquitectura Inicial - CATTECH OPTIMIZER PRO
 
 Versión: 0.1 (MVP)  
-Fecha: 2024  
+Fecha: 2026  
 Objetivo: Definir estructura, tecnologías y módulos del proyecto.
 
 ---
@@ -559,7 +559,7 @@ ManagementBaseObject outParams = restorePoint.InvokeMethod("CreateRestorePoint",
 ```text
 MIT License
 
-Copyright (c) 2024 CATTECH
+Copyright (c) 2026 CATTECH
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

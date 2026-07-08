@@ -420,7 +420,7 @@ public class HtmlReportService : IReportGenerationService
     {
         return $@"
 <div class='footer'>
-    <p>Informe generado por CATTECH OPTIMIZER PRO v0.1.0 | {DateTime.Now:dd/MM/yyyy HH:mm}</p>
+    <p>Informe generado por CATTECH OPTIMIZER PRO v0.1.1 | {DateTime.Now:dd/MM/yyyy HH:mm}</p>
 </div>";
     }
 

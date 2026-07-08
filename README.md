@@ -1,6 +1,6 @@
 # CATTECH OPTIMIZER PRO
 
-**Versión**: 0.1 (MVP en planificación)  
+**Versión**: v0.1.1 MVP estabilizado  
 **Licencia**: MIT  
 **Plataforma**: Windows 10 (1809+) / Windows 11
 

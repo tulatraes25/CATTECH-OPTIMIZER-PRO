@@ -1,7 +1,7 @@
 # Roadmap - CATTECH OPTIMIZER PRO
 
 **Versión actual**: 0.1 (En planificación)  
-**Última actualización**: 2024  
+**Última actualización**: 2026  
 **Objetivo**: Suite completa de diagnóstico, optimización y reparación para técnicos informáticos.
 
 ---

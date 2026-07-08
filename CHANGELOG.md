@@ -7,7 +7,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ---
 
-## [0.1.1] - 2024
+## [0.1.1] - 2026
 
 **MVP estabilizado** - CATTECH OPTIMIZER PRO v0.1.1
 
@@ -50,6 +50,11 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - Eliminadas todas las menciones a QuestPDF (no es dependencia actual)
 - Corregida documentación de PDF: Edge headless, no WebView2
 - README, CHANGELOG, QA, RELEASE_NOTES, ARQUITECTURA actualizados
+- Fechas corregidas de 2024 a 2026 en documentación principal
+- Versión actualizada de v0.1.0 a v0.1.1 en UI e informes
+- README: versión actualizada a "v0.1.1 MVP estabilizado"
+- Detección de Edge unificada (rutas comunes + PATH)
+- Duplicado en release notes eliminado
 
 ---
 
@@ -259,7 +264,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ---
 
-## [0.1.0] - 2024-XX-XX (Futuro)
+## [0.1.0] - 2026-XX-XX (Futuro)
 
 ### Added
 - Configuración de empresa/técnico con logo
@@ -281,7 +286,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ---
 
-## [0.2.0] - 2024-XX-XX (Futuro)
+## [0.2.0] - 2026-XX-XX (Futuro)
 
 ### Added
 - SMART completo con análisis de atributos
@@ -297,7 +302,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ---
 
-## [0.3.0] - 2024-XX-XX (Futuro)
+## [0.3.0] - 2026-XX-XX (Futuro)
 
 ### Added
 - Análisis básico de minidumps (BSOD)
@@ -312,7 +317,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ---
 
-## [0.4.0] - 2024-XX-XX (Futuro)
+## [0.4.0] - 2026-XX-XX (Futuro)
 
 ### Added
 - CATTECH Preserve - Backup de configuración
@@ -323,7 +328,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ---
 
-## [0.5.0] - 2024-XX-XX (Futuro)
+## [0.5.0] - 2026-XX-XX (Futuro)
 
 ### Added
 - CATTECH Rescue USB
@@ -335,7 +340,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ---
 
-## [1.0.0] - 2024-XX-XX (Futuro)
+## [1.0.0] - 2026-XX-XX (Futuro)
 
 ### Added
 - Suite completa estable

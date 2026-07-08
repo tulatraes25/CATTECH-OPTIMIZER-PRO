@@ -70,7 +70,7 @@ CATTECH OPTIMIZER PRO v0.1.1 es la primera versión estable del MVP. Incluye tod
 
 ### 10. Exportación a PDF
 - Exportación via Microsoft Edge headless (`--print-to-pdf`)
-- Verificación de disponibilidad de Runtime
+- Verificación de disponibilidad de Microsoft Edge
 - Fallback si no está disponible
 - Persistencia en `reports/pdf/`
 
@@ -137,7 +137,6 @@ e777abb docs: fix README commands and verify initial build
 - ChrisTitusTech/winutil - Inspiración para organización de módulos
 - LibreHardwareMonitor - Monitoreo de hardware
 - smartmontools - Diagnóstico SMART
-- Microsoft Edge - Exportación HTML a PDF
 - Microsoft Edge - Exportación HTML a PDF
 
 ---

@@ -148,7 +148,7 @@
                         Height="40" 
                         VerticalAlignment="Bottom"
                         Background="#D0D0D0">
-                    <TextBlock Text="v0.1.0 MVP" 
+                    <TextBlock Text="v0.1.1 MVP" 
                                HorizontalAlignment="Center" 
                                VerticalAlignment="Center"
                                FontSize="11"

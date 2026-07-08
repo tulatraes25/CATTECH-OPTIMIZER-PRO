@@ -83,9 +83,11 @@ public class PdfExportService : IPdfExportService
 
     /// <summary>
     /// Verifica si Microsoft Edge está disponible de forma síncrona.
+    /// Busca en rutas comunes y en el PATH del sistema.
     /// </summary>
     public static bool IsEdgeAvailable()
     {
+        // 1. Buscar en ubicaciones comunes
         var commonPaths = new[]
         {
             @"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
@@ -95,7 +97,25 @@ public class PdfExportService : IPdfExportService
                 @"Microsoft\Edge\Application\msedge.exe")
         };
 
-        return commonPaths.Any(File.Exists);
+        if (commonPaths.Any(File.Exists))
+            return true;
+
+        // 2. Buscar en PATH del sistema (método síncrono simple)
+        try
+        {
+            var pathVar = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+            var pathEntries = pathVar.Split(Path.PathSeparator);
+
+            foreach (var entry in pathEntries)
+            {
+                var candidate = Path.Combine(entry.Trim(), "msedge.exe");
+                if (File.Exists(candidate))
+                    return true;
+            }
+        }
+        catch { }
+
+        return false;
     }
 
     /// <inheritdoc/>

@@ -639,4 +639,4 @@ Formato estándar: `CATTECH Optimizer Pro - Antes de mantenimiento - yyyy-MM-dd 
 ---
 
 *Documento de seguridad - CATTECH OPTIMIZER PRO*  
-*Última actualización: 2024*
+*Última actualización: 2026*
