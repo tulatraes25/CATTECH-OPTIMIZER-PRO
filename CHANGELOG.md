@@ -58,6 +58,27 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ---
 
+## [Unreleased - v0.2]
+
+### Added
+- **Integración base smartctl** (Fase A.1)
+  - `SmartctlRunner`: ejecuta smartctl como binario externo (no integra GPL)
+  - `SmartctlParser`: parseo de salida JSON y texto de smartctl
+  - Detección de ubicación: config, tools/, PATH, rutas comunes
+  - Verificación de versión y soporte JSON
+  - Listado de dispositivos con detección de tipo (HDD/SSD/NVMe/USB)
+  - Configuración en `config/herramientas.json`
+- SmartctlAvailability, SmartDiskDevice, SmartctlCommandResult
+- ISmartctlRunner interfaz
+- 32 tests nuevos (196 total)
+
+### Documentation
+- `docs/V0_2_PLAN_SMART_HARDWARE.md`: plan detallado v0.2
+- `docs/SMART_INTEGRATION_DECISION.md`: decisión de integración smartctl
+- AUDITORIA_REFERENCIAS.md: notas de planificación v0.2
+
+---
+
 ## [Unreleased]
 
 ### Added
