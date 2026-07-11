@@ -164,86 +164,104 @@ templates/report-html.html
 
 ---
 
-## v0.2 - SMART y Hardware (4 semanas)
+## v0.2 - SMART y Hardware (7 semanas)
 
-**Objetivo**: Diagnóstico profundo de hardware y salud de discos.
+**Objetivo**: Diagnóstico profundo de discos y hardware avanzado.
 
-### Funcionalidades Incluidas
+**Documentación de referencia**:
+- `docs/V0_2_PLAN_SMART_HARDWARE.md` - Plan detallado
+- `docs/SMART_INTEGRATION_DECISION.md` - Decisión de integración smartctl
 
-#### 1. SMART Completo
-- [ ] Ejecución de smartctl para cada disco
-- [ ] Parseo de salida JSON
-- [ ] Todos los atributos SMART
-- [ ] Historial de temperaturas
-- [ ] Predicción de fallos
-- [ ] Comparación con valores umbrales
+### Fase A: SMART Completo (4 semanas)
 
-**Archivos afectados**:
-```
-src/Cattech.Optimizer.Pro.Infrastructure/Hardware/SmartProvider.cs
-src/Cattech.Optimizer.Pro.Core/Models/Diagnostics/SmartResult.cs
-src/Cattech.Optimizer.Pro.Core/Models/Diagnostics/SmartAttribute.cs
-```
+#### A.1: Integración smartctl (1 semana)
+- [ ] Incluir smartctl.exe en `tools/smartmontools/`
+- [ ] Crear `SmartctlRunner` para ejecutar smartctl como proceso
+- [ ] Detectar smartctl en PATH o en `tools/`
+- [ ] Manejar ausencia de smartctl con mensaje claro
+- [ ] Registrar versión de smartctl usada
 
-#### 2. Monitoreo en Tiempo Real
-- [ ] Dashboard con sensores en vivo
-- [ ] Gráficos de temperatura CPU/GPU/Discos
-- [ ] Uso de CPU/RAM/Disco
-- [ ] Velocidades de ventiladores
-- [ ] Voltajes (si disponible)
+#### A.2: Modelo SmartDiskReport (1 semana)
+- [ ] `SmartDiskDevice`: información del disco
+- [ ] `SmartAttribute`: atributo SMART individual
+- [ ] `SmartHealthStatus`: Bueno/Precaución/Crítico/No disponible
+- [ ] `SmartTestResult`: resultado de test SMART
+- [ ] `SmartDiskReport`: reporte completo
 
-**Archivos afectados**:
-```
-src/Cattech.Optimizer.Pro.UI/Views/Dashboard/DashboardView.xaml
-src/Cattech.Optimizer.Pro.UI/ViewModels/DashboardViewModel.cs
-src/Cattech.Optimizer.Pro.Infrastructure/Hardware/SensorProvider.cs
-```
+#### A.3: SmartctlParser (1 semana)
+- [ ] Parsear salida JSON de smartctl
+- [ ] Extraer atributos relevantes (ID 1,3,5,9,12,187,188,197,198)
+- [ ] Detectar tipo de disco (HDD/SSD/NVMe)
+- [ ] Extraer temperatura, horas de uso, power cycles
+- [ ] Para SSD/NVMe: percentage used, available spare
 
-#### 3. Reportes Comparativos
-- [ ] Comparación antes/después de optimización
-- [ ] Historial de diagnósticos por equipo
-- [ ] Gráficos de tendencias
-- [ ] Exportación de históricos
+#### A.4: UI Discos SMART (1 semana)
+- [ ] Pantalla "Discos SMART" accesible desde sidebar
+- [ ] Botón "Detectar discos"
+- [ ] Botón "Analizar SMART"
+- [ ] Botón "Test corto" (con confirmación)
+- [ ] Botón "Test extendido" (con advertencia avanzada)
+- [ ] Tabla de discos con semáforo de estado
+- [ ] Panel de atributos relevantes
+- [ ] Recomendaciones automáticas
+- [ ] Botón "Agregar al informe"
 
-**Archivos afectados**:
-```
-src/Cattech.Optimizer.Pro.Infrastructure/Data/HistoryRepository.cs
-src/Cattech.Optimizer.Pro.UI/Views/Reports/ReportHistoryView.xaml
-```
+#### A.5: Test SMART (1 semana)
+- [ ] Test corto: `smartctl -t short /dev/sdX`
+- [ ] Test extendido: `smartctl -t long /dev/sdX`
+- [ ] Consulta de resultados: `smartctl -l selftest /dev/sdX`
+- [ ] Confirmación obligatoria para tests
+- [ ] Advertencia avanzada para test extendido
+- [ ] No ejecutar test si disco reporta estado crítico
 
-#### 4. Exportación Adicional
-- [ ] Exportación a JSON
-- [ ] Exportación a CSV
-- [ ] Exportación a XML
-- [ ] Copia al portapapeles
+### Fase B: Hardware Avanzado (3 semanas)
 
-**Archivos afectados**:
-```
-src/Cattech.Optimizer.Pro.Infrastructure/Data/ExportService.cs
-src/Cattech.Optimizer.Pro.UI/ViewModels/ReportsViewModel.cs
-```
+#### B.1: Sensores de Temperatura (1 semana)
+- [ ] Integración con LibreHardwareMonitorLib
+- [ ] Temperatura CPU en tiempo real
+- [ ] Temperatura GPU en tiempo real
+- [ ] Temperatura discos (si disponible)
+- [ ] Dashboard con gráficos
 
-#### 5. Modo Oscuro
-- [ ] Tema oscuro completo
-- [ ] Toggle en settings
-- [ ] Persistencia de preferencia
-- [ ] Todos los controles adaptados
+#### B.2: CPU/GPU/Batería (1 semana)
+- [ ] CPU: núcleos, temperatura, uso, reloj
+- [ ] GPU: temperatura, uso, memoria, driver
+- [ ] Batería: carga, salud, ciclos (si notebook)
 
-**Archivos afectados**:
-```
-src/Cattech.Optimizer.Pro.UI/Resources/Themes/DarkTheme.xaml
-src/Cattech.Optimizer.Pro.UI/Resources/Themes/LightTheme.xaml
-src/Cattech.Optimizer.Pro.UI/App.xaml
-```
+#### B.3: RAM y Placa Madre (0.5 semana)
+- [ ] RAM: velocidad, timings, slots
+- [ ] Placa madre: BIOS, chipset, fabricante
+
+### Fase C: Informe y Tests (1 semana)
+- [ ] Incluir SMART en informe HTML/PDF
+- [ ] Incluir hardware avanzado en informe
+- [ ] Tests unitarios para SMART
+- [ ] Tests unitarios para hardware
+- [ ] Documentación actualizada
 
 ### Criterios de Aceptación v0.2
 
-- [ ] SMART funciona con HDD, SSD y NVMe
-- [ ] Monitoreo en tiempo real sin lag significativo
-- [ ] Gráficos se actualizan cada 2 segundos
-- [ ] Reportes comparativos muestran diferencias
-- [ ] Modo oscuro funciona en todos los formularios
-- [ ] Exportación JSON/CSV contiene todos los datos
+#### SMART
+- [ ] Detectar discos HDD, SSD, NVMe
+- [ ] Leer atributos SMART relevantes
+- [ ] Mostrar estado: Bueno/Precaución/Crítico/No disponible
+- [ ] Test corto con confirmación
+- [ ] Test extendido con advertencia
+- [ ] Incluir resultados en informe HTML/PDF
+- [ ] Manejar discos sin SMART sin fallar
+
+#### Hardware
+- [ ] Sensores de temperatura en tiempo real
+- [ ] CPU detallada (núcleos, temperatura, uso)
+- [ ] GPU detallada (temperatura, uso, memoria)
+- [ ] Batería (si aplica)
+- [ ] Placa madre (BIOS)
+- [ ] RAM avanzada
+
+#### General
+- [ ] 164+ tests pasando
+- [ ] Build sin errores
+- [ ] Documentación actualizada
 
 ---
 
