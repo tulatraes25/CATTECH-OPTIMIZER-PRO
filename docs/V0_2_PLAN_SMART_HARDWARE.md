@@ -69,15 +69,15 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 
 ## Cronograma Estimado
 
-| Fase | Duración | Dependencias |
-|------|----------|--------------|
-| Fase A.1: Integración smartctl | 1 semana | smartctl.exe en tools/ |
-| Fase A.2: Modelo SmartDiskReport | 1 semana | — |
-| Fase A.3: SmartctlParser | 1 semana | Salida JSON de smartctl |
-| Fase A.4: UI Discos SMART | 1 semana | Modelo + Parser |
-| Fase A.5: Test SMART corto | 0.5 semana | smartctl |
-| Fase A.6: Test extendido + advertencia | 0.5 semana | Test corto |
-| Fase A.7: Inclusión en informe | 0.5 semana | Modelo SMART |
+| Fase | Duración | Dependencias | Estado |
+|------|----------|--------------|--------|
+| Fase A.1: Integración smartctl | 1 semana | smartctl.exe en tools/ | ✅ Implementado |
+| Fase A.2: Modelo SmartDiskReport | 1 semana | — | ✅ Implementado |
+| Fase A.3: SmartctlParser | 1 semana | Salida JSON de smartctl | ✅ Implementado |
+| Fase A.4: UI Discos SMART | 1 semana | Modelo + Parser | Pendiente |
+| Fase A.5: Test SMART corto | 0.5 semana | smartctl | Pendiente |
+| Fase A.6: Test extendido + advertencia | 0.5 semana | Test corto | Pendiente |
+| Fase A.7: Inclusión en informe | 0.5 semana | Modelo SMART | Pendiente |
 | **Total Fase A** | **4 semanas** | |
 | Fase B.1: Sensores temperatura | 1 semana | LibreHardwareMonitorLib |
 | Fase B.2: CPU/GPU/Batería | 1 semana | LibreHardwareMonitorLib |

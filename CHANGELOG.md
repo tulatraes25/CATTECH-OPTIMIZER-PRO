@@ -68,9 +68,18 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   - Verificación de versión y soporte JSON
   - Listado de dispositivos con detección de tipo (HDD/SSD/NVMe/USB)
   - Configuración en `config/herramientas.json`
+- **Análisis SMART completo read-only** (Fase A.2/A.3)
+  - `SmartDiskService`: ejecuta `smartctl -a -j` por disco
+  - `SmartDiskReport`: reporte completo con estado Good/Warning/Critical
+  - `SmartAttribute`: atributos SMART relevantes con severidad
+  - `SmartAnalysisResult`: resultado del análisis de todos los discos
+  - Parseo de atributos ATA (Reallocated, Pending, CRC, Temperature)
+  - Parseo de atributos NVMe (critical_warning, percentage_used, media_errors)
+  - Cálculo automático de estado: Good/Warning/Critical/NotAvailable
+  - Persistencia en `data/smart-reports/`
 - SmartctlAvailability, SmartDiskDevice, SmartctlCommandResult
-- ISmartctlRunner interfaz
-- 32 tests nuevos (196 total)
+- ISmartctlRunner, ISmartDiskService interfaces
+- 32 tests de smartctl + 18 tests de SMART (214 total)
 
 ### Documentation
 - `docs/V0_2_PLAN_SMART_HARDWARE.md`: plan detallado v0.2
