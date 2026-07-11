@@ -77,6 +77,13 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   - Parseo de atributos NVMe (critical_warning, percentage_used, media_errors)
   - Cálculo automático de estado: Good/Warning/Critical/NotAvailable
   - Persistencia en `data/smart-reports/`
+- **Pantalla Discos SMART** (Fase A.4)
+  - Verificación de smartctl con estado y ruta
+  - Detección de dispositivos de almacenamiento
+  - Análisis SMART completo con tabla de resultados
+  - Panel de detalle con atributos, advertencias y errores
+  - Colores semáforo: Bueno/Precaución/Crítico/No disponible
+  - Guardado de análisis en data/smart-reports/
 - SmartctlAvailability, SmartDiskDevice, SmartctlCommandResult
 - ISmartctlRunner, ISmartDiskService interfaces
 - 32 tests de smartctl + 18 tests de SMART (214 total)

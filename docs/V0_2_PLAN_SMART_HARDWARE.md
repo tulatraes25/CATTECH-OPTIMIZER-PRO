@@ -74,7 +74,7 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 | Fase A.1: Integración smartctl | 1 semana | smartctl.exe en tools/ | ✅ Implementado |
 | Fase A.2: Modelo SmartDiskReport | 1 semana | — | ✅ Implementado |
 | Fase A.3: SmartctlParser | 1 semana | Salida JSON de smartctl | ✅ Implementado |
-| Fase A.4: UI Discos SMART | 1 semana | Modelo + Parser | Pendiente |
+| Fase A.4: UI Discos SMART | 1 semana | Modelo + Parser | ✅ Implementado |
 | Fase A.5: Test SMART corto | 0.5 semana | smartctl | Pendiente |
 | Fase A.6: Test extendido + advertencia | 0.5 semana | Test corto | Pendiente |
 | Fase A.7: Inclusión en informe | 0.5 semana | Modelo SMART | Pendiente |

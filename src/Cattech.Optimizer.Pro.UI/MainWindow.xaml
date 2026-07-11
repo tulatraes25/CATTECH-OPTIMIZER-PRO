@@ -104,6 +104,10 @@
                             Command="{Binding NavigateCommand}" 
                             CommandParameter="ClientEquipment"
                             Height="45" />
+                    <Button Content="💿 Discos SMART" 
+                            Command="{Binding NavigateCommand}" 
+                            CommandParameter="SmartDisk"
+                            Height="45" />
                     <Button Content="💻 Hardware" 
                             Style="{Binding Source={x:Static vm:MainViewModel.HardwareButtonStyle}}"
                             Command="{Binding NavigateCommand}" 

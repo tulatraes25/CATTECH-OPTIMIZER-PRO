@@ -9,6 +9,7 @@ using Cattech.Optimizer.Pro.Infrastructure.Diagnostics;
 using Cattech.Optimizer.Pro.Infrastructure.Hardware;
 using Cattech.Optimizer.Pro.Infrastructure.Reports;
 using Cattech.Optimizer.Pro.Infrastructure.RestorePoint;
+using Cattech.Optimizer.Pro.Infrastructure.Smart;
 using Cattech.Optimizer.Pro.Infrastructure.Startup;
 using Cattech.Optimizer.Pro.Infrastructure.VisualOptimization;
 using Cattech.Optimizer.Pro.UI.Views;
@@ -45,6 +46,8 @@ public partial class MainViewModel : ObservableObject
     private readonly IRestorePointService _restorePointService;
     private readonly IReportGenerationService _reportGenerationService;
     private readonly IPdfExportService _pdfExportService;
+    private readonly ISmartctlRunner _smartctlRunner;
+    private readonly ISmartDiskService _smartDiskService;
 
     // ViewModels de secciones
     private CompanySettingsViewModel? _companySettingsViewModel;
@@ -55,6 +58,7 @@ public partial class MainViewModel : ObservableObject
     private VisualOptimizationViewModel? _visualOptimizationViewModel;
     private RestorePointViewModel? _restorePointViewModel;
     private ReportViewModel? _reportViewModel;
+    private SmartDiskViewModel? _smartDiskViewModel;
 
     public MainViewModel()
     {
@@ -69,6 +73,8 @@ public partial class MainViewModel : ObservableObject
         _restorePointService = new RestorePointService();
         _reportGenerationService = new HtmlReportService();
         _pdfExportService = new PdfExportService();
+        _smartctlRunner = new SmartctlRunner();
+        _smartDiskService = new SmartDiskService(_smartctlRunner);
         NavigateTo("Home");
     }
 
@@ -89,6 +95,7 @@ public partial class MainViewModel : ObservableObject
         {
             "Home" => CreatePlaceholder("Inicio - Panel principal"),
             "Hardware" => CreatePlaceholder("Información de Hardware"),
+            "SmartDisk" => CreateSmartDiskView(),
             "Diagnostics" => CreateQuickDiagnosticView(),
             "TempCleanup" => CreateTempCleanupView(),
             "Optimization" => CreateVisualOptimizationView(),
@@ -191,6 +198,16 @@ public partial class MainViewModel : ObservableObject
         return new ReportView
         {
             DataContext = _reportViewModel
+        };
+    }
+
+    private object CreateSmartDiskView()
+    {
+        _smartDiskViewModel ??= new SmartDiskViewModel(_smartctlRunner, _smartDiskService);
+
+        return new SmartDiskView
+        {
+            DataContext = _smartDiskViewModel
         };
     }
 

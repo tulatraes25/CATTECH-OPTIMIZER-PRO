@@ -361,3 +361,105 @@ public class SuccessTextConverter : IValueConverter
         throw new NotImplementedException();
     }
 }
+
+// =====================
+// Smart Disk Converters
+// =====================
+
+/// <summary>
+/// Convierte SmartHealthStatus a Color de fondo.
+/// </summary>
+public class SmartHealthStatusToColorConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (value is Core.Models.Smart.SmartHealthStatus status)
+        {
+            return status switch
+            {
+                Core.Models.Smart.SmartHealthStatus.Good => new SolidColorBrush(Color.FromRgb(0x4C, 0xAF, 0x50)),
+                Core.Models.Smart.SmartHealthStatus.Warning => new SolidColorBrush(Color.FromRgb(0xFF, 0x98, 0x00)),
+                Core.Models.Smart.SmartHealthStatus.Critical => new SolidColorBrush(Color.FromRgb(0xF4, 0x43, 0x36)),
+                Core.Models.Smart.SmartHealthStatus.NotAvailable => new SolidColorBrush(Color.FromRgb(0x9E, 0x9E, 0x9E)),
+                _ => new SolidColorBrush(Color.FromRgb(0x9E, 0x9E, 0x9E))
+            };
+        }
+        return new SolidColorBrush(Color.FromRgb(0x9E, 0x9E, 0x9E));
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+/// <summary>
+/// Convierte SmartHealthStatus a texto legible.
+/// </summary>
+public class SmartHealthStatusToTextConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (value is Core.Models.Smart.SmartHealthStatus status)
+        {
+            return status switch
+            {
+                Core.Models.Smart.SmartHealthStatus.Good => "Bueno",
+                Core.Models.Smart.SmartHealthStatus.Warning => "Precaución",
+                Core.Models.Smart.SmartHealthStatus.Critical => "Crítico",
+                Core.Models.Smart.SmartHealthStatus.NotAvailable => "No disponible",
+                _ => "Desconocido"
+            };
+        }
+        return "Desconocido";
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+/// <summary>
+/// Convierte SmartSeverity a Color de fondo.
+/// </summary>
+public class SmartSeverityToColorConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (value is Core.Models.Smart.SmartSeverity severity)
+        {
+            return severity switch
+            {
+                Core.Models.Smart.SmartSeverity.Info => new SolidColorBrush(Color.FromRgb(0x42, 0xA5, 0xF5)),
+                Core.Models.Smart.SmartSeverity.Warning => new SolidColorBrush(Color.FromRgb(0xFF, 0x98, 0x00)),
+                Core.Models.Smart.SmartSeverity.Critical => new SolidColorBrush(Color.FromRgb(0xF4, 0x43, 0x36)),
+                _ => new SolidColorBrush(Color.FromRgb(0x9E, 0x9E, 0x9E))
+            };
+        }
+        return new SolidColorBrush(Color.FromRgb(0x9E, 0x9E, 0x9E));
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+/// <summary>
+/// Convierte bool a Color para disponibilidad de smartctl.
+/// </summary>
+public class SmartctlAvailColorConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        return value is true
+            ? new SolidColorBrush(Color.FromRgb(0x4C, 0xAF, 0x50))
+            : new SolidColorBrush(Color.FromRgb(0xF4, 0x43, 0x36));
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
