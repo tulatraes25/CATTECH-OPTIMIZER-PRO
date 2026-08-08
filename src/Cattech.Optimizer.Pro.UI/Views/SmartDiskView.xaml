@@ -7,6 +7,11 @@
     <UserControl.Resources>
         <converters:BoolToVisibilityConverter x:Key="BoolToVis" />
         <converters:InvertBoolConverter x:Key="InvertBool" />
+        <converters:InverseBoolToVisibilityConverter x:Key="InvertBoolToVis" />
+        <converters:StringToVisibilityConverter x:Key="StringToVis" />
+        <converters:ZeroToVisibilityConverter x:Key="ZeroToVis" />
+        <converters:BoolToVisYesNoConverter x:Key="BoolToVisYesNo" />
+        <converters:SmartctlAvailColorConverter x:Key="SmartctlAvailColorConverter" />
         <converters:SmartHealthStatusToColorConverter x:Key="HealthColorConverter" />
         <converters:SmartHealthStatusToTextConverter x:Key="HealthTextConverter" />
         <converters:SmartSeverityToColorConverter x:Key="SeverityColorConverter" />
@@ -14,6 +19,8 @@
 
     <Grid Margin="30">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -69,9 +76,30 @@
                         <TextBlock Grid.Column="2" Text="Versión:" FontSize="11" Foreground="#555" />
                         <TextBlock Grid.Column="3" Text="{Binding SmartctlVersion}" FontSize="11" />
                     </Grid>
+                    <Grid Margin="0,4,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Soporta JSON:" FontSize="11" Foreground="#555" />
+                        <TextBlock Grid.Column="1" Text="{Binding SmartctlSupportsJson, Converter={StaticResource BoolToVisYesNo}}"
+                                   FontSize="11" FontWeight="SemiBold" />
+                    </Grid>
                     <TextBlock Text="{Binding SmartctlPath}" FontSize="10" Foreground="#888"
                                TextTrimming="CharacterEllipsis" Margin="0,4,0,0"
                                Visibility="{Binding SmartctlChecked, Converter={StaticResource BoolToVis}}" />
+                    <TextBlock Text="{Binding SmartctlErrorMessage}" FontSize="10" Foreground="#C62828"
+                               TextWrapping="Wrap" Margin="0,4,0,0"
+                               Visibility="{Binding SmartctlErrorMessage, Converter={StaticResource StringToVis}}" />
+                    <!-- Ayuda si smartctl no disponible -->
+                    <Border Background="#FFF8E1" CornerRadius="4" Padding="8,6" Margin="0,6,0,0"
+                            Visibility="{Binding SmartctlAvailable, Converter={StaticResource InvertBoolToVis}}">
+                        <TextBlock FontSize="10" Foreground="#E65100" TextWrapping="Wrap">
+                            <Run Text="Instale smartmontools o configure la ruta de smartctl.exe en config/herramientas.json" />
+                        </TextBlock>
+                    </Border>
                 </StackPanel>
             </Border>
 
@@ -96,8 +124,18 @@
             </StackPanel>
         </Grid>
 
-        <!-- Row 3: Resumen -->
-        <Border Grid.Row="3" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
+        <!-- Row 3: Advertencia de seguridad -->
+        <Border Grid.Row="3" Background="#E3F2FD" BorderBrush="#42A5F5" BorderThickness="1"
+                CornerRadius="6" Padding="12,8" Margin="0,0,0,10"
+                Visibility="{Binding SmartctlChecked, Converter={StaticResource BoolToVis}}">
+            <TextBlock FontSize="11" Foreground="#1565C0">
+                <Run Text="ℹ️ " FontWeight="Bold" />
+                <Run Text="El análisis SMART es de solo lectura. Un estado No disponible no significa que el disco esté sano. Algunos discos pueden requerir permisos de administrador." />
+            </TextBlock>
+        </Border>
+
+        <!-- Row 4: Resumen -->
+        <Border Grid.Row="4" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
                 Padding="12,10" Margin="0,0,0,10" Background="White"
                 Visibility="{Binding HasResults, Converter={StaticResource BoolToVis}}">
             <StackPanel>
@@ -118,13 +156,39 @@
                     <TextBlock Grid.Column="5" Text="{Binding SummaryWarning}" FontSize="11" FontWeight="SemiBold" Foreground="#E65100" />
                     <TextBlock Grid.Column="6" Text="🔴 Críticos:" FontSize="11" Foreground="#555" />
                     <TextBlock Grid.Column="7" Text="{Binding SummaryCritical}" FontSize="11" FontWeight="SemiBold" Foreground="#C62828" />
-                    <TextBlock Grid.Column="8" Text="{Binding SummaryNotAvailable}" FontSize="11" FontWeight="SemiBold" Foreground="#999" />
+                    <TextBlock Grid.Column="8" Text="❓ No disponible:" FontSize="11" Foreground="#555" />
+                    <TextBlock Grid.Column="9" Text="{Binding SummaryNotAvailable}" FontSize="11" FontWeight="SemiBold" Foreground="#999" />
                 </Grid>
             </StackPanel>
         </Border>
 
-        <!-- Row 4: Tabla + Detalle -->
-        <Grid Grid.Row="4">
+        <!-- Row 5: Tabla de dispositivos detectados -->
+        <Border Grid.Row="5" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
+                Padding="10" Margin="0,0,0,10" Background="White" MaxHeight="150"
+                Visibility="{Binding HasDevices, Converter={StaticResource BoolToVis}}">
+            <StackPanel>
+                <TextBlock Text="DISPOSITIVOS DETECTADOS" FontSize="11" FontWeight="Bold"
+                           Foreground="#0078D4" Margin="0,0,0,6" />
+                <DataGrid ItemsSource="{Binding Devices}" AutoGenerateColumns="False"
+                          IsReadOnly="True" SelectionMode="Single"
+                          GridLinesVisibility="Horizontal" HeadersVisibility="Column"
+                          AlternatingRowBackground="#FAFAFA" BorderThickness="0"
+                          RowHeaderWidth="0" CanUserAddRows="False" FontSize="11">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Dispositivo" Binding="{Binding Name}" Width="100" />
+                        <DataGridTextColumn Header="Tipo" Binding="{Binding Type}" Width="70" />
+                        <DataGridTextColumn Header="Protocolo" Binding="{Binding Protocol}" Width="70" />
+                        <DataGridTextColumn Header="Modelo" Binding="{Binding ModelName}" Width="150" />
+                        <DataGridTextColumn Header="Serie" Binding="{Binding SerialNumber}" Width="120" />
+                        <DataGridTextColumn Header="Disponible" Binding="{Binding IsAvailable, Converter={StaticResource BoolToVisYesNo}}" Width="70" />
+                        <DataGridTextColumn Header="Notas" Binding="{Binding Notes}" Width="*" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </StackPanel>
+        </Border>
+
+        <!-- Row 6: Tabla + Detalle -->
+        <Grid Grid.Row="6">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="300" />

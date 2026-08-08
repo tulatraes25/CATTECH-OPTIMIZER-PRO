@@ -84,6 +84,9 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   - Panel de detalle con atributos, advertencias y errores
   - Colores semáforo: Bueno/Precaución/Crítico/No disponible
   - Guardado de análisis en data/smart-reports/
+  - Tabla de dispositivos detectados (Dispositivo, Tipo, Protocolo, Modelo, Serie)
+  - Advertencia de solo lectura y "No disponible no significa sano"
+  - Ayuda si smartctl no está disponible
 - SmartctlAvailability, SmartDiskDevice, SmartctlCommandResult
 - ISmartctlRunner, ISmartDiskService interfaces
 - 32 tests de smartctl + 18 tests de SMART (214 total)

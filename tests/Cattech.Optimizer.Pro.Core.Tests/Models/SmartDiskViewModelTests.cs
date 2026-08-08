@@ -210,4 +210,71 @@ public class SmartDiskViewModelTests
         Assert.Single(deserialized.Reports);
         Assert.Equal("Test Disk", deserialized.Reports[0].ModelName);
     }
+
+    // =====================
+    // Tests de resultados parciales
+    // =====================
+
+    [Fact]
+    public void SmartAnalysisResult_PartialFailure_KeepsOtherReports()
+    {
+        var result = new SmartAnalysisResult
+        {
+            Reports =
+            [
+                new() { HealthStatus = SmartHealthStatus.Good, Device = "/dev/sda" },
+                new() { HealthStatus = SmartHealthStatus.Unknown, Device = "/dev/sdb", IsAnalysisSuccessful = false, ErrorMessage = "Timeout" }
+            ],
+            Errors = ["Error al analizar /dev/sdb: Timeout"]
+        };
+
+        // El disco fallido no invalida el análisis completo
+        Assert.Equal(2, result.Reports.Count);
+        Assert.Equal(SmartHealthStatus.Good, result.Reports[0].HealthStatus);
+        Assert.False(result.Reports[1].IsAnalysisSuccessful);
+        Assert.Single(result.Errors);
+    }
+
+    [Fact]
+    public void SmartAnalysisResult_NoSmartctl_StillValidResult()
+    {
+        var result = new SmartAnalysisResult
+        {
+            SmartctlAvailable = false,
+            Errors = ["Smartctl no disponible"]
+        };
+
+        // El resultado existe aunque smartctl no esté disponible
+        Assert.NotNull(result);
+        Assert.False(result.SmartctlAvailable);
+        Assert.NotEmpty(result.Errors);
+        Assert.Empty(result.Reports);
+    }
+
+    [Fact]
+    public void SmartAnalysisResult_NotAvailable_DoesNotMeanHealthy()
+    {
+        var report = new SmartDiskReport
+        {
+            HealthStatus = SmartHealthStatus.NotAvailable,
+            HealthSummary = "SMART no soportado o deshabilitado",
+            IsAnalysisSuccessful = false
+        };
+
+        // No disponible no es igual a sano
+        Assert.Equal(SmartHealthStatus.NotAvailable, report.HealthStatus);
+        Assert.False(report.IsAnalysisSuccessful);
+        Assert.False(report.OverallHealthPassed);
+    }
+
+    [Fact]
+    public void SmartDiskReport_HealthSummary_ContainsClearStatus()
+    {
+        var good = new SmartDiskReport { HealthStatus = SmartHealthStatus.Good, HealthSummary = "Salud general: Buena" };
+        var critical = new SmartDiskReport { HealthStatus = SmartHealthStatus.Critical, HealthSummary = "CRÍTICO: Backup inmediato recomendado" };
+
+        Assert.Contains("Buena", good.HealthSummary);
+        Assert.Contains("CRÍTICO", critical.HealthSummary);
+        Assert.Contains("Backup", critical.HealthSummary);
+    }
 }
