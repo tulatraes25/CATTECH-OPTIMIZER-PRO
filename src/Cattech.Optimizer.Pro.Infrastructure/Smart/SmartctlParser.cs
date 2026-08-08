@@ -646,65 +646,116 @@ public static class SmartctlParser
     /// Parsea la respuesta de smartctl -t short -j para determinar si el test se inició.
     /// smartctl retorna JSON con mensajes de ejecución.
     /// </summary>
-    public static (bool Started, string Message, int? EstimatedMinutes) ParseStartShortTestJson(string json)
+    public static SmartTestStartParseResult ParseStartShortTestJson(string json)
     {
+        var result = new SmartTestStartParseResult();
+
         if (string.IsNullOrWhiteSpace(json))
-            return (false, "Respuesta vacía de smartctl", null);
+        {
+            result.Started = false;
+            result.Status = SmartTestStatus.FailedToStart;
+            result.Message = "Respuesta vacía de smartctl";
+            result.Errors.Add("Respuesta vacía");
+            return result;
+        }
 
         try
         {
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
-            // Verificar si hay mensaje de ejecución
+            // 1. Leer exit_status estructurado (mecanismo principal)
+            int? exitStatus = null;
             if (root.TryGetProperty("smartctl", out var smartctl) &&
-                smartctl.TryGetProperty("messages", out var messages))
+                smartctl.TryGetProperty("exit_status", out var exitStatusEl))
             {
-                foreach (var message in messages.EnumerateArray())
+                if (exitStatusEl.TryGetProperty("value", out var exitValue))
+                {
+                    exitStatus = exitValue.GetInt32();
+                    result.SmartctlExitStatus = exitStatus;
+                }
+            }
+
+            // 2. Recopilar mensajes
+            var messages = new List<string>();
+            if (smartctl.TryGetProperty("messages", out var messagesEl))
+            {
+                foreach (var message in messagesEl.EnumerateArray())
                 {
                     if (message.TryGetProperty("string", out var str))
-                    {
-                        var text = str.GetString() ?? string.Empty;
-
-                        // Si dice "Testing has begun" o "Test will complete", el test se inició
-                        if (text.Contains("Testing has begun", StringComparison.OrdinalIgnoreCase) ||
-                            text.Contains("Test will complete", StringComparison.OrdinalIgnoreCase) ||
-                            text.Contains("test has started", StringComparison.OrdinalIgnoreCase))
-                        {
-                            return (true, text, ExtractEstimatedMinutes(text));
-                        }
-
-                        // Mensaje de error
-                        if (text.Contains("error", StringComparison.OrdinalIgnoreCase) ||
-                            text.Contains("failed", StringComparison.OrdinalIgnoreCase) ||
-                            text.Contains("not supported", StringComparison.OrdinalIgnoreCase) ||
-                            text.Contains("unsupported", StringComparison.OrdinalIgnoreCase))
-                        {
-                            return (false, text, null);
-                        }
-                    }
+                        messages.Add(str.GetString() ?? string.Empty);
                 }
             }
 
-            // Verificar exit status para detectar soporte
-            if (root.TryGetProperty("smartctl", out var smartctl2) &&
-                smartctl2.TryGetProperty("exit_status", out var exitStatus) &&
-                exitStatus.TryGetProperty("value", out var exitValue))
+            result.Message = messages.Count > 0 ? string.Join(" | ", messages) : string.Empty;
+
+            // 3. Determinar estado por exit_status (estructurado)
+            switch (exitStatus)
             {
-                // Exit status 0 o 1 = ejecutado; otros = error/soporte
-                var exit = exitValue.GetInt32();
-                if (exit != 0 && exit != 1)
-                {
-                    return (false, $"smartctl exit status: {exit}", null);
-                }
-            }
+                // 0 = success, 1 = success with warnings/errors in SMART
+                case 0:
+                case 1:
+                    result.Started = true;
+                    result.Status = SmartTestStatus.InProgress;
+                    result.EstimatedDurationMinutes = ExtractEstimatedMinutesFromMessages(messages);
+                    return result;
 
-            return (false, "No se pudo confirmar el inicio del test", null);
+                // 2 = device open failed, 3 = command failed, 4 = unsupported, 5 = error parsing
+                case 4:
+                    result.Started = false;
+                    result.Status = SmartTestStatus.Unsupported;
+                    result.Errors.Add("smartctl exit_status 4 (unsupported)");
+                    return result;
+
+                case 2:
+                    result.Started = false;
+                    result.Status = SmartTestStatus.FailedToStart;
+                    result.Errors.Add("smartctl exit_status 2 (device open failed / permisos)");
+                    return result;
+
+                case 3:
+                    result.Started = false;
+                    result.Status = SmartTestStatus.FailedToStart;
+                    result.Errors.Add("smartctl exit_status 3 (command failed)");
+                    return result;
+
+                default:
+                    result.Started = false;
+                    result.Status = SmartTestStatus.FailedToStart;
+                    result.Errors.Add($"smartctl exit_status desconocido: {exitStatus?.ToString() ?? "null"}");
+                    return result;
+            }
         }
         catch (JsonException)
         {
-            return (false, "JSON inválido", null);
+            result.Started = false;
+            result.Status = SmartTestStatus.FailedToStart;
+            result.Message = "JSON inválido";
+            result.Errors.Add("JSON inválido al parsear inicio de test");
+            return result;
         }
+        catch (Exception ex)
+        {
+            result.Started = false;
+            result.Status = SmartTestStatus.FailedToStart;
+            result.Message = ex.Message;
+            result.Errors.Add($"Error inesperado: {ex.Message}");
+            return result;
+        }
+    }
+
+    /// <summary>
+    /// Extrae duración estimada de los mensajes estructurados (fallback, no mecanismo principal).
+    /// </summary>
+    private static int? ExtractEstimatedMinutesFromMessages(List<string> messages)
+    {
+        foreach (var message in messages)
+        {
+            var minutes = ExtractEstimatedMinutes(message);
+            if (minutes.HasValue)
+                return minutes;
+        }
+        return null;
     }
 
     /// <summary>

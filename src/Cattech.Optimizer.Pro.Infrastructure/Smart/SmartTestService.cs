@@ -50,7 +50,7 @@ public class SmartTestService : ISmartTestService
         {
             session.Status = SmartTestStatus.FailedToStart;
             session.Errors.Add("Timeout al iniciar el test");
-            session.ResultMessage = "No se pudo iniciar la prueba.";
+            session.ResultMessage = SmartTestStatus.FailedToStart.ToDisplayMessage();
             await SaveSessionAsync(session);
             return session;
         }
@@ -59,44 +59,42 @@ public class SmartTestService : ISmartTestService
         {
             session.Status = SmartTestStatus.FailedToStart;
             session.Errors.Add(result.StandardError);
-            session.ResultMessage = "No se pudo iniciar la prueba.";
+            session.ResultMessage = SmartTestStatus.FailedToStart.ToDisplayMessage();
             await SaveSessionAsync(session);
             return session;
         }
 
-        // Parsear respuesta JSON
-        var (started, message, estimatedMinutes) = SmartctlParser.ParseStartShortTestJson(result.StandardOutput);
+        // Parsear respuesta JSON de forma estructurada
+        var parseResult = SmartctlParser.ParseStartShortTestJson(result.StandardOutput);
 
-        if (!started)
-        {
-            // Detectar si el dispositivo no soporta self-test
-            if (message.Contains("not supported", StringComparison.OrdinalIgnoreCase) ||
-                message.Contains("unsupported", StringComparison.OrdinalIgnoreCase))
-            {
-                session.Status = SmartTestStatus.Unsupported;
-                session.ResultMessage = "El dispositivo no soporta esta prueba.";
-            }
-            else
-            {
-                session.Status = SmartTestStatus.FailedToStart;
-                session.ResultMessage = message;
-            }
-
-            session.Errors.Add(message);
-            await SaveSessionAsync(session);
-            return session;
-        }
-
-        // Test iniciado correctamente
-        session.Status = SmartTestStatus.InProgress;
-        session.StartedAt = DateTime.Now;
-        session.EstimatedDurationMinutes = estimatedMinutes;
-        session.EstimatedCompletionAt = estimatedMinutes.HasValue
-            ? DateTime.Now.AddMinutes(estimatedMinutes.Value)
-            : null;
-        session.ResultMessage = message;
+        // Aplicar estado resultante
+        session.Status = parseResult.Status;
+        session.ResultMessage = parseResult.Message;
         session.SmartctlExitCode = result.ExitCode;
-        session.LastCheckedAt = DateTime.Now;
+        session.Errors.AddRange(parseResult.Errors);
+        session.Warnings.AddRange(parseResult.Warnings);
+
+        switch (parseResult.Status)
+        {
+            case SmartTestStatus.InProgress:
+                // Test iniciado correctamente
+                session.StartedAt = DateTime.Now;
+                session.EstimatedDurationMinutes = parseResult.EstimatedDurationMinutes;
+                session.EstimatedCompletionAt = parseResult.EstimatedDurationMinutes.HasValue
+                    ? DateTime.Now.AddMinutes(parseResult.EstimatedDurationMinutes.Value)
+                    : null;
+                session.ResultMessage = parseResult.Message;
+                session.LastCheckedAt = DateTime.Now;
+                break;
+
+            case SmartTestStatus.Unsupported:
+                session.ResultMessage = SmartTestStatus.Unsupported.ToDisplayMessage();
+                break;
+
+            default:
+                session.ResultMessage = SmartTestStatus.FailedToStart.ToDisplayMessage();
+                break;
+        }
 
         await SaveSessionAsync(session);
         return session;
@@ -110,9 +108,13 @@ public class SmartTestService : ISmartTestService
 
         if (result.TimedOut || !result.IsSuccess)
         {
-            session.Status = SmartTestStatus.Unknown;
-            session.Errors.Add(result.StandardError ?? "Timeout al consultar estado");
+            // Error temporal de consulta: NO marcar el test como finalizado.
+            // El test puede seguir ejecutándose internamente en el disco.
+            session.LastCheckSucceeded = false;
+            session.LastCheckError = result.StandardError ?? "Timeout al consultar estado";
             session.LastCheckedAt = DateTime.Now;
+
+            // Conservar StartedAt, EstimatedCompletionAt y warnings previos (no se tocan)
             await SaveSessionAsync(session);
             return session;
         }
@@ -120,6 +122,8 @@ public class SmartTestService : ISmartTestService
         // Parsear estado
         SmartctlParser.ParseSelfTestLogJson(result.StandardOutput, session);
         session.LastCheckedAt = DateTime.Now;
+        session.LastCheckSucceeded = true;
+        session.LastCheckError = string.Empty;
 
         // Si el test terminó, marcar fecha de finalización
         if (session.Status == SmartTestStatus.CompletedWithoutError ||
@@ -128,7 +132,7 @@ public class SmartTestService : ISmartTestService
             session.Status == SmartTestStatus.Interrupted)
         {
             session.CompletedAt = DateTime.Now;
-            session.ResultMessage = SmartctlParser.StatusToMessage(session.Status);
+            session.ResultMessage = session.Status.ToDisplayMessage();
         }
 
         await SaveSessionAsync(session);

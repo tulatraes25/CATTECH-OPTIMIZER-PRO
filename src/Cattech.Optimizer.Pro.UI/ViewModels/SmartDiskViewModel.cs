@@ -3,7 +3,6 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Cattech.Optimizer.Pro.Core.Interfaces;
 using Cattech.Optimizer.Pro.Core.Models.Smart;
-using Cattech.Optimizer.Pro.Infrastructure.Smart;
 
 namespace Cattech.Optimizer.Pro.UI.ViewModels;
 
@@ -506,7 +505,8 @@ public partial class SmartDiskViewModel : ObservableObject
             var session = await _smartTestService.CheckStatusAsync(CurrentTestSession);
             CurrentTestSession = session;
 
-            TestResultMessage = SmartctlParser.StatusToMessage(session.Status);
+            // Usar mensaje preparado por el servicio (extensión Core, no parser Infrastructure)
+            TestResultMessage = session.Status.ToDisplayMessage();
 
             if (session.ProgressPercent.HasValue)
             {

@@ -108,6 +108,15 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - **UI**: panel "Test SMART" con botones Ejecutar/Consultar estado
 - **Persistencia**: sesiones en data/smart-tests/
 - 31 tests nuevos (274 total)
+
+### Fixed (Arquitectura test SMART)
+- **Eliminada dependencia UI → SmartctlParser**: SmartDiskViewModel ahora usa modelos Core (ToDisplayMessage)
+- **Parseo estructurado**: SmartTestStartParseResult tipado en lugar de tupla con texto localizado
+- **Detección por exit_status**: Unsupported (4), permisos (2), fallo (3) sin depender de texto inglés
+- **Capacidad self-test**: SupportsSelfTest, SupportsShortSelfTest, SupportsExtendedSelfTest, SelfTestSupportKnown en SmartDiskReport
+- **Errores temporales de consulta**: LastCheckSucceeded/LastCheckError; timeout NO finaliza el test
+- **Conservación de datos**: StartedAt, EstimatedCompletionAt y warnings se preservan tras errores temporales
+- 13 tests nuevos (287 total)
 - SmartctlAvailability, SmartDiskDevice, SmartctlCommandResult
 - ISmartctlRunner, ISmartDiskService interfaces
 - 32 tests de smartctl + 18 tests de SMART (214 total)

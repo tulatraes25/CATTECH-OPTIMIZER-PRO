@@ -83,10 +83,16 @@ public class SmartTestSession
 
     /// <summary>Advertencias.</summary>
     public List<string> Warnings { get; set; } = new();
+
+    /// <summary>Si la última consulta de estado fue exitosa.</summary>
+    public bool LastCheckSucceeded { get; set; }
+
+    /// <summary>Error de la última consulta de estado (si falló).</summary>
+    public string LastCheckError { get; set; } = string.Empty;
 }
 
 /// <summary>
-/// Resultado final de un test SMART.
+/// Resultado de un test SMART.
 /// </summary>
 public class SmartTestResult
 {
@@ -116,4 +122,57 @@ public class SmartTestResult
 
     /// <summary>Errores encontrados.</summary>
     public List<string> Errors { get; set; } = new();
+}
+
+/// <summary>
+/// Resultado tipado del parseo de inicio de un self-test SMART.
+/// Se usa en lugar de depender de texto localizado.
+/// </summary>
+public class SmartTestStartParseResult
+{
+    /// <summary>Si el test se inició correctamente.</summary>
+    public bool Started { get; set; }
+
+    /// <summary>Estado resultante del intento de inicio.</summary>
+    public SmartTestStatus Status { get; set; } = SmartTestStatus.Unknown;
+
+    /// <summary>Duración estimada en minutos (null si no se puede determinar).</summary>
+    public int? EstimatedDurationMinutes { get; set; }
+
+    /// <summary>Mensaje descriptivo.</summary>
+    public string Message { get; set; } = string.Empty;
+
+    /// <summary>Código de salida de smartctl (exit_status.value).</summary>
+    public int? SmartctlExitStatus { get; set; }
+
+    /// <summary>Errores detectados.</summary>
+    public List<string> Errors { get; set; } = new();
+
+    /// <summary>Advertencias.</summary>
+    public List<string> Warnings { get; set; } = new();
+}
+
+/// <summary>
+/// Extensión para obtener mensaje legible de un estado de test SMART.
+/// Ubicado en Core para que la UI no dependa de Infrastructure.
+/// </summary>
+public static class SmartTestStatusExtensions
+{
+    /// <summary>
+    /// Convierte SmartTestStatus a mensaje legible en español.
+    /// </summary>
+    public static string ToDisplayMessage(this SmartTestStatus status) => status switch
+    {
+        SmartTestStatus.NotStarted => "Test no iniciado",
+        SmartTestStatus.Starting => "Test iniciándose",
+        SmartTestStatus.InProgress => "Test en ejecución",
+        SmartTestStatus.CompletedWithoutError => "Prueba completada sin errores reportados.",
+        SmartTestStatus.CompletedWithError => "La prueba detectó errores. Revisar SMART y realizar backup.",
+        SmartTestStatus.Aborted => "Prueba abortada.",
+        SmartTestStatus.Interrupted => "Prueba interrumpida.",
+        SmartTestStatus.Unsupported => "El dispositivo no soporta esta prueba.",
+        SmartTestStatus.FailedToStart => "No se pudo iniciar la prueba.",
+        SmartTestStatus.Unknown => "No se pudo determinar el resultado.",
+        _ => "Estado desconocido"
+    };
 }

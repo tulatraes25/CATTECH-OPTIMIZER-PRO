@@ -28,46 +28,51 @@ public class SmartTestServiceTests
             }
         }";
 
-        var (started, message, minutes) = SmartctlParser.ParseStartShortTestJson(json);
+        var result = SmartctlParser.ParseStartShortTestJson(json);
 
-        Assert.True(started);
-        Assert.Contains("Testing has begun", message);
-        Assert.Equal(2, minutes);
+        Assert.True(result.Started);
+        Assert.Equal(SmartTestStatus.InProgress, result.Status);
+        Assert.Contains("Testing has begun", result.Message);
+        Assert.Equal(2, result.EstimatedDurationMinutes);
     }
 
     [Fact]
-    public void ParseStartShortTestJson_Empty_ReturnsNotStarted()
+    public void ParseStartShortTestJson_Empty_ReturnsFailedToStart()
     {
-        var (started, message, _) = SmartctlParser.ParseStartShortTestJson("");
+        var result = SmartctlParser.ParseStartShortTestJson("");
 
-        Assert.False(started);
-        Assert.Contains("vacía", message);
+        Assert.False(result.Started);
+        Assert.Equal(SmartTestStatus.FailedToStart, result.Status);
+        Assert.Contains("vacía", result.Message);
     }
 
     [Fact]
-    public void ParseStartShortTestJson_Unsupported_ReturnsNotStarted()
+    public void ParseStartShortTestJson_ExitStatus4_ReturnsUnsupported()
     {
         var json = @"{
             ""smartctl"": {
                 ""messages"": [
                     { ""string"": ""SMART self-test not supported on this device."" }
                 ],
-                ""exit_status"": { ""value"": 2 }
+                ""exit_status"": { ""value"": 4 }
             }
         }";
 
-        var (started, message, _) = SmartctlParser.ParseStartShortTestJson(json);
+        var result = SmartctlParser.ParseStartShortTestJson(json);
 
-        Assert.False(started);
-        Assert.Contains("not supported", message);
+        Assert.False(result.Started);
+        Assert.Equal(SmartTestStatus.Unsupported, result.Status);
+        Assert.Equal(4, result.SmartctlExitStatus);
     }
 
     [Fact]
-    public void ParseStartShortTestJson_InvalidJson_ReturnsNotStarted()
+    public void ParseStartShortTestJson_InvalidJson_ReturnsFailedToStart()
     {
-        var (started, _, _) = SmartctlParser.ParseStartShortTestJson("not json");
+        var result = SmartctlParser.ParseStartShortTestJson("not json");
 
-        Assert.False(started);
+        Assert.False(result.Started);
+        Assert.Equal(SmartTestStatus.FailedToStart, result.Status);
+        Assert.NotEmpty(result.Errors);
     }
 
     // =====================
@@ -326,15 +331,24 @@ public class SmartTestServiceTests
     }
 
     [Fact]
-    public async Task CheckStatus_NoSmartctl_UnknownStatus()
+    public async Task CheckStatus_NoSmartctl_KeepsSessionState()
     {
         var runner = new SmartctlRunner("/nonexistent/smartctl.exe");
         var service = new SmartTestService(runner, Path.Combine(Path.GetTempPath(), $"cattech_smart_test_{Guid.NewGuid():N}"));
 
-        var session = new SmartTestSession { Device = "/dev/sda", Status = SmartTestStatus.InProgress };
+        var session = new SmartTestSession
+        {
+            Device = "/dev/sda",
+            Status = SmartTestStatus.InProgress,
+            StartedAt = DateTime.Now.AddMinutes(-1)
+        };
         var result = await service.CheckStatusAsync(session);
 
-        Assert.Equal(SmartTestStatus.Unknown, result.Status);
+        // El error temporal de consulta NO debe cambiar el estado del test
+        Assert.Equal(SmartTestStatus.InProgress, result.Status);
+        Assert.False(result.LastCheckSucceeded);
+        Assert.NotEmpty(result.LastCheckError);
+        Assert.NotNull(result.StartedAt);
     }
 
     [Fact]
@@ -413,5 +427,227 @@ public class SmartTestServiceTests
 
         result.LbaOfFirstError = 12345;
         Assert.Equal(12345, result.LbaOfFirstError);
+    }
+
+    // =====================
+    // Tests de arquitectura (refactor)
+    // =====================
+
+    [Fact]
+    public void SmartTestStartParseResult_DefaultValues_AreValid()
+    {
+        var result = new SmartTestStartParseResult();
+
+        Assert.False(result.Started);
+        Assert.Equal(SmartTestStatus.Unknown, result.Status);
+        Assert.Null(result.EstimatedDurationMinutes);
+        Assert.Null(result.SmartctlExitStatus);
+        Assert.Empty(result.Errors);
+        Assert.Empty(result.Warnings);
+    }
+
+    [Fact]
+    public void ParseStartShortTestJson_ExitStatus1_ReturnsInProgress()
+    {
+        // exit_status 1 = success with SMART warnings, test still started
+        var json = @"{
+            ""smartctl"": {
+                ""messages"": [
+                    { ""string"": ""Testing has begun.  Please wait 2 minutes for test to complete."" }
+                ],
+                ""exit_status"": { ""value"": 1 }
+            }
+        }";
+
+        var result = SmartctlParser.ParseStartShortTestJson(json);
+
+        Assert.True(result.Started);
+        Assert.Equal(SmartTestStatus.InProgress, result.Status);
+        Assert.Equal(1, result.SmartctlExitStatus);
+    }
+
+    [Fact]
+    public void ParseStartShortTestJson_ExitStatus2_ReturnsFailedToStart()
+    {
+        // exit_status 2 = device open failed (permisos)
+        var json = @"{
+            ""smartctl"": {
+                ""messages"": [
+                    { ""string"": ""Device open failed"" }
+                ],
+                ""exit_status"": { ""value"": 2 }
+            }
+        }";
+
+        var result = SmartctlParser.ParseStartShortTestJson(json);
+
+        Assert.False(result.Started);
+        Assert.Equal(SmartTestStatus.FailedToStart, result.Status);
+        Assert.NotEmpty(result.Errors);
+    }
+
+    [Fact]
+    public void ParseStartShortTestJson_ExitStatus3_ReturnsFailedToStart()
+    {
+        var json = @"{
+            ""smartctl"": {
+                ""messages"": [],
+                ""exit_status"": { ""value"": 3 }
+            }
+        }";
+
+        var result = SmartctlParser.ParseStartShortTestJson(json);
+
+        Assert.False(result.Started);
+        Assert.Equal(SmartTestStatus.FailedToStart, result.Status);
+    }
+
+    [Fact]
+    public void ParseStartShortTestJson_NoExitStatus_ReturnsFailedToStart()
+    {
+        var json = @"{
+            ""smartctl"": {
+                ""messages"": []
+            }
+        }";
+
+        var result = SmartctlParser.ParseStartShortTestJson(json);
+
+        Assert.False(result.Started);
+        Assert.Equal(SmartTestStatus.FailedToStart, result.Status);
+    }
+
+    [Fact]
+    public void ParseStartShortTestJson_Unsupported_NoTextDependency()
+    {
+        // El mecanismo principal es exit_status=4, no el texto "not supported"
+        var json = @"{
+            ""smartctl"": {
+                ""messages"": [
+                    { ""string"": ""Algun mensaje en cualquier idioma"" }
+                ],
+                ""exit_status"": { ""value"": 4 }
+            }
+        }";
+
+        var result = SmartctlParser.ParseStartShortTestJson(json);
+
+        Assert.False(result.Started);
+        Assert.Equal(SmartTestStatus.Unsupported, result.Status);
+    }
+
+    [Fact]
+    public void CheckStatusTimeout_DoesNotMarkTestAsFinished()
+    {
+        // Un error temporal de consulta no debe finalizar el test
+        var session = new SmartTestSession
+        {
+            Device = "/dev/sda",
+            Status = SmartTestStatus.InProgress,
+            StartedAt = new DateTime(2026, 2, 1, 10, 0, 0),
+            EstimatedCompletionAt = new DateTime(2026, 2, 1, 10, 2, 0),
+            Warnings = ["warning previo"]
+        };
+
+        // Simular fallo de consulta: marcar error temporal, NO cambiar Status
+        session.LastCheckSucceeded = false;
+        session.LastCheckError = "Timeout al consultar estado";
+
+        Assert.Equal(SmartTestStatus.InProgress, session.Status);
+        Assert.False(session.LastCheckSucceeded);
+        Assert.Contains("Timeout", session.LastCheckError);
+    }
+
+    [Fact]
+    public void CheckStatusError_PreservesStartedAt()
+    {
+        var startedAt = new DateTime(2026, 2, 1, 10, 0, 0);
+        var session = new SmartTestSession
+        {
+            Device = "/dev/sda",
+            Status = SmartTestStatus.InProgress,
+            StartedAt = startedAt
+        };
+
+        // Simular error temporal de consulta
+        session.LastCheckSucceeded = false;
+        session.LastCheckError = "Error temporal";
+
+        Assert.Equal(startedAt, session.StartedAt);
+    }
+
+    [Fact]
+    public void CheckStatusError_PreservesEstimatedCompletionAt()
+    {
+        var estimatedCompletion = new DateTime(2026, 2, 1, 10, 2, 0);
+        var session = new SmartTestSession
+        {
+            Device = "/dev/sda",
+            Status = SmartTestStatus.InProgress,
+            EstimatedCompletionAt = estimatedCompletion
+        };
+
+        // Simular error temporal de consulta
+        session.LastCheckSucceeded = false;
+        session.LastCheckError = "Error temporal";
+
+        Assert.Equal(estimatedCompletion, session.EstimatedCompletionAt);
+    }
+
+    [Fact]
+    public void CheckStatusError_PreservesWarnings()
+    {
+        var session = new SmartTestSession
+        {
+            Device = "/dev/sda",
+            Status = SmartTestStatus.InProgress
+        };
+        session.Warnings.Add("warning previo 1");
+        session.Warnings.Add("warning previo 2");
+
+        // Simular error temporal de consulta
+        session.LastCheckSucceeded = false;
+        session.LastCheckError = "Error temporal";
+
+        Assert.Equal(2, session.Warnings.Count);
+        Assert.Contains("warning previo 1", session.Warnings);
+    }
+
+    [Fact]
+    public void ToDisplayMessage_AllStates_HaveMessages()
+    {
+        foreach (SmartTestStatus status in Enum.GetValues<SmartTestStatus>())
+        {
+            var message = status.ToDisplayMessage();
+            Assert.False(string.IsNullOrWhiteSpace(message));
+        }
+    }
+
+    [Fact]
+    public void SmartDiskReport_SelfTestCapabilities_DefaultToNull()
+    {
+        var report = new SmartDiskReport();
+
+        Assert.Null(report.SupportsSelfTest);
+        Assert.Null(report.SupportsShortSelfTest);
+        Assert.Null(report.SupportsExtendedSelfTest);
+        Assert.False(report.SelfTestSupportKnown);
+    }
+
+    [Fact]
+    public void SmartDiskReport_SelfTestCapabilities_AreSettable()
+    {
+        var report = new SmartDiskReport
+        {
+            SupportsSelfTest = true,
+            SupportsShortSelfTest = true,
+            SupportsExtendedSelfTest = false,
+            SelfTestSupportKnown = true
+        };
+
+        Assert.True(report.SupportsSelfTest);
+        Assert.True(report.SupportsShortSelfTest);
+        Assert.False(report.SupportsExtendedSelfTest);
+        Assert.True(report.SelfTestSupportKnown);
     }
 }

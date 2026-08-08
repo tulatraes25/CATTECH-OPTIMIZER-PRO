@@ -167,6 +167,20 @@ public class SmartDiskReport
     /// <summary>NVMe: apagados inseguros.</summary>
     public long? NvmeUnsafeShutdowns { get; set; }
 
+    // --- Capacidad de self-test (si smartctl la expone) ---
+
+    /// <summary>Si el dispositivo soporta self-test en general (nullable si no se puede determinar).</summary>
+    public bool? SupportsSelfTest { get; set; }
+
+    /// <summary>Si el dispositivo soporta self-test corto (nullable si no se puede determinar).</summary>
+    public bool? SupportsShortSelfTest { get; set; }
+
+    /// <summary>Si el dispositivo soporta self-test extendido (nullable si no se puede determinar).</summary>
+    public bool? SupportsExtendedSelfTest { get; set; }
+
+    /// <summary>Si la capacidad de self-test fue determinada por smartctl.</summary>
+    public bool SelfTestSupportKnown { get; set; }
+
     /// <summary>
     /// Obtiene el RawValue de un atributo por ID.
     /// Devuelve 0 si no existe.
