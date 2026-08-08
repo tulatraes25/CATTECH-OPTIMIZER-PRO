@@ -203,7 +203,10 @@ public partial class MainViewModel : ObservableObject
 
     private object CreateSmartDiskView()
     {
-        _smartDiskViewModel ??= new SmartDiskViewModel(_smartctlRunner, _smartDiskService);
+        _smartDiskViewModel ??= new SmartDiskViewModel(
+            _smartctlRunner,
+            _smartDiskService,
+            new SmartTestService(_smartctlRunner));
 
         return new SmartDiskView
         {

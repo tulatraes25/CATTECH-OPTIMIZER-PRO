@@ -97,6 +97,17 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - **Preservación de resultado**: SaveAnalysisAsync conserva SmartAnalysisResult original (timestamps, errors, warnings)
 - **HasDevices vs HasResults**: conceptos separados correctamente
 - 15 tests nuevos (243 total)
+
+### Added (SMART Test Corto - Fase A.5)
+- **SmartTestService**: inicia self-test SMART corto via `smartctl -t short -j`
+- **SmartTestSession**: sesión con estado, duración estimada, progreso
+- **SmartTestResult**: resultado final con estado y mensaje legible
+- **SmartTestStatus**: NotStarted/Starting/InProgress/Completed/Aborted/Interrupted/Unsupported/FailedToStart/Unknown
+- **Consulta de estado**: via `smartctl -l selftest -j` (solo lectura)
+- **Reglas de seguridad**: disco crítico bloqueado, no segundo test InProgress, verificación de soporte
+- **UI**: panel "Test SMART" con botones Ejecutar/Consultar estado
+- **Persistencia**: sesiones en data/smart-tests/
+- 31 tests nuevos (274 total)
 - SmartctlAvailability, SmartDiskDevice, SmartctlCommandResult
 - ISmartctlRunner, ISmartDiskService interfaces
 - 32 tests de smartctl + 18 tests de SMART (214 total)

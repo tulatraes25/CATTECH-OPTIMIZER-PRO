@@ -26,6 +26,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <!-- Row 0: Título -->
@@ -341,5 +342,43 @@
                 </ScrollViewer>
             </Border>
         </Grid>
+
+        <!-- Row 7: Panel Test SMART -->
+        <Border Grid.Row="7" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
+                Padding="12,10" Margin="0,10,0,0" Background="White"
+                Visibility="{Binding HasSelectedReport, Converter={StaticResource BoolToVis}}">
+            <StackPanel>
+                <TextBlock Text="TEST SMART" FontSize="11" FontWeight="Bold" Foreground="#0078D4" Margin="0,0,0,6" />
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Estado del test -->
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="{Binding TestStatusText}" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="#333" TextWrapping="Wrap" Margin="0,0,0,4" />
+                        <TextBlock Text="{Binding TestResultMessage}" FontSize="10" Foreground="#666"
+                                   TextWrapping="Wrap" Margin="0,0,0,4" />
+                        <TextBlock Text="El test es ejecutado internamente por el dispositivo. La prueba normalmente no modifica datos."
+                                   FontSize="10" Foreground="#888" TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <!-- Botones -->
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="15,0,0,0">
+                        <Button Content="▶️ Ejecutar test corto"
+                                Command="{Binding StartShortTestCommand}" Padding="14,8" FontSize="12"
+                                Background="#1976D2" Foreground="White" BorderThickness="0" Margin="0,0,0,6"
+                                IsEnabled="{Binding CanStartTest}" />
+                        <Button Content="🔄 Consultar estado"
+                                Command="{Binding CheckTestStatusCommand}" Padding="14,8" FontSize="12"
+                                Background="#F3F3F3" Foreground="#333" BorderBrush="#CCC" BorderThickness="1"
+                                IsEnabled="{Binding IsTestInProgress}" />
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
+        </Border>
     </Grid>
 </UserControl>

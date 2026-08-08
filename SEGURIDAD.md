@@ -638,5 +638,29 @@ Formato estándar: `CATTECH Optimizer Pro - Antes de mantenimiento - yyyy-MM-dd 
 
 ---
 
+## Test SMART Corto
+
+### Reglas de seguridad
+
+1. **No ejecutar sin disco seleccionado**: Requiere selección explícita
+2. **Disco crítico bloqueado**: Si HealthStatus == Critical, NO se inicia el test
+   - Se muestra: "Este disco presenta indicadores críticos. Se recomienda realizar backup antes de ejecutar pruebas adicionales."
+3. **Un test a la vez**: No se inicia segundo test sobre disco con test InProgress
+4. **Verificación de soporte**: Si el dispositivo no soporta self-test, Status = Unsupported
+5. **Sin tests automáticos**: No se ejecutan tests sobre todos los discos
+6. **Solo lectura después del inicio**: CATTECH no mantiene procesos smartctl abiertos; el test ocurre en el firmware del disco
+7. **Sin comandos destructivos**: Solo `smartctl -t short -j`
+8. **NotAvailable/Unknown**: Verificar soporte antes de iniciar
+9. **Cancelación**: No implementada aún (futura función)
+
+### Flujo
+1. Seleccionar disco
+2. Verificar soporte
+3. Confirmación del técnico
+4. Iniciar test (no bloquea UI)
+5. Consultar estado posteriormente
+
+---
+
 *Documento de seguridad - CATTECH OPTIMIZER PRO*  
 *Última actualización: 2026*

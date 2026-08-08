@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Cattech.Optimizer.Pro.Core.Interfaces;
 using Cattech.Optimizer.Pro.Core.Models.Smart;
+using Cattech.Optimizer.Pro.Infrastructure.Smart;
 
 namespace Cattech.Optimizer.Pro.UI.ViewModels;
 
@@ -13,9 +14,37 @@ public partial class SmartDiskViewModel : ObservableObject
 {
     private readonly ISmartctlRunner _smartctlRunner;
     private readonly ISmartDiskService _smartDiskService;
+    private readonly ISmartTestService _smartTestService;
     private List<SmartDiskDevice> _allDevices = [];
     private List<SmartDiskReport> _allReports = [];
     private SmartAnalysisResult? _lastAnalysisResult;
+
+    // --- Estado del test SMART ---
+
+    [ObservableProperty]
+    private bool _canStartTest;
+
+    [ObservableProperty]
+    private bool _isTestInProgress;
+
+    [ObservableProperty]
+    private SmartTestSession? _currentTestSession;
+
+    [ObservableProperty]
+    private string _testStatusText = string.Empty;
+
+    [ObservableProperty]
+    private string _testResultMessage = string.Empty;
+
+    public SmartDiskViewModel(
+        ISmartctlRunner smartctlRunner,
+        ISmartDiskService smartDiskService,
+        ISmartTestService smartTestService)
+    {
+        _smartctlRunner = smartctlRunner;
+        _smartDiskService = smartDiskService;
+        _smartTestService = smartTestService;
+    }
 
     // --- Estado de la UI ---
 
@@ -104,12 +133,6 @@ public partial class SmartDiskViewModel : ObservableObject
     public ObservableCollection<SmartDiskDevice> Devices { get; } = new();
     public ObservableCollection<SmartDiskReport> Reports { get; } = new();
     public ObservableCollection<SmartAttribute> SelectedAttributes { get; } = new();
-
-    public SmartDiskViewModel(ISmartctlRunner smartctlRunner, ISmartDiskService smartDiskService)
-    {
-        _smartctlRunner = smartctlRunner;
-        _smartDiskService = smartDiskService;
-    }
 
     /// <summary>
     /// Verifica si smartctl está disponible.
@@ -326,6 +349,210 @@ public partial class SmartDiskViewModel : ObservableObject
     partial void OnSelectedReportChanged(SmartDiskReport? value)
     {
         HasSelectedReport = value != null;
+
+        // Gestionar habilitación del test según estado del disco
+        if (value == null)
+        {
+            CanStartTest = false;
+            return;
+        }
+
+        switch (value.HealthStatus)
+        {
+            case SmartHealthStatus.Critical:
+                CanStartTest = false;
+                TestStatusText = "Test bloqueado: disco en estado crítico. Realice backup antes de continuar.";
+                break;
+
+            case SmartHealthStatus.NotAvailable:
+            case SmartHealthStatus.Unknown:
+                CanStartTest = true;
+                TestStatusText = "Estado del disco no determinado. Se verificará soporte de self-test al iniciar.";
+                break;
+
+            default:
+                CanStartTest = true;
+                TestStatusText = string.Empty;
+                break;
+        }
+
+        // Si ya hay un test en progreso para este disco, no permitir otro
+        if (IsTestInProgress && CurrentTestSession?.Device == value.Device)
+        {
+            CanStartTest = false;
+            TestStatusText = "Test corto en ejecución para este disco.";
+        }
+    }
+
+    /// <summary>
+    /// Inicia un test SMART corto sobre el disco seleccionado.
+    /// </summary>
+    [RelayCommand]
+    private async Task StartShortTestAsync()
+    {
+        if (SelectedReport == null)
+        {
+            ShowError("Seleccione un disco para ejecutar el test.");
+            return;
+        }
+
+        // Bloquear si el disco es crítico
+        if (SelectedReport.HealthStatus == SmartHealthStatus.Critical)
+        {
+            ShowError("Este disco presenta indicadores críticos. Se recomienda realizar backup antes de ejecutar pruebas adicionales.");
+            return;
+        }
+
+        // Bloquear si ya hay un test en progreso para este disco
+        if (IsTestInProgress && CurrentTestSession?.Device == SelectedReport.Device)
+        {
+            ShowError("Ya hay un test en ejecución para este disco.");
+            return;
+        }
+
+        ClearMessages();
+        IsRunning = true;
+        TestStatusText = "Iniciando test corto...";
+
+        try
+        {
+            // Buscar el dispositivo detectado que coincide con el reporte
+            var device = _allDevices.FirstOrDefault(d => d.Name == SelectedReport.Device);
+            if (device == null)
+            {
+                device = new SmartDiskDevice
+                {
+                    Name = SelectedReport.Device,
+                    InfoName = SelectedReport.DeviceName,
+                    ApproximateDiskType = SelectedReport.DeviceType,
+                    Protocol = SelectedReport.Protocol,
+                    ModelName = SelectedReport.ModelName,
+                    SerialNumber = SelectedReport.SerialNumber
+                };
+            }
+
+            var session = await _smartTestService.StartShortTestAsync(device);
+
+            CurrentTestSession = session;
+
+            switch (session.Status)
+            {
+                case SmartTestStatus.InProgress:
+                    IsTestInProgress = true;
+                    CanStartTest = false;
+                    TestStatusText = "Test corto en ejecución";
+
+                    var durationText = session.EstimatedDurationMinutes.HasValue
+                        ? $"{session.EstimatedDurationMinutes.Value} min"
+                        : "no disponible";
+                    var completionText = session.EstimatedCompletionAt.HasValue
+                        ? session.EstimatedCompletionAt.Value.ToString("HH:mm:ss")
+                        : "no disponible";
+
+                    TestResultMessage = $"Test iniciado a las {session.StartedAt:HH:mm:ss}. " +
+                                        $"Duración estimada: {durationText}. " +
+                                        $"Finalización estimada: {completionText}.";
+                    ShowSuccess("Test SMART corto iniciado correctamente.");
+                    break;
+
+                case SmartTestStatus.Unsupported:
+                    TestStatusText = "Test no soportado";
+                    TestResultMessage = "El dispositivo no soporta esta prueba.";
+                    ShowError(TestResultMessage);
+                    break;
+
+                case SmartTestStatus.FailedToStart:
+                    TestStatusText = "Error al iniciar test";
+                    TestResultMessage = session.ResultMessage;
+                    ShowError($"No se pudo iniciar la prueba: {session.ResultMessage}");
+                    break;
+
+                default:
+                    TestStatusText = "Estado desconocido";
+                    TestResultMessage = session.ResultMessage;
+                    ShowError(session.ResultMessage);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            TestStatusText = "Error al iniciar test";
+            ShowError($"Error: {ex.Message}");
+        }
+        finally
+        {
+            IsRunning = false;
+        }
+    }
+
+    /// <summary>
+    /// Consulta el estado actual del test en ejecución.
+    /// </summary>
+    [RelayCommand]
+    private async Task CheckTestStatusAsync()
+    {
+        if (CurrentTestSession == null)
+        {
+            ShowError("No hay test en ejecución.");
+            return;
+        }
+
+        ClearMessages();
+        IsRunning = true;
+        TestStatusText = "Consultando estado del test...";
+
+        try
+        {
+            var session = await _smartTestService.CheckStatusAsync(CurrentTestSession);
+            CurrentTestSession = session;
+
+            TestResultMessage = SmartctlParser.StatusToMessage(session.Status);
+
+            if (session.ProgressPercent.HasValue)
+            {
+                TestResultMessage += $" Progreso: {session.ProgressPercent.Value}%";
+            }
+
+            switch (session.Status)
+            {
+                case SmartTestStatus.CompletedWithoutError:
+                    IsTestInProgress = false;
+                    CanStartTest = true;
+                    TestStatusText = "Test completado";
+                    ShowSuccess("Prueba completada sin errores reportados.");
+                    break;
+
+                case SmartTestStatus.CompletedWithError:
+                    IsTestInProgress = false;
+                    CanStartTest = true;
+                    TestStatusText = "Test completado con errores";
+                    ShowError("La prueba detectó errores. Revisar SMART y realizar backup.");
+                    break;
+
+                case SmartTestStatus.InProgress:
+                    IsTestInProgress = true;
+                    CanStartTest = false;
+                    TestStatusText = "Test corto en ejecución";
+                    ShowSuccess("Test aún en ejecución.");
+                    break;
+
+                default:
+                    IsTestInProgress = false;
+                    CanStartTest = true;
+                    TestStatusText = "Test finalizado";
+                    ShowSuccess(TestResultMessage);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            TestStatusText = "Error al consultar estado";
+            ShowError($"Error: {ex.Message}");
+        }
+        finally
+        {
+            IsRunning = false;
+        }
     }
 
     private void ShowSuccess(string message)

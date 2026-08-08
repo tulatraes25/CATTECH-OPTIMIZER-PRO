@@ -637,4 +637,302 @@ public static class SmartctlParser
         }
         return string.Empty;
     }
+
+    // =====================
+    // Self-Test Parsing Methods
+    // =====================
+
+    /// <summary>
+    /// Parsea la respuesta de smartctl -t short -j para determinar si el test se inició.
+    /// smartctl retorna JSON con mensajes de ejecución.
+    /// </summary>
+    public static (bool Started, string Message, int? EstimatedMinutes) ParseStartShortTestJson(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return (false, "Respuesta vacía de smartctl", null);
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            // Verificar si hay mensaje de ejecución
+            if (root.TryGetProperty("smartctl", out var smartctl) &&
+                smartctl.TryGetProperty("messages", out var messages))
+            {
+                foreach (var message in messages.EnumerateArray())
+                {
+                    if (message.TryGetProperty("string", out var str))
+                    {
+                        var text = str.GetString() ?? string.Empty;
+
+                        // Si dice "Testing has begun" o "Test will complete", el test se inició
+                        if (text.Contains("Testing has begun", StringComparison.OrdinalIgnoreCase) ||
+                            text.Contains("Test will complete", StringComparison.OrdinalIgnoreCase) ||
+                            text.Contains("test has started", StringComparison.OrdinalIgnoreCase))
+                        {
+                            return (true, text, ExtractEstimatedMinutes(text));
+                        }
+
+                        // Mensaje de error
+                        if (text.Contains("error", StringComparison.OrdinalIgnoreCase) ||
+                            text.Contains("failed", StringComparison.OrdinalIgnoreCase) ||
+                            text.Contains("not supported", StringComparison.OrdinalIgnoreCase) ||
+                            text.Contains("unsupported", StringComparison.OrdinalIgnoreCase))
+                        {
+                            return (false, text, null);
+                        }
+                    }
+                }
+            }
+
+            // Verificar exit status para detectar soporte
+            if (root.TryGetProperty("smartctl", out var smartctl2) &&
+                smartctl2.TryGetProperty("exit_status", out var exitStatus) &&
+                exitStatus.TryGetProperty("value", out var exitValue))
+            {
+                // Exit status 0 o 1 = ejecutado; otros = error/soporte
+                var exit = exitValue.GetInt32();
+                if (exit != 0 && exit != 1)
+                {
+                    return (false, $"smartctl exit status: {exit}", null);
+                }
+            }
+
+            return (false, "No se pudo confirmar el inicio del test", null);
+        }
+        catch (JsonException)
+        {
+            return (false, "JSON inválido", null);
+        }
+    }
+
+    /// <summary>
+    /// Parsea el self-test log JSON (smartctl -l selftest -j) para obtener estado/progreso.
+    /// </summary>
+    public static SmartTestSession ParseSelfTestLogJson(string json, SmartTestSession session)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            session.Status = SmartTestStatus.Unknown;
+            session.ResultMessage = "Respuesta vacía de smartctl";
+            session.LastCheckedAt = DateTime.Now;
+            return session;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            // Buscar self-test log
+            if (root.TryGetProperty("ata_smart_selective_self_test_log", out var selective))
+            {
+                ParseSelectiveLog(selective, session);
+            }
+            else if (root.TryGetProperty("ata_smart_self_test_log", out var selfTestLog) &&
+                     selfTestLog.TryGetProperty("standard", out var standard) &&
+                     standard.TryGetProperty("table", out var table) &&
+                     table.ValueKind == JsonValueKind.Array && table.GetArrayLength() > 0)
+            {
+                ParseSelfTestTable(table, session);
+            }
+            // NVMe
+            else if (root.TryGetProperty("nvme_self_test_list", out var nvmeList) &&
+                     nvmeList.TryGetProperty("entries", out var entries) &&
+                     entries.ValueKind == JsonValueKind.Array && entries.GetArrayLength() > 0)
+            {
+                ParseNvmeSelfTest(entries, session);
+            }
+            else
+            {
+                session.Status = SmartTestStatus.Unknown;
+                session.ResultMessage = "No se encontró log de self-test";
+                session.LastCheckedAt = DateTime.Now;
+            }
+        }
+        catch (JsonException)
+        {
+            session.Status = SmartTestStatus.Unknown;
+            session.ResultMessage = "JSON inválido al consultar estado";
+            session.LastCheckedAt = DateTime.Now;
+        }
+
+        return session;
+    }
+
+    private static void ParseSelectiveLog(JsonElement selective, SmartTestSession session)
+    {
+        if (selective.TryGetProperty("current", out var current) &&
+            current.TryGetProperty("status", out var status))
+        {
+            var statusText = status.GetString() ?? string.Empty;
+            session.Status = MapStatusText(statusText);
+            session.ResultMessage = statusText;
+            session.LastCheckedAt = DateTime.Now;
+        }
+        else
+        {
+            session.Status = SmartTestStatus.Unknown;
+            session.ResultMessage = "No se pudo leer el estado del self-test";
+            session.LastCheckedAt = DateTime.Now;
+        }
+    }
+
+    private static void ParseSelfTestTable(JsonElement table, SmartTestSession session)
+    {
+        // El primer elemento del table es el test más reciente
+        var latest = table.EnumerateArray().First();
+
+        if (latest.TryGetProperty("status", out var status))
+        {
+            // smartctl JSON: status puede ser string o objeto { "string": "..." }
+            string statusText;
+            if (status.ValueKind == JsonValueKind.String)
+                statusText = status.GetString() ?? string.Empty;
+            else if (status.ValueKind == JsonValueKind.Object &&
+                     status.TryGetProperty("string", out var statusString))
+                statusText = statusString.GetString() ?? string.Empty;
+            else
+                statusText = string.Empty;
+
+            session.Status = MapStatusText(statusText);
+            session.ResultMessage = statusText;
+        }
+
+        if (latest.TryGetProperty("remaining", out var remaining))
+        {
+            // Puede ser string ("60%") o número (60)
+            string remainingText;
+            if (remaining.ValueKind == JsonValueKind.String)
+                remainingText = remaining.GetString() ?? string.Empty;
+            else if (remaining.ValueKind == JsonValueKind.Number)
+                remainingText = remaining.GetRawText();
+            else
+                remainingText = string.Empty;
+
+            if (int.TryParse(remainingText.TrimEnd('%'), out var remainingPercent))
+            {
+                session.ProgressPercent = Math.Clamp(100 - remainingPercent, 0, 100);
+            }
+        }
+
+        if (latest.TryGetProperty("lifetime_hours", out var lifetime))
+        {
+            // No aplica a la sesión directamente
+        }
+
+        session.LastCheckedAt = DateTime.Now;
+
+        // Si el test está en progreso, marcar InProgress
+        if (session.Status == SmartTestStatus.Unknown &&
+            session.ProgressPercent is > 0 and < 100)
+        {
+            session.Status = SmartTestStatus.InProgress;
+        }
+    }
+
+    private static void ParseNvmeSelfTest(JsonElement entries, SmartTestSession session)
+    {
+        var latest = entries.EnumerateArray().First();
+
+        if (latest.TryGetProperty("result", out var result))
+        {
+            var resultValue = result.GetInt32();
+            session.Status = resultValue switch
+            {
+                0 => SmartTestStatus.CompletedWithoutError,
+                1 => SmartTestStatus.CompletedWithError,
+                2 => SmartTestStatus.Aborted,
+                _ => SmartTestStatus.Unknown
+            };
+            session.ResultMessage = $"NVMe self-test result: {resultValue}";
+        }
+
+        session.LastCheckedAt = DateTime.Now;
+    }
+
+    /// <summary>
+    /// Mapea texto de estado de smartctl a SmartTestStatus.
+    /// </summary>
+    public static SmartTestStatus MapStatusText(string statusText)
+    {
+        if (string.IsNullOrWhiteSpace(statusText))
+            return SmartTestStatus.Unknown;
+
+        var lower = statusText.ToLowerInvariant();
+
+        if (lower.Contains("completed without error") ||
+            lower.Contains("completed, no errors") ||
+            lower.Contains("no errors"))
+            return SmartTestStatus.CompletedWithoutError;
+
+        // "Completed with error", "Completed: read failure", "failed", "failure"
+        if ((lower.StartsWith("completed") && (lower.Contains("error") || lower.Contains("failure"))) ||
+            lower.Contains("failed"))
+            return SmartTestStatus.CompletedWithError;
+
+        if (lower.Contains("aborted"))
+            return SmartTestStatus.Aborted;
+
+        if (lower.Contains("interrupted"))
+            return SmartTestStatus.Interrupted;
+
+        if (lower.Contains("in progress") || lower.Contains("remaining"))
+            return SmartTestStatus.InProgress;
+
+        if (lower.Contains("unsupported") || lower.Contains("not supported"))
+            return SmartTestStatus.Unsupported;
+
+        if (lower.Contains("starting"))
+            return SmartTestStatus.Starting;
+
+        return SmartTestStatus.Unknown;
+    }
+
+    /// <summary>
+    /// Extrae los minutos estimados de un mensaje como "Test will complete in 2 minutes".
+    /// Retorna null si no puede determinarse.
+    /// </summary>
+    public static int? ExtractEstimatedMinutes(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return null;
+
+        // Buscar patrón "in N minutes"
+        var match = System.Text.RegularExpressions.Regex.Match(
+            message, @"in\s+(\d+)\s+minutes?",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        if (match.Success && int.TryParse(match.Groups[1].Value, out var minutes))
+            return minutes;
+
+        // Buscar patrón "N minutes"
+        match = System.Text.RegularExpressions.Regex.Match(
+            message, @"(\d+)\s+minutes?",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        if (match.Success && int.TryParse(match.Groups[1].Value, out minutes))
+            return minutes;
+
+        return null;
+    }
+
+    /// <summary>
+    /// Convierte SmartTestStatus a mensaje legible en español.
+    /// </summary>
+    public static string StatusToMessage(SmartTestStatus status) => status switch
+    {
+        SmartTestStatus.NotStarted => "Test no iniciado",
+        SmartTestStatus.Starting => "Test iniciándose",
+        SmartTestStatus.InProgress => "Test en ejecución",
+        SmartTestStatus.CompletedWithoutError => "Prueba completada sin errores reportados.",
+        SmartTestStatus.CompletedWithError => "La prueba detectó errores. Revisar SMART y realizar backup.",
+        SmartTestStatus.Aborted => "Prueba abortada.",
+        SmartTestStatus.Interrupted => "Prueba interrumpida.",
+        SmartTestStatus.Unsupported => "El dispositivo no soporta esta prueba.",
+        SmartTestStatus.FailedToStart => "No se pudo iniciar la prueba.",
+        SmartTestStatus.Unknown => "No se pudo determinar el resultado.",
+        _ => "Estado desconocido"
+    };
 }
