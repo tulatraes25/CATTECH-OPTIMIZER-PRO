@@ -15,6 +15,7 @@ public partial class SmartDiskViewModel : ObservableObject
     private readonly ISmartDiskService _smartDiskService;
     private List<SmartDiskDevice> _allDevices = [];
     private List<SmartDiskReport> _allReports = [];
+    private SmartAnalysisResult? _lastAnalysisResult;
 
     // --- Estado de la UI ---
 
@@ -80,6 +81,9 @@ public partial class SmartDiskViewModel : ObservableObject
 
     [ObservableProperty]
     private string _summaryNotAvailable = "0";
+
+    [ObservableProperty]
+    private string _summaryUnknown = "0";
 
     [ObservableProperty]
     private int _summaryWarningCount;
@@ -206,7 +210,9 @@ public partial class SmartDiskViewModel : ObservableObject
 
         try
         {
-            var result = await _smartDiskService.AnalyzeAllDisksAsync();
+            // Conservar el resultado original completo (timestamps, errors, warnings, metadata)
+            _lastAnalysisResult = await _smartDiskService.AnalyzeAllDisksAsync();
+            var result = _lastAnalysisResult;
 
             _allReports = result.Reports.ToList();
 
@@ -219,18 +225,21 @@ public partial class SmartDiskViewModel : ObservableObject
             var warning = _allReports.Count(r => r.HealthStatus == SmartHealthStatus.Warning);
             var critical = _allReports.Count(r => r.HealthStatus == SmartHealthStatus.Critical);
             var notAvailable = _allReports.Count(r => r.HealthStatus == SmartHealthStatus.NotAvailable);
+            var unknown = _allReports.Count(r => r.HealthStatus == SmartHealthStatus.Unknown);
 
             SummaryTotal = result.DevicesAnalyzed.ToString();
             SummaryGood = good.ToString();
             SummaryWarning = warning.ToString();
             SummaryCritical = critical.ToString();
             SummaryNotAvailable = notAvailable.ToString();
+            SummaryUnknown = unknown.ToString();
             SummaryWarningCount = warning;
             SummaryCriticalCount = critical;
 
-            HasResults = true;
-            HasDevices = Reports.Count > 0;
+            // HasResults: existen reportes SMART. HasDevices: existen dispositivos detectados.
+            HasResults = Reports.Count > 0;
 
+            // Lógica de estados corregida
             if (critical > 0)
             {
                 StatusText = $"Análisis completado: {critical} disco(s) crítico(s)";
@@ -241,10 +250,22 @@ public partial class SmartDiskViewModel : ObservableObject
                 StatusText = $"Análisis completado: {warning} advertencia(s)";
                 ShowSuccess($"Análisis completado. {warning} disco(s) con advertencias.");
             }
-            else
+            else if (notAvailable > 0 || unknown > 0)
+            {
+                var indeterminate = notAvailable + unknown;
+                StatusText = $"Análisis completado con estado no determinado en {indeterminate} disco(s)";
+                ShowSuccess($"Análisis completado. Estado no determinado en {indeterminate} disco(s). " +
+                           "SMART no disponible no significa que el disco esté sano.");
+            }
+            else if (Reports.Count > 0 && good == Reports.Count)
             {
                 StatusText = "Análisis completado";
                 ShowSuccess("Todos los discos en buen estado.");
+            }
+            else
+            {
+                StatusText = "Análisis completado";
+                ShowSuccess("Análisis completado.");
             }
         }
         catch (Exception ex)
@@ -260,13 +281,14 @@ public partial class SmartDiskViewModel : ObservableObject
 
     /// <summary>
     /// Guarda el resultado del análisis.
+    /// Preserva el SmartAnalysisResult original (timestamps, errors, warnings).
     /// </summary>
     [RelayCommand]
     private async Task SaveAnalysisAsync()
     {
-        if (_allReports.Count == 0)
+        if (_lastAnalysisResult == null)
         {
-            ShowError("No hay análisis para guardar.");
+            ShowError("No hay análisis para guardar. Ejecute un análisis primero.");
             return;
         }
 
@@ -274,17 +296,8 @@ public partial class SmartDiskViewModel : ObservableObject
 
         try
         {
-            var result = new SmartAnalysisResult
-            {
-                SmartctlAvailable = SmartctlAvailable,
-                SmartctlVersion = SmartctlVersion,
-                DevicesAnalyzed = _allReports.Count,
-                Reports = _allReports,
-                StartedAt = DateTime.Now,
-                FinishedAt = DateTime.Now
-            };
-
-            var fileName = await _smartDiskService.SaveResultAsync(result);
+            // Guardar el resultado original completo, no reconstruirlo
+            var fileName = await _smartDiskService.SaveResultAsync(_lastAnalysisResult);
             ShowSuccess($"Análisis guardado: {fileName}");
         }
         catch (Exception ex)

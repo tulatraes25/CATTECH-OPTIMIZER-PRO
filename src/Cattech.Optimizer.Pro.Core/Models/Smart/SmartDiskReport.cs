@@ -127,7 +127,58 @@ public class SmartDiskReport
     /// <summary>Atributos SMART relevantes.</summary>
     public List<SmartAttribute> ImportantAttributes { get; set; } = new();
 
-    /// <summary>Advertencias generadas.</summary>
+    // --- Métricas calculadas (derivadas de ImportantAttributes por ID) ---
+
+    /// <summary>
+    /// Sectores reasignados (ATA ID 5: Reallocated_Sector_Ct).
+    /// Devuelve 0 si el atributo no existe o el disco no es ATA/SATA.
+    /// </summary>
+    public long ReallocatedSectorCount => GetAttributeRawValue(5);
+
+    /// <summary>
+    /// Sectores pendientes (ATA ID 197: Current_Pending_Sector).
+    /// Devuelve 0 si el atributo no existe.
+    /// </summary>
+    public long PendingSectorCount => GetAttributeRawValue(197);
+
+    /// <summary>
+    /// Sectores offline no corregibles (ATA ID 198: Offline_Uncorrectable).
+    /// Devuelve 0 si el atributo no existe.
+    /// </summary>
+    public long OfflineUncorrectableCount => GetAttributeRawValue(198);
+
+    /// <summary>
+    /// Errores CRC UDMA (ATA ID 199: UDMA_CRC_Error_Count).
+    /// Devuelve 0 si el atributo no existe.
+    /// </summary>
+    public long UDMACrcErrorCount => GetAttributeRawValue(199);
+
+    // --- Métricas NVMe (almacenadas estructuradamente) ---
+
+    /// <summary>NVMe: porcentaje de vida útil usado.</summary>
+    public int? NvmePercentageUsed { get; set; }
+
+    /// <summary>NVMe: espacio de repuesto disponible.</summary>
+    public int? NvmeAvailableSpare { get; set; }
+
+    /// <summary>NVMe: errores de medios.</summary>
+    public long? NvmeMediaErrors { get; set; }
+
+    /// <summary>NVMe: apagados inseguros.</summary>
+    public long? NvmeUnsafeShutdowns { get; set; }
+
+    /// <summary>
+    /// Obtiene el RawValue de un atributo por ID.
+    /// Devuelve 0 si no existe.
+    /// </summary>
+    private long GetAttributeRawValue(int attributeId)
+    {
+        var attribute = ImportantAttributes.FirstOrDefault(a => a.Id == attributeId);
+        return attribute?.RawValue ?? 0;
+    }
+
+    /// <summary>
+    /// Advertencias generadas.</summary>
     public List<string> Warnings { get; set; } = new();
 
     /// <summary>Errores encontrados.</summary>

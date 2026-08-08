@@ -146,6 +146,8 @@
                         <ColumnDefinition Width="Auto" /><ColumnDefinition Width="20" />
                         <ColumnDefinition Width="Auto" /><ColumnDefinition Width="20" />
                         <ColumnDefinition Width="Auto" /><ColumnDefinition Width="20" />
+                        <ColumnDefinition Width="Auto" /><ColumnDefinition Width="20" />
+                        <ColumnDefinition Width="Auto" /><ColumnDefinition Width="20" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <TextBlock Grid.Column="0" Text="Total:" FontSize="11" Foreground="#555" />
@@ -158,6 +160,8 @@
                     <TextBlock Grid.Column="7" Text="{Binding SummaryCritical}" FontSize="11" FontWeight="SemiBold" Foreground="#C62828" />
                     <TextBlock Grid.Column="8" Text="❓ No disponible:" FontSize="11" Foreground="#555" />
                     <TextBlock Grid.Column="9" Text="{Binding SummaryNotAvailable}" FontSize="11" FontWeight="SemiBold" Foreground="#999" />
+                    <TextBlock Grid.Column="10" Text="❔ Desconocido:" FontSize="11" Foreground="#555" />
+                    <TextBlock Grid.Column="11" Text="{Binding SummaryUnknown}" FontSize="11" FontWeight="SemiBold" Foreground="#999" />
                 </Grid>
             </StackPanel>
         </Border>
@@ -220,7 +224,8 @@
                         <DataGridTextColumn Header="Tipo" Binding="{Binding DeviceType}" Width="60" />
                         <DataGridTextColumn Header="Temp" Binding="{Binding TemperatureCelsius, StringFormat='{}{0}°C'}" Width="50" />
                         <DataGridTextColumn Header="Horas" Binding="{Binding PowerOnHours}" Width="60" />
-                        <DataGridTextColumn Header="Reasign." Binding="{Binding ImportantAttributes.Count}" Width="60" />
+                        <DataGridTextColumn Header="Reasign." Binding="{Binding ReallocatedSectorCount}" Width="55" />
+                        <DataGridTextColumn Header="Pendientes" Binding="{Binding PendingSectorCount}" Width="60" />
                         <DataGridTextColumn Header="Backup" Binding="{Binding RequiresBackupRecommendation, Converter={StaticResource BoolToVisYesNo}}" Width="55" />
                     </DataGrid.Columns>
                 </DataGrid>

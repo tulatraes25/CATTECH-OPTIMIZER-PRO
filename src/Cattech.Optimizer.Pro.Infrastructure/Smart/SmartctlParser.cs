@@ -444,19 +444,25 @@ public static class SmartctlParser
         {
             if (nvme.TryGetProperty("percentage_used", out var percentUsed))
             {
+                report.NvmePercentageUsed = percentUsed.GetInt32();
+
                 // Guardar como advertencia si es alto
-                if (percentUsed.GetInt32() >= 80)
+                if (report.NvmePercentageUsed >= 80)
                 {
-                    report.Warnings.Add($"NVMe vida útil usada: {percentUsed.GetInt32()}%");
+                    report.Warnings.Add($"NVMe vida útil usada: {report.NvmePercentageUsed}%");
                 }
             }
 
-            if (nvme.TryGetProperty("available_spare", out var spare) &&
-                nvme.TryGetProperty("available_spare_threshold", out var threshold))
+            if (nvme.TryGetProperty("available_spare", out var spare))
             {
-                var spareVal = spare.GetInt32();
-                var threshVal = threshold.GetInt32();
-                if (threshVal > 0 && spareVal <= threshVal)
+                report.NvmeAvailableSpare = spare.GetInt32();
+            }
+
+            if (nvme.TryGetProperty("available_spare_threshold", out var spareThreshold))
+            {
+                var spareVal = report.NvmeAvailableSpare ?? -1;
+                var threshVal = spareThreshold.GetInt32();
+                if (threshVal > 0 && spareVal >= 0 && spareVal <= threshVal)
                 {
                     report.Warnings.Add($"NVMe espacio de repuesto bajo: {spareVal}% (umbral: {threshVal}%)");
                 }
@@ -472,10 +478,19 @@ public static class SmartctlParser
                 }
             }
 
-            if (nvme.TryGetProperty("media_errors", out var mediaErrors) && mediaErrors.GetInt64() > 0)
+            if (nvme.TryGetProperty("media_errors", out var mediaErrors))
             {
-                report.Errors.Add($"NVMe media errors: {mediaErrors.GetInt64()}");
-                report.RequiresBackupRecommendation = true;
+                report.NvmeMediaErrors = mediaErrors.GetInt64();
+                if (report.NvmeMediaErrors > 0)
+                {
+                    report.Errors.Add($"NVMe media errors: {report.NvmeMediaErrors}");
+                    report.RequiresBackupRecommendation = true;
+                }
+            }
+
+            if (nvme.TryGetProperty("unsafe_shutdowns", out var unsafeShutdowns))
+            {
+                report.NvmeUnsafeShutdowns = unsafeShutdowns.GetInt64();
             }
         }
     }

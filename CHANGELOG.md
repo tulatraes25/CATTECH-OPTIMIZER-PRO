@@ -87,6 +87,16 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   - Tabla de dispositivos detectados (Dispositivo, Tipo, Protocolo, Modelo, Serie)
   - Advertencia de solo lectura y "No disponible no significa sano"
   - Ayuda si smartctl no está disponible
+
+### Fixed (SMART UI)
+- **Métricas SMART corregidas**: Reasign./Pendientes ahora muestran RawValue real de IDs 5/197, no ImportantAttributes.Count
+- **Propiedades calculadas**: ReallocatedSectorCount, PendingSectorCount, OfflineUncorrectableCount, UDMACrcErrorCount
+- **Métricas NVMe estructuradas**: NvmePercentageUsed, NvmeAvailableSpare, NvmeMediaErrors, NvmeUnsafeShutdowns
+- **Estados corregidos**: NotAvailable/Unknown ya no muestran "Todos los discos en buen estado"
+- **SummaryUnknown**: contador agregado al resumen
+- **Preservación de resultado**: SaveAnalysisAsync conserva SmartAnalysisResult original (timestamps, errors, warnings)
+- **HasDevices vs HasResults**: conceptos separados correctamente
+- 15 tests nuevos (243 total)
 - SmartctlAvailability, SmartDiskDevice, SmartctlCommandResult
 - ISmartctlRunner, ISmartDiskService interfaces
 - 32 tests de smartctl + 18 tests de SMART (214 total)

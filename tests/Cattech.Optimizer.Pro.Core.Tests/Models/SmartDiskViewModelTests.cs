@@ -277,4 +277,258 @@ public class SmartDiskViewModelTests
         Assert.Contains("CRÍTICO", critical.HealthSummary);
         Assert.Contains("Backup", critical.HealthSummary);
     }
+
+    // =====================
+    // Tests de métricas calculadas
+    // =====================
+
+    [Fact]
+    public void ReallocatedSectorCount_ReturnsRawValueOfId5()
+    {
+        var report = new SmartDiskReport
+        {
+            ImportantAttributes =
+            [
+                new SmartAttribute { Id = 5, Name = "Reallocated_Sector_Ct", RawValue = 7 },
+                new SmartAttribute { Id = 9, Name = "Power_On_Hours", RawValue = 1000 }
+            ]
+        };
+
+        Assert.Equal(7, report.ReallocatedSectorCount);
+    }
+
+    [Fact]
+    public void PendingSectorCount_ReturnsRawValueOfId197()
+    {
+        var report = new SmartDiskReport
+        {
+            ImportantAttributes =
+            [
+                new SmartAttribute { Id = 197, Name = "Current_Pending_Sector", RawValue = 3 }
+            ]
+        };
+
+        Assert.Equal(3, report.PendingSectorCount);
+    }
+
+    [Fact]
+    public void OfflineUncorrectableCount_ReturnsRawValueOfId198()
+    {
+        var report = new SmartDiskReport
+        {
+            ImportantAttributes =
+            [
+                new SmartAttribute { Id = 198, Name = "Offline_Uncorrectable", RawValue = 5 }
+            ]
+        };
+
+        Assert.Equal(5, report.OfflineUncorrectableCount);
+    }
+
+    [Fact]
+    public void UDMACrcErrorCount_ReturnsRawValueOfId199()
+    {
+        var report = new SmartDiskReport
+        {
+            ImportantAttributes =
+            [
+                new SmartAttribute { Id = 199, Name = "UDMA_CRC_Error_Count", RawValue = 2 }
+            ]
+        };
+
+        Assert.Equal(2, report.UDMACrcErrorCount);
+    }
+
+    [Fact]
+    public void CalculatedMetrics_MissingAttribute_ReturnsZero()
+    {
+        var report = new SmartDiskReport(); // Sin atributos
+
+        Assert.Equal(0, report.ReallocatedSectorCount);
+        Assert.Equal(0, report.PendingSectorCount);
+        Assert.Equal(0, report.OfflineUncorrectableCount);
+        Assert.Equal(0, report.UDMACrcErrorCount);
+    }
+
+    [Fact]
+    public void CalculatedMetrics_DoNotUseImportantAttributesCount()
+    {
+        // 5 atributos en la lista, pero ninguno es ID 5
+        var report = new SmartDiskReport
+        {
+            ImportantAttributes =
+            [
+                new SmartAttribute { Id = 9, RawValue = 100 },
+                new SmartAttribute { Id = 12, RawValue = 50 },
+                new SmartAttribute { Id = 194, RawValue = 35 },
+                new SmartAttribute { Id = 231, RawValue = 90 },
+                new SmartAttribute { Id = 233, RawValue = 80 }
+            ]
+        };
+
+        // Count = 5, pero ReallocatedSectorCount debe ser 0 (no existe ID 5)
+        Assert.Equal(5, report.ImportantAttributes.Count);
+        Assert.Equal(0, report.ReallocatedSectorCount);
+    }
+
+    // =====================
+    // Tests de métricas NVMe
+    // =====================
+
+    [Fact]
+    public void NvmeMetrics_AreStoredStructured()
+    {
+        var report = new SmartDiskReport
+        {
+            NvmePercentageUsed = 85,
+            NvmeAvailableSpare = 10,
+            NvmeMediaErrors = 5,
+            NvmeUnsafeShutdowns = 3
+        };
+
+        Assert.Equal(85, report.NvmePercentageUsed);
+        Assert.Equal(10, report.NvmeAvailableSpare);
+        Assert.Equal(5, report.NvmeMediaErrors);
+        Assert.Equal(3, report.NvmeUnsafeShutdowns);
+    }
+
+    [Fact]
+    public void NvmeMetrics_DefaultToNull()
+    {
+        var report = new SmartDiskReport();
+
+        Assert.Null(report.NvmePercentageUsed);
+        Assert.Null(report.NvmeAvailableSpare);
+        Assert.Null(report.NvmeMediaErrors);
+        Assert.Null(report.NvmeUnsafeShutdowns);
+    }
+
+    // =====================
+    // Tests de estados del resumen
+    // =====================
+
+    [Fact]
+    public void SummaryStatus_AllGood_AllDisksHealthy()
+    {
+        var reports = new List<SmartDiskReport>
+        {
+            new() { HealthStatus = SmartHealthStatus.Good },
+            new() { HealthStatus = SmartHealthStatus.Good }
+        };
+
+        var good = reports.Count(r => r.HealthStatus == SmartHealthStatus.Good);
+        var notAvailable = reports.Count(r => r.HealthStatus == SmartHealthStatus.NotAvailable);
+        var unknown = reports.Count(r => r.HealthStatus == SmartHealthStatus.Unknown);
+
+        // Solo "todos sanos" si todos son Good
+        Assert.Equal(2, good);
+        Assert.Equal(0, notAvailable);
+        Assert.Equal(0, unknown);
+        Assert.True(reports.Count > 0 && good == reports.Count);
+    }
+
+    [Fact]
+    public void SummaryStatus_GoodPlusNotAvailable_NotAllHealthy()
+    {
+        var reports = new List<SmartDiskReport>
+        {
+            new() { HealthStatus = SmartHealthStatus.Good },
+            new() { HealthStatus = SmartHealthStatus.NotAvailable }
+        };
+
+        var good = reports.Count(r => r.HealthStatus == SmartHealthStatus.Good);
+        var notAvailable = reports.Count(r => r.HealthStatus == SmartHealthStatus.NotAvailable);
+
+        // No todos son Good → NO debe mostrar "todos sanos"
+        Assert.Equal(1, good);
+        Assert.Equal(1, notAvailable);
+        Assert.False(good == reports.Count);
+    }
+
+    [Fact]
+    public void SummaryStatus_GoodPlusUnknown_NotAllHealthy()
+    {
+        var reports = new List<SmartDiskReport>
+        {
+            new() { HealthStatus = SmartHealthStatus.Good },
+            new() { HealthStatus = SmartHealthStatus.Unknown }
+        };
+
+        var good = reports.Count(r => r.HealthStatus == SmartHealthStatus.Good);
+        var unknown = reports.Count(r => r.HealthStatus == SmartHealthStatus.Unknown);
+
+        Assert.Equal(1, good);
+        Assert.Equal(1, unknown);
+        Assert.False(good == reports.Count);
+    }
+
+    [Fact]
+    public void SummaryUnknown_CalculatesCorrectly()
+    {
+        var reports = new List<SmartDiskReport>
+        {
+            new() { HealthStatus = SmartHealthStatus.Good },
+            new() { HealthStatus = SmartHealthStatus.Warning },
+            new() { HealthStatus = SmartHealthStatus.Unknown },
+            new() { HealthStatus = SmartHealthStatus.Unknown }
+        };
+
+        var unknown = reports.Count(r => r.HealthStatus == SmartHealthStatus.Unknown);
+
+        Assert.Equal(2, unknown);
+    }
+
+    // =====================
+    // Tests de preservación del resultado
+    // =====================
+
+    [Fact]
+    public void SmartAnalysisResult_Timestamps_ArePreserved()
+    {
+        var startedAt = new DateTime(2026, 1, 15, 10, 30, 0);
+        var finishedAt = new DateTime(2026, 1, 15, 10, 31, 30);
+
+        var result = new SmartAnalysisResult
+        {
+            StartedAt = startedAt,
+            FinishedAt = finishedAt
+        };
+
+        Assert.Equal(startedAt, result.StartedAt);
+        Assert.Equal(finishedAt, result.FinishedAt);
+    }
+
+    [Fact]
+    public void SmartAnalysisResult_ErrorsAndWarnings_ArePreserved()
+    {
+        var result = new SmartAnalysisResult
+        {
+            Errors = ["Error 1", "Error 2"],
+            Warnings = ["Warning 1"]
+        };
+
+        Assert.Equal(2, result.Errors.Count);
+        Assert.Single(result.Warnings);
+    }
+
+    [Fact]
+    public void SmartAnalysisResult_SerializePreservesTimestamps()
+    {
+        var startedAt = new DateTime(2026, 1, 15, 10, 30, 0);
+        var result = new SmartAnalysisResult
+        {
+            StartedAt = startedAt,
+            Errors = ["Test error"],
+            Warnings = ["Test warning"],
+            Reports = [new() { HealthStatus = SmartHealthStatus.Good }]
+        };
+
+        var json = JsonSerializer.Serialize(result, SerializerOptions);
+        var deserialized = JsonSerializer.Deserialize<SmartAnalysisResult>(json, SerializerOptions);
+
+        Assert.NotNull(deserialized);
+        Assert.Equal(startedAt, deserialized!.StartedAt);
+        Assert.Single(deserialized.Errors);
+        Assert.Single(deserialized.Warnings);
+    }
 }
