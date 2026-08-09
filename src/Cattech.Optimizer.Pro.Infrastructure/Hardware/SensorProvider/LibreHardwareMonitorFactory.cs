@@ -151,6 +151,7 @@ internal sealed class SensorNodeAdapter : ISensorNode
         LibreHardwareMonitor.Hardware.SensorType.Temperature => InternalSensorType.Temperature,
         LibreHardwareMonitor.Hardware.SensorType.Load => InternalSensorType.Load,
         LibreHardwareMonitor.Hardware.SensorType.Clock => InternalSensorType.Clock,
+        LibreHardwareMonitor.Hardware.SensorType.SmallData => InternalSensorType.SmallData,
         _ => InternalSensorType.Other
     };
 

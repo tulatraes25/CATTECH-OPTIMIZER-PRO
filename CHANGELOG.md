@@ -240,6 +240,19 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - **Sin interpretación**: sin thresholds, sin estados de rendimiento, sin elección de sensor principal, sin selección por nombre
 - **Sin cambios de UI**: HardwareView sigue mostrando solo temperaturas
 - 40 tests nuevos (532 total)
+
+### Added (Memoria GPU SmallData - Fase B.2.2)
+- **HardwareGpuMemorySensor** (Core): HardwareName, HardwareType, SensorName, SensorIdentifier, ValueMB/MinMB/MaxMB nullable, Unit => "MB"
+- **Sin semántica inferida**: no hay UsedMB/FreeMB/TotalMB/DedicatedMB/SharedMB/UsagePercent — CATTECH conserva lo que informa el proveedor
+- **HardwareLiveSnapshot**: + GpuMemorySensors, HasGpuMemorySensors, ValidGpuMemorySensorCount
+- **InternalSensorType**: + SmallData (mapeo exclusivo por SensorType, sin heurística por nombre)
+- **Filtro GPU**: SmallData solo de hardware Gpu; CPU/Memoria/Almacenamiento/Placa Madre se ignoran; SensorType.Data no se incorpora (B.3 tratará RAM)
+- **Mismo Refresh**: temp + load + clock + SmallData con Create=1, Refresh=1, Dispose=1
+- **Sin conversiones**: el valor SmallData se conserva tal cual (no MB→GB, no redondeos, no clamps)
+- **Política null/NaN/Infinity** idéntica para ValueMB/MinMB/MaxMB
+- **Nombres preservados literalmente**: "GPU Memory Used/Free/Total", "D3D Dedicated/Shared Memory Used" se capturan sin lógica especial
+- **Stream**: WatchLiveSnapshotsAsync incluye GpuMemorySensors por muestra; fallos vacían las tres listas y se recuperan
+- 37 tests nuevos (569 total)
 - SmartctlAvailability, SmartDiskDevice, SmartctlCommandResult
 - ISmartctlRunner, ISmartDiskService interfaces
 - 32 tests de smartctl + 18 tests de SMART (214 total)

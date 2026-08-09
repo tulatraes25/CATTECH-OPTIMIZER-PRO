@@ -36,11 +36,12 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 
 1. ✅ Temperaturas en tiempo real (B.1 completada: B.1.1 fundación, B.1.2 muestreo repetido, B.1.3 UI inicial)
 2. ✅ B.2.1: métricas dinámicas CPU/GPU (Load + Clock) capturadas con un solo Refresh
-3. CPU detallada (núcleos, temperatura, uso)
-4. GPU detallada (temperatura, uso, memoria)
-5. Batería de notebooks (si aplica)
-6. Placa madre (BIOS, chipset)
-7. RAM avanzada (velocidad, timings, slots)
+3. ✅ B.2.2: memoria GPU (SmallData) en MB con el mismo Refresh; sin interpretar por nombre
+4. CPU detallada (núcleos, temperatura, uso)
+5. GPU detallada (temperatura, uso, memoria)
+6. Batería de notebooks (si aplica)
+7. Placa madre (BIOS, chipset)
+8. RAM avanzada (velocidad, timings, slots)
 
 > B.1.3 creó la UI inicial exclusiva de temperaturas; B.4 ampliará esa misma pantalla con todo el hardware avanzado (CPU/GPU/batería/RAM/placa).
 
@@ -90,6 +91,7 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 | B.1.3: UI de temperaturas en tiempo real | — | B.1.2 | ✅ Implementado |
 | Fase B.1: Sensores temperatura | 1 semana | LibreHardwareMonitorLib | ✅ Completada |
 | B.2.1: Fundación métricas dinámicas CPU/GPU (Load + Clock) | — | B.1.2 | ✅ Implementado |
+| B.2.2: Métricas memoria GPU (SmallData) | — | B.2.1 | ✅ Implementado |
 | Fase B.2: CPU/GPU/Batería | 1 semana | LibreHardwareMonitorLib | En curso |
 | Fase B.3: RAM avanzada | 0.5 semana | LibreHardwareMonitorLib |
 | Fase B.4: UI Hardware avanzado | 1 semana | Modelos |
@@ -114,6 +116,7 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 - [x] Fundación sensores de temperatura (B.1.1/B.1.2): sesión reutilizable, muestreo repetido cancelable
 - [x] UI inicial de temperaturas en tiempo real (B.1.3): Actualizar una vez, Iniciar/Detener monitoreo, N/D, sin thresholds
 - [x] Fundación métricas dinámicas CPU/GPU (B.2.1): Load + Clock con un solo Refresh, sin UI
+- [x] Métricas memoria GPU (B.2.2): SmallData en MB, sin interpretar Used/Free/Total por nombre, sin usage calculado, mismo Refresh
 - [ ] Mostrar CPU detallada
 - [ ] Mostrar GPU detallada
 - [ ] Mostrar batería (si aplica)

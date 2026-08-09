@@ -22,6 +22,7 @@ internal enum InternalSensorType
     Temperature,
     Load,
     Clock,
+    SmallData,
     Other
 }
 

@@ -1878,4 +1878,681 @@ public class LibreHardwareSensorServiceTests
         Assert.Equal(2, live.TemperatureSensors.Count);
         Assert.Equal(4, live.PerformanceSensors.Count);
     }
+
+    // =====================
+    // Tests Fase B.2.2 - Memoria GPU (SensorType.SmallData)
+    // =====================
+
+    private static FakeSensor SmallData(string name, string identifier, float? value = null,
+        float? min = null, float? max = null) =>
+        new(name, identifier, InternalSensorType.SmallData, value, min, max);
+
+    private static FakeSession CreateGpuMemorySession(out FakeSensor gpuMemoryUsed, out FakeSensor gpuMemoryTotal)
+    {
+        gpuMemoryUsed = SmallData("GPU Memory Used", "/gpu-nvidia/0/small-data/0", 6144f);
+        gpuMemoryTotal = SmallData("GPU Memory Total", "/gpu-nvidia/0/small-data/1", 12288f);
+
+        return new FakeSession
+        {
+            Hardware =
+            [
+                new FakeHardware
+                {
+                    Name = "NVIDIA GeForce RTX 4070",
+                    Identifier = "/gpu-nvidia/0",
+                    HardwareType = InternalHardwareType.Gpu,
+                    Sensors =
+                    [
+                        Temp("GPU Core", "/gpu-nvidia/0/temperature/0", 55.0f),
+                        Load("GPU Core", "/gpu-nvidia/0/load/0", 42.0f),
+                        Clock("GPU Clock", "/gpu-nvidia/0/clock/0", 1905f),
+                        gpuMemoryUsed,
+                        gpuMemoryTotal
+                    ]
+                }
+            ]
+        };
+    }
+
+    [Fact]
+    public async Task GpuSmallData_Captured()
+    {
+        var factory = new FakeFactory { Session = CreateGpuMemorySession(out _, out _) };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Equal(2, live.GpuMemorySensors.Count);
+        Assert.True(live.HasGpuMemorySensors);
+        Assert.Equal(2, live.ValidGpuMemorySensorCount);
+        Assert.Contains(live.GpuMemorySensors, s => s.SensorName == "GPU Memory Used");
+        Assert.Contains(live.GpuMemorySensors, s => s.SensorName == "GPU Memory Total");
+        Assert.All(live.GpuMemorySensors, s => Assert.Equal("NVIDIA GeForce RTX 4070", s.HardwareName));
+    }
+
+    [Fact]
+    public async Task SmallData_UnitMB()
+    {
+        var factory = new FakeFactory { Session = CreateGpuMemorySession(out _, out _) };
+
+        var live = await CaptureLive(factory);
+
+        Assert.All(live.GpuMemorySensors, s => Assert.Equal("MB", s.Unit));
+    }
+
+    [Fact]
+    public async Task GpuMemoryValue_PreservedNoConversion()
+    {
+        var factory = new FakeFactory { Session = CreateGpuMemorySession(out _, out _) };
+
+        var live = await CaptureLive(factory);
+
+        var used = live.GpuMemorySensors.Single(s => s.SensorName == "GPU Memory Used");
+        Assert.Equal(6144.0, used.ValueMB);
+    }
+
+    [Fact]
+    public async Task GpuMemoryMin_Preserved()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "NVIDIA GeForce RTX 4070",
+                        Identifier = "/gpu-nvidia/0",
+                        HardwareType = InternalHardwareType.Gpu,
+                        Sensors = [SmallData("GPU Memory Used", "/gpu-nvidia/0/small-data/0", 4000f, 2000f, 8000f)]
+                    }
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Equal(2000.0, live.GpuMemorySensors[0].MinMB);
+    }
+
+    [Fact]
+    public async Task GpuMemoryMax_Preserved()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "NVIDIA GeForce RTX 4070",
+                        Identifier = "/gpu-nvidia/0",
+                        HardwareType = InternalHardwareType.Gpu,
+                        Sensors = [SmallData("GPU Memory Used", "/gpu-nvidia/0/small-data/0", 4000f, 2000f, 8000f)]
+                    }
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Equal(8000.0, live.GpuMemorySensors[0].MaxMB);
+    }
+
+    [Fact]
+    public async Task GpuMemoryValueNull_StaysNull()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "NVIDIA GeForce RTX 4070",
+                        Identifier = "/gpu-nvidia/0",
+                        HardwareType = InternalHardwareType.Gpu,
+                        Sensors = [SmallData("GPU Memory Used", "/gpu-nvidia/0/small-data/0", null)]
+                    }
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Null(Assert.Single(live.GpuMemorySensors).ValueMB);
+        Assert.Equal(0, live.ValidGpuMemorySensorCount);
+    }
+
+    [Fact]
+    public async Task GpuMemoryNaN_NormalizedToNull()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "NVIDIA GeForce RTX 4070",
+                        Identifier = "/gpu-nvidia/0",
+                        HardwareType = InternalHardwareType.Gpu,
+                        Sensors = [SmallData("GPU Memory Used", "/gpu-nvidia/0/small-data/0", float.NaN)]
+                    }
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Null(Assert.Single(live.GpuMemorySensors).ValueMB);
+    }
+
+    [Fact]
+    public async Task GpuMemoryInfinity_NormalizedToNull()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "NVIDIA GeForce RTX 4070",
+                        Identifier = "/gpu-nvidia/0",
+                        HardwareType = InternalHardwareType.Gpu,
+                        Sensors = [SmallData("GPU Memory Used", "/gpu-nvidia/0/small-data/0", float.PositiveInfinity)]
+                    }
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Null(Assert.Single(live.GpuMemorySensors).ValueMB);
+    }
+
+    [Fact]
+    public async Task CpuSmallData_Ignored()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "Intel Core i7-13700K",
+                        Identifier = "/intelcpu/0",
+                        HardwareType = InternalHardwareType.Cpu,
+                        Sensors = [SmallData("L2 Cache", "/intelcpu/0/small-data/0", 2048f)]
+                    }
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Empty(live.GpuMemorySensors);
+    }
+
+    [Fact]
+    public async Task MemorySmallData_Ignored()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "G.Skill DDR5",
+                        Identifier = "/ram/0",
+                        HardwareType = InternalHardwareType.Memory,
+                        Sensors = [SmallData("Memory Used", "/ram/0/small-data/0", 8192f)]
+                    }
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Empty(live.GpuMemorySensors);
+    }
+
+    [Fact]
+    public async Task StorageSmallData_Ignored()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "Samsung SSD 980 PRO",
+                        Identifier = "/nvme/0",
+                        HardwareType = InternalHardwareType.Storage,
+                        Sensors = [SmallData("Used Space", "/nvme/0/small-data/0", 102400f)]
+                    }
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Empty(live.GpuMemorySensors);
+    }
+
+    [Fact]
+    public async Task MotherboardSmallData_Ignored()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "ASUS ROG STRIX Z790",
+                        Identifier = "/mb/0",
+                        HardwareType = InternalHardwareType.Motherboard,
+                        Sensors = [SmallData("Chipset Data", "/mb/0/small-data/0", 100f)]
+                    }
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Empty(live.GpuMemorySensors);
+    }
+
+    [Fact]
+    public async Task Temperature_NotInGpuMemorySensors()
+    {
+        var factory = new FakeFactory { Session = CreateGpuMemorySession(out _, out _) };
+
+        var live = await CaptureLive(factory);
+
+        Assert.DoesNotContain(live.GpuMemorySensors, s => s.SensorName == "GPU Core");
+    }
+
+    [Fact]
+    public async Task Load_NotInGpuMemorySensors()
+    {
+        var factory = new FakeFactory { Session = CreateGpuMemorySession(out _, out _) };
+
+        var live = await CaptureLive(factory);
+
+        Assert.All(live.GpuMemorySensors, s => Assert.Equal(0, s.ValueMB == 42.0 ? 1 : 0));
+        Assert.Equal(2, live.GpuMemorySensors.Count);
+    }
+
+    [Fact]
+    public async Task Clock_NotInGpuMemorySensors()
+    {
+        var factory = new FakeFactory { Session = CreateGpuMemorySession(out _, out _) };
+
+        var live = await CaptureLive(factory);
+
+        Assert.DoesNotContain(live.GpuMemorySensors, s => s.SensorName == "GPU Clock");
+    }
+
+    [Fact]
+    public async Task SmallData_NotInPerformanceSensors()
+    {
+        var factory = new FakeFactory { Session = CreateGpuMemorySession(out _, out _) };
+
+        var live = await CaptureLive(factory);
+
+        Assert.DoesNotContain(live.PerformanceSensors, s => s.SensorName == "GPU Memory Used");
+        Assert.DoesNotContain(live.PerformanceSensors, s => s.SensorName == "GPU Memory Total");
+    }
+
+    [Fact]
+    public async Task SmallData_NotInTemperatureSensors()
+    {
+        var factory = new FakeFactory { Session = CreateGpuMemorySession(out _, out _) };
+
+        var live = await CaptureLive(factory);
+
+        Assert.DoesNotContain(live.TemperatureSensors, s => s.SensorName == "GPU Memory Used");
+    }
+
+    [Fact]
+    public async Task TwoGpus_SameName_DifferentIdentifier_Preserved()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "NVIDIA GeForce RTX 4070",
+                        Identifier = "/gpu-nvidia/0",
+                        HardwareType = InternalHardwareType.Gpu,
+                        Sensors = [SmallData("GPU Memory Used", "/gpu-nvidia/0/small-data/0", 6144f)]
+                    },
+                    new FakeHardware
+                    {
+                        Name = "AMD Radeon RX 7800 XT",
+                        Identifier = "/gpu-amd/0",
+                        HardwareType = InternalHardwareType.Gpu,
+                        Sensors = [SmallData("GPU Memory Used", "/gpu-amd/0/small-data/0", 8192f)]
+                    }
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Equal(2, live.GpuMemorySensors.Count);
+        Assert.Contains(live.GpuMemorySensors, s => s.HardwareName == "NVIDIA GeForce RTX 4070");
+        Assert.Contains(live.GpuMemorySensors, s => s.HardwareName == "AMD Radeon RX 7800 XT");
+    }
+
+    [Fact]
+    public async Task DuplicateIdentifier_GpuMemoryDeduped()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "NVIDIA GeForce RTX 4070",
+                        Identifier = "/gpu-nvidia/0",
+                        HardwareType = InternalHardwareType.Gpu,
+                        Sensors =
+                        [
+                            SmallData("GPU Memory Used", "/gpu-nvidia/0/small-data/0", 6144f),
+                            SmallData("GPU Memory Used", "/gpu-nvidia/0/small-data/0", 7000f)
+                        ]
+                    }
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Equal(6144.0, Assert.Single(live.GpuMemorySensors).ValueMB);
+    }
+
+    [Fact]
+    public async Task MultipleSmallData_PreservedWithoutClassification()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "NVIDIA GeForce RTX 4070",
+                        Identifier = "/gpu-nvidia/0",
+                        HardwareType = InternalHardwareType.Gpu,
+                        Sensors =
+                        [
+                            SmallData("GPU Memory Used", "/gpu-nvidia/0/small-data/0", 6144f),
+                            SmallData("GPU Memory Free", "/gpu-nvidia/0/small-data/1", 6144f),
+                            SmallData("GPU Memory Total", "/gpu-nvidia/0/small-data/2", 12288f)
+                        ]
+                    }
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Equal(3, live.GpuMemorySensors.Count);
+        Assert.Equal("GPU Memory Used", live.GpuMemorySensors[0].SensorName);
+        Assert.Equal("GPU Memory Free", live.GpuMemorySensors[1].SensorName);
+        Assert.Equal("GPU Memory Total", live.GpuMemorySensors[2].SensorName);
+    }
+
+    [Fact]
+    public void UsedFreeTotalNames_PreservedLiterally_NoLogic()
+    {
+        // El modelo solo conserva el nombre: no existen propiedades semánticas de memoria.
+        var properties = typeof(HardwareGpuMemorySensor).GetProperties().Select(p => p.Name).ToList();
+
+        Assert.Contains("SensorName", properties);
+        Assert.DoesNotContain(properties, n => n is "UsedMB" or "FreeMB" or "TotalMB" or
+            "DedicatedMB" or "SharedMB" or "UsagePercent");
+    }
+
+    [Fact]
+    public void DedicatedName_NoSpecialLogic()
+    {
+        var sensor = new HardwareGpuMemorySensor { SensorName = "D3D Dedicated Memory Used", ValueMB = 4096 };
+
+        Assert.Equal("D3D Dedicated Memory Used", sensor.SensorName);
+        Assert.Equal(4096.0, sensor.ValueMB);
+        Assert.Equal("MB", sensor.Unit);
+    }
+
+    [Fact]
+    public void SharedName_NoSpecialLogic()
+    {
+        var sensor = new HardwareGpuMemorySensor { SensorName = "D3D Shared Memory Used", ValueMB = 1024 };
+
+        Assert.Equal("D3D Shared Memory Used", sensor.SensorName);
+        Assert.Equal(1024.0, sensor.ValueMB);
+        Assert.Equal("MB", sensor.Unit);
+    }
+
+    // =====================
+    // B.2.2 - Un solo Refresh con SmallData
+    // =====================
+
+    [Fact]
+    public async Task CombinedCaptureWithSmallData_CreateOnce()
+    {
+        var factory = new FakeFactory { Session = CreateGpuMemorySession(out _, out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        await service.GetLiveSnapshotAsync();
+
+        Assert.Equal(1, factory.CreateCount);
+    }
+
+    [Fact]
+    public async Task CombinedCaptureWithSmallData_RefreshOnce()
+    {
+        var factory = new FakeFactory { Session = CreateGpuMemorySession(out _, out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        await service.GetLiveSnapshotAsync();
+
+        Assert.Equal(1, factory.Session!.RefreshCount);
+    }
+
+    [Fact]
+    public async Task CombinedCaptureWithSmallData_DisposeOnce()
+    {
+        var factory = new FakeFactory { Session = CreateGpuMemorySession(out _, out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        await service.GetLiveSnapshotAsync();
+
+        Assert.Equal(1, factory.Session!.DisposeCount);
+    }
+
+    [Fact]
+    public async Task CombinedCapture_SingleRefresh_AllMetricFamilies()
+    {
+        var factory = new FakeFactory { Session = CreateGpuMemorySession(out _, out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        var live = await service.GetLiveSnapshotAsync();
+
+        Assert.Equal(1, factory.CreateCount);
+        Assert.Equal(1, factory.Session!.RefreshCount);
+        Assert.Equal(1, factory.Session.DisposeCount);
+
+        Assert.Single(live.TemperatureSensors);
+        Assert.Equal(2, live.PerformanceSensors.Count);
+        Assert.Equal(2, live.GpuMemorySensors.Count);
+    }
+
+    // =====================
+    // B.2.2 - Watch live con memoria GPU
+    // =====================
+
+    [Fact]
+    public async Task WatchLiveGpuMemory_ReusesSession()
+    {
+        var factory = new FakeFactory { Session = CreateGpuMemorySession(out _, out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = await TakeLiveWatchSamplesAsync(service, 3);
+
+        Assert.Equal(3, samples.Count);
+        Assert.Equal(1, factory.CreateCount);
+        Assert.Equal(3, factory.Session!.RefreshCount);
+        Assert.All(samples, s => Assert.Equal(2, s.GpuMemorySensors.Count));
+    }
+
+    [Fact]
+    public async Task GpuMemoryValues_ChangeAcrossSamples()
+    {
+        var factory = new FakeFactory { Session = CreateGpuMemorySession(out var used, out _) };
+        var current = 6144f;
+        factory.Session!.OnRefresh = () => { current += 512; used.Value = current; };
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = await TakeLiveWatchSamplesAsync(service, 2);
+
+        Assert.Equal(6656.0, samples[0].GpuMemorySensors.Single(s => s.SensorName == "GPU Memory Used").ValueMB);
+        Assert.Equal(7168.0, samples[1].GpuMemorySensors.Single(s => s.SensorName == "GPU Memory Used").ValueMB);
+    }
+
+    [Fact]
+    public async Task GpuMemoryLists_IndependentBetweenSamples()
+    {
+        var factory = new FakeFactory { Session = CreateGpuMemorySession(out _, out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = await TakeLiveWatchSamplesAsync(service, 3);
+
+        Assert.NotSame(samples[0].GpuMemorySensors, samples[1].GpuMemorySensors);
+        Assert.NotSame(samples[1].GpuMemorySensors, samples[2].GpuMemorySensors);
+    }
+
+    [Fact]
+    public async Task RefreshFailure_EmptiesAllThreeLists()
+    {
+        var factory = new FakeFactory { Session = CreateGpuMemorySession(out _, out _) };
+        factory.Session!.ThrowOnRefresh = true;
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = await TakeLiveWatchSamplesAsync(service, 1);
+
+        Assert.False(samples[0].IsAvailable);
+        Assert.Empty(samples[0].TemperatureSensors);
+        Assert.Empty(samples[0].PerformanceSensors);
+        Assert.Empty(samples[0].GpuMemorySensors);
+    }
+
+    [Fact]
+    public async Task RefreshFailure_ThenSuccess_RecoversAllThree()
+    {
+        var factory = new FakeFactory { Session = CreateGpuMemorySession(out _, out _) };
+        factory.Session!.ThrowOnFirstRefresh = true;
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = await TakeLiveWatchSamplesAsync(service, 2);
+
+        Assert.False(samples[0].IsAvailable);
+        Assert.True(samples[1].IsAvailable);
+        Assert.Single(samples[1].TemperatureSensors);
+        Assert.Equal(2, samples[1].PerformanceSensors.Count);
+        Assert.Equal(2, samples[1].GpuMemorySensors.Count);
+    }
+
+    [Fact]
+    public async Task PartialNodeError_PreservesValidGpuMemory()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "Broken GPU",
+                        Identifier = "/gpu-nvidia/0",
+                        HardwareType = InternalHardwareType.Gpu,
+                        ThrowOnSensorsRead = true
+                    },
+                    new FakeHardware
+                    {
+                        Name = "AMD Radeon RX 7800 XT",
+                        Identifier = "/gpu-amd/0",
+                        HardwareType = InternalHardwareType.Gpu,
+                        Sensors = [SmallData("GPU Memory Used", "/gpu-amd/0/small-data/0", 8192f)]
+                    }
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.True(live.IsAvailable);
+        Assert.NotEmpty(live.Errors);
+        var sensor = Assert.Single(live.GpuMemorySensors);
+        Assert.Equal("AMD Radeon RX 7800 XT", sensor.HardwareName);
+    }
+
+    [Fact]
+    public async Task OldTemperatureApis_IgnoreGpuMemory()
+    {
+        var factory = new FakeFactory { Session = CreateGpuMemorySession(out _, out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        var snapshot = await service.GetTemperatureSnapshotAsync();
+
+        Assert.True(snapshot.IsAvailable);
+        Assert.Single(snapshot.Sensors);
+        Assert.DoesNotContain(snapshot.Sensors, s => s.SensorName == "GPU Memory Used");
+    }
+
+    [Fact]
+    public void LiveSnapshot_NoGpuMemorySummaryProperties()
+    {
+        var propertyNames = typeof(HardwareLiveSnapshot)
+            .GetProperties()
+            .Select(p => p.Name)
+            .ToList();
+
+        Assert.DoesNotContain(propertyNames, n => n is "GpuMemorySummary" or "UsedMB" or "TotalMB" or
+            "FreeMB" or "UsagePercent");
+    }
+
+    [Fact]
+    public async Task GpuMemory_UsesInjectedFactory_NoRealHardware()
+    {
+        var factory = new FakeFactory { Session = CreateGpuMemorySession(out _, out _) };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Equal(1, factory.CreateCount);
+        Assert.True(live.IsAvailable);
+        Assert.Equal(2, live.GpuMemorySensors.Count);
+    }
 }

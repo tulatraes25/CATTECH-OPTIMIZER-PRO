@@ -260,6 +260,24 @@ public class LibreHardwareSensorService : IHardwareSensorService
                         }
 
                         break;
+
+                    case InternalSensorType.SmallData:
+                        // Memoria de GPU: solo hardware GPU en esta fase.
+                        if (node.HardwareType == InternalHardwareType.Gpu)
+                        {
+                            snapshot.GpuMemorySensors.Add(new HardwareGpuMemorySensor
+                            {
+                                HardwareName = node.Name,
+                                HardwareType = MapHardwareType(node.HardwareType),
+                                SensorName = sensor.Name,
+                                SensorIdentifier = identifier,
+                                ValueMB = Normalize(sensor.Value),
+                                MinMB = Normalize(sensor.Min),
+                                MaxMB = Normalize(sensor.Max)
+                            });
+                        }
+
+                        break;
                 }
             }
 

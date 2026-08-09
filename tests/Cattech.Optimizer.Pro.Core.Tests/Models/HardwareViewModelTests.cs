@@ -593,6 +593,18 @@ public class HardwareViewModelTests
     }
 
     [Fact]
+    public void ViewModel_NoGpuMemoryExposure()
+    {
+        // B.2.2 no agrega memoria GPU a la UI: el ViewModel no la expone.
+        var propertyNames = typeof(HardwareViewModel)
+            .GetProperties()
+            .Select(p => p.Name)
+            .ToList();
+
+        Assert.DoesNotContain(propertyNames, n => n == "GpuMemorySensors");
+    }
+
+    [Fact]
     public async Task UsesInjectedService_NoRealHardware()
     {
         // Si el ViewModel usara LibreHardwareSensorService real, estos datos simulados

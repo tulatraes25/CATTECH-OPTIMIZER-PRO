@@ -64,9 +64,57 @@ public class HardwarePerformanceSensor
 }
 
 /// <summary>
+/// Sensor de memoria de GPU (SensorType.SmallData) capturado del hardware.
+/// CATTECH conserva lo que informa el proveedor sin interpretar Used/Free/Total por nombre.
+/// </summary>
+public class HardwareGpuMemorySensor
+{
+    /// <summary>
+    /// Nombre del hardware padre (ej: "NVIDIA GeForce RTX 4070").
+    /// </summary>
+    public string HardwareName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Tipo del hardware padre (siempre "GPU" en esta fase).
+    /// </summary>
+    public string HardwareType { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Nombre del sensor tal como lo informa el proveedor (ej: "GPU Memory Used").
+    /// No se interpreta por nombre.
+    /// </summary>
+    public string SensorName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Identificador estable del sensor.
+    /// </summary>
+    public string SensorIdentifier { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Valor en MB. Null si el sensor no informó valor. Nunca se convierte null en 0.
+    /// </summary>
+    public double? ValueMB { get; set; }
+
+    /// <summary>
+    /// Valor mínimo en MB. Null si no está disponible.
+    /// </summary>
+    public double? MinMB { get; set; }
+
+    /// <summary>
+    /// Valor máximo en MB. Null si no está disponible.
+    /// </summary>
+    public double? MaxMB { get; set; }
+
+    /// <summary>
+    /// Unidad de la métrica.
+    /// </summary>
+    public string Unit => "MB";
+}
+
+/// <summary>
 /// Captura única de la sesión de hardware: temperaturas + métricas de rendimiento
-/// de un MISMO Refresh (coherentes temporalmente).
-/// Recolecta datos: no interpreta rendimiento ni salud térmica.
+/// + memoria GPU de un MISMO Refresh (coherentes temporalmente).
+/// Recolecta datos: no interpreta rendimiento, memoria ni salud térmica.
 /// </summary>
 public class HardwareLiveSnapshot
 {
@@ -96,6 +144,11 @@ public class HardwareLiveSnapshot
     public List<HardwarePerformanceSensor> PerformanceSensors { get; set; } = new();
 
     /// <summary>
+    /// Sensores de memoria de GPU (SmallData) capturados.
+    /// </summary>
+    public List<HardwareGpuMemorySensor> GpuMemorySensors { get; set; } = new();
+
+    /// <summary>
     /// Advertencias controladas.
     /// </summary>
     public List<string> Warnings { get; set; } = new();
@@ -116,6 +169,11 @@ public class HardwareLiveSnapshot
     public bool HasPerformanceSensors => PerformanceSensors.Count > 0;
 
     /// <summary>
+    /// Si se capturó al menos un sensor de memoria de GPU.
+    /// </summary>
+    public bool HasGpuMemorySensors => GpuMemorySensors.Count > 0;
+
+    /// <summary>
     /// Sensores de temperatura con valor válido (no null).
     /// </summary>
     public int ValidTemperatureSensorCount => TemperatureSensors.Count(s => s.ValueCelsius.HasValue);
@@ -124,4 +182,9 @@ public class HardwareLiveSnapshot
     /// Sensores de rendimiento con valor válido (no null).
     /// </summary>
     public int ValidPerformanceSensorCount => PerformanceSensors.Count(s => s.Value.HasValue);
+
+    /// <summary>
+    /// Sensores de memoria de GPU con valor válido (no null).
+    /// </summary>
+    public int ValidGpuMemorySensorCount => GpuMemorySensors.Count(s => s.ValueMB.HasValue);
 }
