@@ -146,10 +146,13 @@ internal sealed class SensorNodeAdapter : ISensorNode
 
     public string Identifier => _sensor.Identifier.ToString();
 
-    public InternalSensorType SensorType =>
-        _sensor.SensorType == LibreHardwareMonitor.Hardware.SensorType.Temperature
-            ? InternalSensorType.Temperature
-            : InternalSensorType.Other;
+    public InternalSensorType SensorType => _sensor.SensorType switch
+    {
+        LibreHardwareMonitor.Hardware.SensorType.Temperature => InternalSensorType.Temperature,
+        LibreHardwareMonitor.Hardware.SensorType.Load => InternalSensorType.Load,
+        LibreHardwareMonitor.Hardware.SensorType.Clock => InternalSensorType.Clock,
+        _ => InternalSensorType.Other
+    };
 
     public float? Value => _sensor.Value;
 

@@ -225,6 +225,21 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - **Sin inicio automático**: al entrar a Hardware se pide acción explícita del técnico
 - Tests UI: proyecto de tests migrado a net8.0-windows con referencia a UI + InternalsVisibleTo
 - 27 tests nuevos (492 total)
+
+### Added (Métricas dinámicas CPU/GPU - Fase B.2.1)
+- **HardwareLiveSnapshot** (Core): captura única con TemperatureSensors + PerformanceSensors de UN mismo Refresh (coherencia temporal); HasTemperatureSensors/HasPerformanceSensors/Valid*Count calculados
+- **HardwarePerformanceSensor** (Core): HardwareName, HardwareType, SensorName, SensorIdentifier, MetricType, Value/Min/Max, Unit
+- **HardwarePerformanceMetricType** (Core): Load y Clock — sin exponer enums de LibreHardwareMonitor
+- **Unidades**: Load → "%", Clock → "MHz" (sin convertir a GHz en Core)
+- **InternalSensorType extendido**: Temperature, Load, Clock, Other — mapeo exclusivo por SensorType (sin heurística por nombre)
+- **Filtro CPU/GPU**: PerformanceSensors solo de hardware Cpu/Gpu; Load/Clock de memoria/almacenamiento/placa/controladores se ignoran; temperaturas con alcance sin cambios
+- **API pública**: GetLiveSnapshotAsync + WatchLiveSnapshotsAsync (futuras APIs de B.4, una sola sesión)
+- **Refactor del núcleo**: un único ciclo Create → Refresh → captura completa → Delay → Dispose; las APIs de temperatura proyectan desde el LiveSnapshot conservando warnings/errors y semántica de fallos
+- **Una sola pasada**: CollectSensors recorre el hardware una vez construyendo ambas listas; dedup por SensorIdentifier reiniciado por snapshot
+- **Política null/NaN/Infinity** idéntica a B.1 para Value/Min/Max
+- **Sin interpretación**: sin thresholds, sin estados de rendimiento, sin elección de sensor principal, sin selección por nombre
+- **Sin cambios de UI**: HardwareView sigue mostrando solo temperaturas
+- 40 tests nuevos (532 total)
 - SmartctlAvailability, SmartDiskDevice, SmartctlCommandResult
 - ISmartctlRunner, ISmartDiskService interfaces
 - 32 tests de smartctl + 18 tests de SMART (214 total)

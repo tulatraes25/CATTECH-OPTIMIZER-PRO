@@ -65,6 +65,25 @@ public class HardwareViewModelTests
                 await Task.Delay(10, cancellationToken);
             }
         }
+
+        public Task<HardwareLiveSnapshot> GetLiveSnapshotAsync(
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(new HardwareLiveSnapshot
+            {
+                IsAvailable = true,
+                TemperatureSensors = NextSnapshot.Sensors,
+                Warnings = NextSnapshot.Warnings,
+                Errors = NextSnapshot.Errors
+            });
+        }
+
+        public async IAsyncEnumerable<HardwareLiveSnapshot> WatchLiveSnapshotsAsync(
+            TimeSpan interval,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            yield break;
+        }
     }
 
     private sealed class PendingSnapshotService : IHardwareSensorService
@@ -75,6 +94,19 @@ public class HardwareViewModelTests
             CancellationToken cancellationToken = default) => Tcs.Task;
 
         public async IAsyncEnumerable<HardwareTemperatureSnapshot> WatchTemperatureSnapshotsAsync(
+            TimeSpan interval,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            yield break;
+        }
+
+        public Task<HardwareLiveSnapshot> GetLiveSnapshotAsync(
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(new HardwareLiveSnapshot());
+        }
+
+        public async IAsyncEnumerable<HardwareLiveSnapshot> WatchLiveSnapshotsAsync(
             TimeSpan interval,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
@@ -546,6 +578,18 @@ public class HardwareViewModelTests
             .ToList();
 
         Assert.DoesNotContain(propertyNames, n => n is "IsHot" or "IsCritical" or "HealthStatus" or "Severity" or "Recommendation");
+    }
+
+    [Fact]
+    public void ViewModel_UsesTemperatureOnly()
+    {
+        // B.2.1 no agrega rendimiento a la UI: el ViewModel no expone métricas de performance.
+        var propertyNames = typeof(HardwareViewModel)
+            .GetProperties()
+            .Select(p => p.Name)
+            .ToList();
+
+        Assert.DoesNotContain(propertyNames, n => n is "PerformanceSensors" or "LoadSensors" or "ClockSensors");
     }
 
     [Fact]

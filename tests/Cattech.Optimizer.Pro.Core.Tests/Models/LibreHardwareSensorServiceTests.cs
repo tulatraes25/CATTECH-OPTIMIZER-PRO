@@ -1137,4 +1137,745 @@ public class LibreHardwareSensorServiceTests
             Assert.Empty(s.Errors);
         });
     }
+
+    // =====================
+    // Tests Fase B.2.1 - Métricas dinámicas CPU/GPU (Load + Clock)
+    // =====================
+
+    private static FakeSensor Load(string name, string identifier, float? value = null,
+        float? min = null, float? max = null) =>
+        new(name, identifier, InternalSensorType.Load, value, min, max);
+
+    private static FakeSensor Clock(string name, string identifier, float? value = null,
+        float? min = null, float? max = null) =>
+        new(name, identifier, InternalSensorType.Clock, value, min, max);
+
+    private static async Task<HardwareLiveSnapshot> CaptureLive(IHardwareMonitorFactory factory,
+        bool isElevated = true)
+    {
+        var service = CreateService(factory, isElevated);
+        return await service.GetLiveSnapshotAsync();
+    }
+
+    private static FakeSession CreateCpuGpuSession(out FakeSensor cpuLoad, out FakeSensor cpuClock,
+        out FakeSensor gpuLoad, out FakeSensor gpuClock)
+    {
+        cpuLoad = Load("CPU Total", "/intelcpu/0/load/0", 35.5f);
+        cpuClock = Clock("CPU Clock", "/intelcpu/0/clock/0", 3700f);
+        gpuLoad = Load("GPU Core", "/gpu-nvidia/0/load/0", 42.0f);
+        gpuClock = Clock("GPU Clock", "/gpu-nvidia/0/clock/0", 1905f);
+
+        return new FakeSession
+        {
+            Hardware =
+            [
+                new FakeHardware
+                {
+                    Name = "Intel Core i7-13700K",
+                    Identifier = "/intelcpu/0",
+                    HardwareType = InternalHardwareType.Cpu,
+                    Sensors =
+                    [
+                        Temp("Package", "/intelcpu/0/temperature/0", 60.0f),
+                        cpuLoad,
+                        cpuClock
+                    ]
+                },
+                new FakeHardware
+                {
+                    Name = "NVIDIA GeForce RTX 4070",
+                    Identifier = "/gpu-nvidia/0",
+                    HardwareType = InternalHardwareType.Gpu,
+                    Sensors =
+                    [
+                        Temp("GPU Core", "/gpu-nvidia/0/temperature/0", 55.0f),
+                        gpuLoad,
+                        gpuClock
+                    ]
+                }
+            ]
+        };
+    }
+
+    private static async Task<List<HardwareLiveSnapshot>> TakeLiveWatchSamplesAsync(
+        LibreHardwareSensorService service, int count)
+    {
+        var samples = new List<HardwareLiveSnapshot>();
+        await using var enumerator = service.WatchLiveSnapshotsAsync(WatchInterval).GetAsyncEnumerator();
+        while (samples.Count < count && await enumerator.MoveNextAsync())
+        {
+            samples.Add(enumerator.Current);
+        }
+
+        return samples;
+    }
+
+    [Fact]
+    public async Task CpuLoad_Captured()
+    {
+        var factory = new FakeFactory { Session = CreateCpuGpuSession(out _, out _, out _, out _) };
+
+        var live = await CaptureLive(factory);
+
+        var sensor = live.PerformanceSensors.Single(s =>
+            s.HardwareName == "Intel Core i7-13700K" && s.SensorName == "CPU Total");
+        Assert.Equal("CPU", sensor.HardwareType);
+        Assert.Equal(35.5, sensor.Value);
+        Assert.True(live.HasPerformanceSensors);
+    }
+
+    [Fact]
+    public async Task CpuClock_Captured()
+    {
+        var factory = new FakeFactory { Session = CreateCpuGpuSession(out _, out _, out _, out _) };
+
+        var live = await CaptureLive(factory);
+
+        var sensor = live.PerformanceSensors.Single(s => s.SensorName == "CPU Clock");
+        Assert.Equal(3700.0, sensor.Value);
+    }
+
+    [Fact]
+    public async Task GpuLoad_Captured()
+    {
+        var factory = new FakeFactory { Session = CreateCpuGpuSession(out _, out _, out _, out _) };
+
+        var live = await CaptureLive(factory);
+
+        var sensor = live.PerformanceSensors.Single(s =>
+            s.HardwareName == "NVIDIA GeForce RTX 4070" && s.SensorName == "GPU Core");
+        Assert.Equal("GPU", sensor.HardwareType);
+        Assert.Equal(42.0, sensor.Value);
+    }
+
+    [Fact]
+    public async Task GpuClock_Captured()
+    {
+        var factory = new FakeFactory { Session = CreateCpuGpuSession(out _, out _, out _, out _) };
+
+        var live = await CaptureLive(factory);
+
+        var sensor = live.PerformanceSensors.Single(s => s.SensorName == "GPU Clock");
+        Assert.Equal(1905.0, sensor.Value);
+    }
+
+    [Fact]
+    public async Task MemoryLoad_IgnoredInPerformance()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "G.Skill DDR5",
+                        Identifier = "/ram/0",
+                        HardwareType = InternalHardwareType.Memory,
+                        Sensors = [Load("Memory Load", "/ram/0/load/0", 30.0f)]
+                    }
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Empty(live.PerformanceSensors);
+    }
+
+    [Fact]
+    public async Task MotherboardClock_Ignored()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "ASUS ROG STRIX Z790",
+                        Identifier = "/mb/0",
+                        HardwareType = InternalHardwareType.Motherboard,
+                        Sensors = [Clock("System Clock", "/mb/0/clock/0", 100.0f)]
+                    }
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Empty(live.PerformanceSensors);
+    }
+
+    [Fact]
+    public async Task Temperature_StillCaptured()
+    {
+        var factory = new FakeFactory { Session = CreateCpuGpuSession(out _, out _, out _, out _) };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Equal(2, live.TemperatureSensors.Count);
+        Assert.True(live.HasTemperatureSensors);
+        Assert.Equal(2, live.ValidTemperatureSensorCount);
+    }
+
+    [Fact]
+    public async Task Temperature_NotInPerformanceSensors()
+    {
+        var factory = new FakeFactory { Session = CreateCpuGpuSession(out _, out _, out _, out _) };
+
+        var live = await CaptureLive(factory);
+
+        Assert.DoesNotContain(live.PerformanceSensors, s => s.MetricType == HardwarePerformanceMetricType.Load && s.SensorName == "Package");
+        Assert.DoesNotContain(live.PerformanceSensors, s => s.SensorName == "GPU Core" && s.MetricType != HardwarePerformanceMetricType.Load);
+    }
+
+    [Fact]
+    public async Task Load_NotInTemperatureSensors()
+    {
+        var factory = new FakeFactory { Session = CreateCpuGpuSession(out _, out _, out _, out _) };
+
+        var live = await CaptureLive(factory);
+
+        Assert.DoesNotContain(live.TemperatureSensors, s => s.SensorName == "CPU Total");
+    }
+
+    [Fact]
+    public async Task Clock_NotInTemperatureSensors()
+    {
+        var factory = new FakeFactory { Session = CreateCpuGpuSession(out _, out _, out _, out _) };
+
+        var live = await CaptureLive(factory);
+
+        Assert.DoesNotContain(live.TemperatureSensors, s => s.SensorName == "CPU Clock");
+    }
+
+    [Fact]
+    public async Task MetricType_Load_Correct()
+    {
+        var factory = new FakeFactory { Session = CreateCpuGpuSession(out _, out _, out _, out _) };
+
+        var live = await CaptureLive(factory);
+
+        Assert.All(live.PerformanceSensors.Where(s => s.SensorName.Contains("Load") || s.SensorName == "CPU Total"),
+            s => Assert.Equal(HardwarePerformanceMetricType.Load, s.MetricType));
+    }
+
+    [Fact]
+    public async Task MetricType_Clock_Correct()
+    {
+        var factory = new FakeFactory { Session = CreateCpuGpuSession(out _, out _, out _, out _) };
+
+        var live = await CaptureLive(factory);
+
+        Assert.All(live.PerformanceSensors.Where(s => s.SensorName.Contains("Clock")),
+            s => Assert.Equal(HardwarePerformanceMetricType.Clock, s.MetricType));
+    }
+
+    [Fact]
+    public async Task Load_UsesPercentUnit()
+    {
+        var factory = new FakeFactory { Session = CreateCpuGpuSession(out _, out _, out _, out _) };
+
+        var live = await CaptureLive(factory);
+
+        Assert.All(live.PerformanceSensors.Where(s => s.MetricType == HardwarePerformanceMetricType.Load),
+            s => Assert.Equal("%", s.Unit));
+    }
+
+    [Fact]
+    public async Task Clock_UsesMhzUnit()
+    {
+        var factory = new FakeFactory { Session = CreateCpuGpuSession(out _, out _, out _, out _) };
+
+        var live = await CaptureLive(factory);
+
+        Assert.All(live.PerformanceSensors.Where(s => s.MetricType == HardwarePerformanceMetricType.Clock),
+            s => Assert.Equal("MHz", s.Unit));
+    }
+
+    [Fact]
+    public async Task PerformanceValueNull_StaysNull()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "Intel Core i7-13700K",
+                        Identifier = "/intelcpu/0",
+                        HardwareType = InternalHardwareType.Cpu,
+                        Sensors = [Load("CPU Total", "/intelcpu/0/load/0", null)]
+                    }
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        var sensor = Assert.Single(live.PerformanceSensors);
+        Assert.Null(sensor.Value);
+        Assert.Equal(0, live.ValidPerformanceSensorCount);
+    }
+
+    [Fact]
+    public async Task PerformanceNaN_NormalizedToNull()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "Intel Core i7-13700K",
+                        Identifier = "/intelcpu/0",
+                        HardwareType = InternalHardwareType.Cpu,
+                        Sensors = [Load("CPU Total", "/intelcpu/0/load/0", float.NaN)]
+                    }
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Null(Assert.Single(live.PerformanceSensors).Value);
+    }
+
+    [Fact]
+    public async Task PerformanceInfinity_NormalizedToNull()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "Intel Core i7-13700K",
+                        Identifier = "/intelcpu/0",
+                        HardwareType = InternalHardwareType.Cpu,
+                        Sensors = [Clock("CPU Clock", "/intelcpu/0/clock/0", float.NegativeInfinity)]
+                    }
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Null(Assert.Single(live.PerformanceSensors).Value);
+    }
+
+    [Fact]
+    public async Task PerformanceMinMax_Preserved()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "Intel Core i7-13700K",
+                        Identifier = "/intelcpu/0",
+                        HardwareType = InternalHardwareType.Cpu,
+                        Sensors = [Load("CPU Total", "/intelcpu/0/load/0", 50.0f, 5.0f, 95.0f)]
+                    }
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        var sensor = Assert.Single(live.PerformanceSensors);
+        Assert.Equal(50.0, sensor.Value);
+        Assert.Equal(5.0, sensor.Min);
+        Assert.Equal(95.0, sensor.Max);
+    }
+
+    [Fact]
+    public async Task SameName_DifferentIdentifier_PerformancePreserved()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "Intel Core i7-13700K",
+                        Identifier = "/intelcpu/0",
+                        HardwareType = InternalHardwareType.Cpu,
+                        Sensors =
+                        [
+                            Load("CPU Total", "/intelcpu/0/load/0", 40.0f),
+                            Load("CPU Total", "/intelcpu/0/load/1", 55.0f)
+                        ]
+                    }
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Equal(2, live.PerformanceSensors.Count);
+    }
+
+    [Fact]
+    public async Task DuplicateIdentifier_PerformanceDeduped()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "Intel Core i7-13700K",
+                        Identifier = "/intelcpu/0",
+                        HardwareType = InternalHardwareType.Cpu,
+                        Sensors =
+                        [
+                            Load("CPU Total", "/intelcpu/0/load/0", 40.0f),
+                            Load("CPU Total", "/intelcpu/0/load/0", 55.0f)
+                        ]
+                    }
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        var sensor = Assert.Single(live.PerformanceSensors);
+        Assert.Equal(40.0, sensor.Value);
+    }
+
+    // =====================
+    // B.2.1 - Un solo Refresh por captura
+    // =====================
+
+    [Fact]
+    public async Task GetLiveSnapshot_CreateOnce()
+    {
+        var factory = new FakeFactory { Session = CreateCpuGpuSession(out _, out _, out _, out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        await service.GetLiveSnapshotAsync();
+
+        Assert.Equal(1, factory.CreateCount);
+    }
+
+    [Fact]
+    public async Task GetLiveSnapshot_RefreshOnce()
+    {
+        var factory = new FakeFactory { Session = CreateCpuGpuSession(out _, out _, out _, out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        await service.GetLiveSnapshotAsync();
+
+        Assert.Equal(1, factory.Session!.RefreshCount);
+    }
+
+    [Fact]
+    public async Task GetLiveSnapshot_DisposeOnce()
+    {
+        var factory = new FakeFactory { Session = CreateCpuGpuSession(out _, out _, out _, out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        await service.GetLiveSnapshotAsync();
+
+        Assert.Equal(1, factory.Session!.DisposeCount);
+    }
+
+    [Fact]
+    public async Task CombinedCapture_SingleRefresh()
+    {
+        var factory = new FakeFactory { Session = CreateCpuGpuSession(out _, out _, out _, out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        var live = await service.GetLiveSnapshotAsync();
+
+        // Temperaturas + Load + Clock en el MISMO refresh: Create=1, Refresh=1, Dispose=1
+        Assert.Equal(1, factory.CreateCount);
+        Assert.Equal(1, factory.Session!.RefreshCount);
+        Assert.Equal(1, factory.Session.DisposeCount);
+
+        Assert.Equal(2, live.TemperatureSensors.Count);
+        Assert.Equal(4, live.PerformanceSensors.Count);
+        Assert.Contains(live.PerformanceSensors, s => s.SensorName == "CPU Total" && s.MetricType == HardwarePerformanceMetricType.Load);
+        Assert.Contains(live.PerformanceSensors, s => s.SensorName == "CPU Clock" && s.MetricType == HardwarePerformanceMetricType.Clock);
+        Assert.Contains(live.PerformanceSensors, s => s.SensorName == "GPU Core" && s.MetricType == HardwarePerformanceMetricType.Load);
+        Assert.Contains(live.PerformanceSensors, s => s.SensorName == "GPU Clock" && s.MetricType == HardwarePerformanceMetricType.Clock);
+    }
+
+    // =====================
+    // B.2.1 - Watch live
+    // =====================
+
+    [Fact]
+    public async Task WatchLive_ThreeSamples_SingleSession()
+    {
+        var factory = new FakeFactory { Session = CreateCpuGpuSession(out _, out _, out _, out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = await TakeLiveWatchSamplesAsync(service, 3);
+
+        Assert.Equal(3, samples.Count);
+        Assert.Equal(1, factory.CreateCount);
+    }
+
+    [Fact]
+    public async Task WatchLive_ThreeSamples_ThreeRefreshes()
+    {
+        var factory = new FakeFactory { Session = CreateCpuGpuSession(out _, out _, out _, out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        await TakeLiveWatchSamplesAsync(service, 3);
+
+        Assert.Equal(3, factory.Session!.RefreshCount);
+    }
+
+    [Fact]
+    public async Task LoadValues_ChangeAcrossSamples()
+    {
+        var factory = new FakeFactory { Session = CreateCpuGpuSession(out var cpuLoad, out _, out _, out _) };
+        var current = 35.5f;
+        factory.Session!.OnRefresh = () => { current += 10; cpuLoad.Value = current; };
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = await TakeLiveWatchSamplesAsync(service, 2);
+
+        Assert.Equal(45.5, samples[0].PerformanceSensors.Single(s => s.SensorName == "CPU Total").Value);
+        Assert.Equal(55.5, samples[1].PerformanceSensors.Single(s => s.SensorName == "CPU Total").Value);
+    }
+
+    [Fact]
+    public async Task ClockValues_ChangeAcrossSamples()
+    {
+        var factory = new FakeFactory { Session = CreateCpuGpuSession(out _, out var cpuClock, out _, out _) };
+        var current = 3700f;
+        factory.Session!.OnRefresh = () => { current += 100; cpuClock.Value = current; };
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = await TakeLiveWatchSamplesAsync(service, 2);
+
+        Assert.Equal(3800.0, samples[0].PerformanceSensors.Single(s => s.SensorName == "CPU Clock").Value);
+        Assert.Equal(3900.0, samples[1].PerformanceSensors.Single(s => s.SensorName == "CPU Clock").Value);
+    }
+
+    [Fact]
+    public async Task LiveSamples_IndependentObjects()
+    {
+        var factory = new FakeFactory { Session = CreateCpuGpuSession(out _, out _, out _, out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = await TakeLiveWatchSamplesAsync(service, 3);
+
+        Assert.NotSame(samples[0], samples[1]);
+        Assert.NotSame(samples[0].TemperatureSensors, samples[1].TemperatureSensors);
+        Assert.NotSame(samples[0].PerformanceSensors, samples[1].PerformanceSensors);
+    }
+
+    [Fact]
+    public async Task LiveRefreshFailure_EmptiesBothLists()
+    {
+        var factory = new FakeFactory { Session = CreateCpuGpuSession(out _, out _, out _, out _) };
+        factory.Session!.ThrowOnRefresh = true;
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = await TakeLiveWatchSamplesAsync(service, 1);
+
+        Assert.False(samples[0].IsAvailable);
+        Assert.Empty(samples[0].TemperatureSensors);
+        Assert.Empty(samples[0].PerformanceSensors);
+        Assert.NotEmpty(samples[0].Errors);
+    }
+
+    [Fact]
+    public async Task LiveRefreshFailure_ThenSuccess_RecoversBoth()
+    {
+        var factory = new FakeFactory { Session = CreateCpuGpuSession(out _, out _, out _, out _) };
+        factory.Session!.ThrowOnFirstRefresh = true;
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = await TakeLiveWatchSamplesAsync(service, 2);
+
+        Assert.False(samples[0].IsAvailable);
+        Assert.True(samples[1].IsAvailable);
+        Assert.Equal(2, samples[1].TemperatureSensors.Count);
+        Assert.Equal(4, samples[1].PerformanceSensors.Count);
+    }
+
+    [Fact]
+    public async Task LivePartialNodeError_PreservesValidMetrics()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "Broken GPU",
+                        Identifier = "/gpu-nvidia/0",
+                        HardwareType = InternalHardwareType.Gpu,
+                        ThrowOnSensorsRead = true
+                    },
+                    new FakeHardware
+                    {
+                        Name = "Intel Core i7-13700K",
+                        Identifier = "/intelcpu/0",
+                        HardwareType = InternalHardwareType.Cpu,
+                        Sensors =
+                        [
+                            Temp("Package", "/intelcpu/0/temperature/0", 60.0f),
+                            Load("CPU Total", "/intelcpu/0/load/0", 33.0f)
+                        ]
+                    }
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.True(live.IsAvailable);
+        Assert.NotEmpty(live.Errors);
+        Assert.Single(live.TemperatureSensors);
+        Assert.Single(live.PerformanceSensors);
+        Assert.Equal("Intel Core i7-13700K", live.PerformanceSensors[0].HardwareName);
+    }
+
+    [Fact]
+    public async Task LiveCancellation_DisposesSession()
+    {
+        var factory = new FakeFactory { Session = CreateCpuGpuSession(out _, out _, out _, out _) };
+        var service = CreateService(factory, new FakeDelay());
+        using var cts = new CancellationTokenSource();
+
+        var enumerator = service.WatchLiveSnapshotsAsync(WatchInterval, cts.Token).GetAsyncEnumerator();
+        Assert.True(await enumerator.MoveNextAsync());
+
+        cts.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            async () => await enumerator.MoveNextAsync());
+
+        Assert.True(factory.Session!.Disposed);
+    }
+
+    [Fact]
+    public async Task LiveBreak_DisposesSession()
+    {
+        var factory = new FakeFactory { Session = CreateCpuGpuSession(out _, out _, out _, out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        await foreach (var _ in service.WatchLiveSnapshotsAsync(WatchInterval))
+        {
+            break;
+        }
+
+        Assert.True(factory.Session!.Disposed);
+    }
+
+    // =====================
+    // B.2.1 - Compatibilidad con la API antigua
+    // =====================
+
+    [Fact]
+    public async Task OldGetTemperatureSnapshot_StillWorks()
+    {
+        var factory = new FakeFactory { Session = CreateCpuGpuSession(out _, out _, out _, out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        var snapshot = await service.GetTemperatureSnapshotAsync();
+
+        Assert.True(snapshot.IsAvailable);
+        Assert.Equal(2, snapshot.Sensors.Count);
+        Assert.Equal(1, factory.CreateCount);
+        Assert.Equal(1, factory.Session!.RefreshCount);
+    }
+
+    [Fact]
+    public async Task OldWatchTemperatureSnapshots_StillWorks()
+    {
+        var factory = new FakeFactory { Session = CreateCpuGpuSession(out _, out _, out _, out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = await TakeWatchSamplesAsync(service, 3);
+
+        Assert.Equal(3, samples.Count);
+        Assert.Equal(1, factory.CreateCount);
+        Assert.Equal(3, factory.Session!.RefreshCount);
+        Assert.All(samples, s => Assert.Equal(2, s.Sensors.Count));
+    }
+
+    [Fact]
+    public async Task TemperatureProjection_PreservesWarningsAndErrors()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "Broken GPU",
+                        Identifier = "/gpu-nvidia/0",
+                        HardwareType = InternalHardwareType.Gpu,
+                        ThrowOnSensorsRead = true
+                    },
+                    new FakeHardware
+                    {
+                        Name = "Intel Core i7-13700K",
+                        Identifier = "/intelcpu/0",
+                        HardwareType = InternalHardwareType.Cpu,
+                        Sensors = [Temp("Package", "/intelcpu/0/temperature/0", 60.0f)]
+                    }
+                ]
+            }
+        };
+
+        var service = CreateService(factory, new FakeDelay(), isElevated: false);
+        var snapshot = await service.GetTemperatureSnapshotAsync();
+
+        Assert.True(snapshot.IsAvailable);
+        Assert.Contains(snapshot.Warnings, w => w.Contains("permisos de administrador", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(snapshot.Errors, e => e.Contains("Broken GPU", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void LiveSnapshot_NoPerformanceHealthProperties()
+    {
+        var propertyNames = typeof(HardwareLiveSnapshot)
+            .GetProperties()
+            .Select(p => p.Name)
+            .ToList();
+
+        Assert.DoesNotContain(propertyNames, n => n is "IsOverloaded" or "IsSlow" or "HealthStatus" or
+            "Severity" or "Recommendation" or "IsHot" or "IsCritical");
+    }
+
+    [Fact]
+    public async Task Live_UsesInjectedFactory_NoRealHardware()
+    {
+        var factory = new FakeFactory { Session = CreateCpuGpuSession(out _, out _, out _, out _) };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Equal(1, factory.CreateCount);
+        Assert.True(live.IsAvailable);
+        Assert.Equal(2, live.TemperatureSensors.Count);
+        Assert.Equal(4, live.PerformanceSensors.Count);
+    }
 }

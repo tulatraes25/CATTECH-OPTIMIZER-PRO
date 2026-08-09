@@ -20,6 +20,8 @@ internal enum InternalHardwareType
 internal enum InternalSensorType
 {
     Temperature,
+    Load,
+    Clock,
     Other
 }
 

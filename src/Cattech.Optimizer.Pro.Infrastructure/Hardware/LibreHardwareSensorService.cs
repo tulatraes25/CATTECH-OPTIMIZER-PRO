@@ -7,8 +7,9 @@ using Cattech.Optimizer.Pro.Infrastructure.Hardware.SensorProvider;
 namespace Cattech.Optimizer.Pro.Infrastructure.Hardware;
 
 /// <summary>
-/// Servicio read-only de sensores de temperatura mediante LibreHardwareMonitorLib.
-/// Independiente de WmiHardwareService: recolecta datos dinámicos sin interpretar salud térmica.
+/// Servicio read-only de sensores de hardware mediante LibreHardwareMonitorLib.
+/// Independiente de WmiHardwareService: recolecta datos dinámicos sin interpretar salud térmica
+/// ni rendimiento. Temperatura + Load + Clock se capturan con UN solo Refresh por muestra.
 /// </summary>
 public class LibreHardwareSensorService : IHardwareSensorService
 {
@@ -34,7 +35,26 @@ public class LibreHardwareSensorService : IHardwareSensorService
     }
 
     /// <inheritdoc/>
-    public Task<HardwareTemperatureSnapshot> GetTemperatureSnapshotAsync(
+    public async Task<HardwareTemperatureSnapshot> GetTemperatureSnapshotAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var live = await GetLiveSnapshotAsync(cancellationToken);
+        return ToTemperatureSnapshot(live);
+    }
+
+    /// <inheritdoc/>
+    public async IAsyncEnumerable<HardwareTemperatureSnapshot> WatchTemperatureSnapshotsAsync(
+        TimeSpan interval,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        await foreach (var live in WatchLiveSnapshotsAsync(interval, cancellationToken))
+        {
+            yield return ToTemperatureSnapshot(live);
+        }
+    }
+
+    /// <inheritdoc/>
+    public Task<HardwareLiveSnapshot> GetLiveSnapshotAsync(
         CancellationToken cancellationToken = default)
     {
         // La lectura de LibreHardwareMonitor es sincrónica; se ejecuta en background
@@ -43,7 +63,7 @@ public class LibreHardwareSensorService : IHardwareSensorService
     }
 
     /// <inheritdoc/>
-    public async IAsyncEnumerable<HardwareTemperatureSnapshot> WatchTemperatureSnapshotsAsync(
+    public async IAsyncEnumerable<HardwareLiveSnapshot> WatchLiveSnapshotsAsync(
         TimeSpan interval,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
@@ -77,6 +97,32 @@ public class LibreHardwareSensorService : IHardwareSensorService
         }
     }
 
+    private HardwareLiveSnapshot ReadSingleSnapshot(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        IHardwareMonitorSession? session = null;
+        try
+        {
+            session = _factory.Create();
+            cancellationToken.ThrowIfCancellationRequested();
+            session.Refresh();
+            return BuildLiveSnapshot(session, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return CreateUnavailableSnapshot($"No se pudo inicializar el monitoreo de hardware: {ex.Message}");
+        }
+        finally
+        {
+            session?.Dispose();
+        }
+    }
+
     private IHardwareMonitorSession? TryCreateSession(out string? error)
     {
         try
@@ -95,38 +141,12 @@ public class LibreHardwareSensorService : IHardwareSensorService
         }
     }
 
-    private HardwareTemperatureSnapshot ReadSingleSnapshot(CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        IHardwareMonitorSession? session = null;
-        try
-        {
-            session = _factory.Create();
-            cancellationToken.ThrowIfCancellationRequested();
-            session.Refresh();
-            return BuildSnapshot(session, cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            return CreateUnavailableSnapshot($"No se pudo inicializar el monitoreo de hardware: {ex.Message}");
-        }
-        finally
-        {
-            session?.Dispose();
-        }
-    }
-
     /// <summary>
     /// Refresca y captura una muestra. Ejecución en background, estrictamente secuencial.
     /// Un Refresh fallido produce una muestra no disponible sin cerrar el monitor:
     /// el siguiente intento puede recuperarse.
     /// </summary>
-    private async Task<HardwareTemperatureSnapshot> CaptureWithRefreshAsync(
+    private async Task<HardwareLiveSnapshot> CaptureWithRefreshAsync(
         IHardwareMonitorSession session,
         CancellationToken cancellationToken)
     {
@@ -135,7 +155,7 @@ public class LibreHardwareSensorService : IHardwareSensorService
             return await Task.Run(() =>
             {
                 session.Refresh();
-                return BuildSnapshot(session, cancellationToken);
+                return BuildLiveSnapshot(session, cancellationToken);
             }, cancellationToken);
         }
         catch (OperationCanceledException)
@@ -148,11 +168,15 @@ public class LibreHardwareSensorService : IHardwareSensorService
         }
     }
 
-    private HardwareTemperatureSnapshot BuildSnapshot(
+    /// <summary>
+    /// Construye la captura completa (temperaturas + rendimiento) recorriendo el
+    /// hardware UNA sola vez. La deduplicación se reinicia por snapshot.
+    /// </summary>
+    private HardwareLiveSnapshot BuildLiveSnapshot(
         IHardwareMonitorSession session,
         CancellationToken cancellationToken)
     {
-        var snapshot = new HardwareTemperatureSnapshot
+        var snapshot = new HardwareLiveSnapshot
         {
             CapturedAt = DateTime.Now,
             IsAvailable = true,
@@ -164,15 +188,13 @@ public class LibreHardwareSensorService : IHardwareSensorService
             snapshot.Warnings.Add("Algunos sensores pueden no estar disponibles sin permisos de administrador.");
         }
 
-        // La deduplicación se reinicia por snapshot: la misma sesión puede
-        // producir muestras independientes.
         var seen = new HashSet<string>();
         foreach (var node in session.Hardware)
         {
-            CollectTemperatureSensors(node, snapshot, seen, cancellationToken);
+            CollectSensors(node, snapshot, seen, cancellationToken);
         }
 
-        if (snapshot.Sensors.Count == 0)
+        if (snapshot.TemperatureSensors.Count == 0)
         {
             snapshot.Warnings.Add("No se detectaron sensores de temperatura disponibles.");
         }
@@ -180,9 +202,9 @@ public class LibreHardwareSensorService : IHardwareSensorService
         return snapshot;
     }
 
-    private static void CollectTemperatureSensors(
+    private static void CollectSensors(
         IHardwareNode node,
-        HardwareTemperatureSnapshot snapshot,
+        HardwareLiveSnapshot snapshot,
         HashSet<string> seen,
         CancellationToken cancellationToken)
     {
@@ -194,32 +216,56 @@ public class LibreHardwareSensorService : IHardwareSensorService
         {
             foreach (var sensor in node.Sensors)
             {
-                if (sensor.SensorType != InternalSensorType.Temperature)
-                {
-                    continue;
-                }
-
                 var identifier = ResolveIdentifier(node, sensor);
                 if (!seen.Add(identifier))
                 {
                     continue;
                 }
 
-                snapshot.Sensors.Add(new HardwareTemperatureSensor
+                switch (sensor.SensorType)
                 {
-                    HardwareName = node.Name,
-                    HardwareType = MapHardwareType(node.HardwareType),
-                    SensorName = sensor.Name,
-                    SensorIdentifier = identifier,
-                    ValueCelsius = Normalize(sensor.Value),
-                    MinCelsius = Normalize(sensor.Min),
-                    MaxCelsius = Normalize(sensor.Max)
-                });
+                    case InternalSensorType.Temperature:
+                        snapshot.TemperatureSensors.Add(new HardwareTemperatureSensor
+                        {
+                            HardwareName = node.Name,
+                            HardwareType = MapHardwareType(node.HardwareType),
+                            SensorName = sensor.Name,
+                            SensorIdentifier = identifier,
+                            ValueCelsius = Normalize(sensor.Value),
+                            MinCelsius = Normalize(sensor.Min),
+                            MaxCelsius = Normalize(sensor.Max)
+                        });
+                        break;
+
+                    case InternalSensorType.Load:
+                    case InternalSensorType.Clock:
+                        // Métricas de rendimiento: solo CPU/GPU en esta fase.
+                        if (node.HardwareType is InternalHardwareType.Cpu or InternalHardwareType.Gpu)
+                        {
+                            var isLoad = sensor.SensorType == InternalSensorType.Load;
+                            snapshot.PerformanceSensors.Add(new HardwarePerformanceSensor
+                            {
+                                HardwareName = node.Name,
+                                HardwareType = MapHardwareType(node.HardwareType),
+                                SensorName = sensor.Name,
+                                SensorIdentifier = identifier,
+                                MetricType = isLoad
+                                    ? HardwarePerformanceMetricType.Load
+                                    : HardwarePerformanceMetricType.Clock,
+                                Value = Normalize(sensor.Value),
+                                Min = Normalize(sensor.Min),
+                                Max = Normalize(sensor.Max),
+                                Unit = isLoad ? "%" : "MHz"
+                            });
+                        }
+
+                        break;
+                }
             }
 
             foreach (var sub in node.SubHardware)
             {
-                CollectTemperatureSensors(sub, snapshot, seen, cancellationToken);
+                CollectSensors(sub, snapshot, seen, cancellationToken);
             }
         }
         catch (Exception ex)
@@ -228,9 +274,26 @@ public class LibreHardwareSensorService : IHardwareSensorService
         }
     }
 
-    private HardwareTemperatureSnapshot CreateUnavailableSnapshot(string error)
+    /// <summary>
+    /// Proyecta una captura live a HardwareTemperatureSnapshot con listas independientes.
+    /// No modifica la captura live.
+    /// </summary>
+    private static HardwareTemperatureSnapshot ToTemperatureSnapshot(HardwareLiveSnapshot live)
     {
-        var snapshot = new HardwareTemperatureSnapshot
+        return new HardwareTemperatureSnapshot
+        {
+            CapturedAt = live.CapturedAt,
+            IsAvailable = live.IsAvailable,
+            IsElevated = live.IsElevated,
+            Sensors = live.TemperatureSensors.ToList(),
+            Warnings = live.Warnings.ToList(),
+            Errors = live.Errors.ToList()
+        };
+    }
+
+    private HardwareLiveSnapshot CreateUnavailableSnapshot(string error)
+    {
+        var snapshot = new HardwareLiveSnapshot
         {
             CapturedAt = DateTime.Now,
             IsAvailable = false,

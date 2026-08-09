@@ -166,6 +166,7 @@ computer.Accept(new HardwareUpdateVisitor()); // UpdateVisitor no es público en
 - Soporta .NET Framework 4.7.2+ y .NET Standard 2.0
 - En 0.9.6: `Computer` no expone `Update()` ni `UpdateVisitor` público; se implementa `IVisitor` propio
 - El enum `HardwareType` de 0.9.6 no incluye `Controller`; `IsControllerEnabled` sigue disponible en `Computer`
+- Se consumen `SensorType.Temperature`, `SensorType.Load` y `SensorType.Clock` (B.2.1); Load/Clock solo de hardware CPU/GPU; tipo determinado exclusivamente por `SensorType`, nunca por nombre del sensor
 
 ---
 

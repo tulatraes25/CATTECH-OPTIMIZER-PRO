@@ -27,4 +27,24 @@ public interface IHardwareSensorService
     IAsyncEnumerable<HardwareTemperatureSnapshot> WatchTemperatureSnapshotsAsync(
         TimeSpan interval,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Obtiene un snapshot live read-only: temperaturas + métricas de rendimiento
+    /// (Load/Clock de CPU/GPU) de UN solo Refresh de la sesión.
+    /// Abre una sesión, refresca una vez, captura y cierra.
+    /// </summary>
+    Task<HardwareLiveSnapshot> GetLiveSnapshotAsync(
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Produce un flujo de snapshots live reutilizando UNA sola sesión abierta.
+    /// Cada muestra combina temperatura + Load + Clock de un mismo Refresh.
+    /// Primera muestra inmediata; después de cada muestra espera el intervalo.
+    /// Al cancelar, interrumpir o abandonar la enumeración, la sesión se libera.
+    /// </summary>
+    /// <param name="interval">Intervalo positivo entre muestras. Debe ser mayor que TimeSpan.Zero.</param>
+    /// <exception cref="ArgumentOutOfRangeException">Si <paramref name="interval"/> es menor o igual a TimeSpan.Zero.</exception>
+    IAsyncEnumerable<HardwareLiveSnapshot> WatchLiveSnapshotsAsync(
+        TimeSpan interval,
+        CancellationToken cancellationToken = default);
 }
