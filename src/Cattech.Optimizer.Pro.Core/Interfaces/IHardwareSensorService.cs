@@ -10,8 +10,21 @@ public interface IHardwareSensorService
 {
     /// <summary>
     /// Obtiene un snapshot read-only de sensores de temperatura.
+    /// Abre una sesión, refresca una vez, captura y cierra.
     /// No modifica hardware, no ejecuta controles de ventiladores ni escribe configuraciones.
     /// </summary>
     Task<HardwareTemperatureSnapshot> GetTemperatureSnapshotAsync(
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Produce un flujo de snapshots de temperatura reutilizando UNA sola sesión abierta.
+    /// La primera muestra es inmediata; después de cada muestra espera el intervalo.
+    /// El ciclo de vida se controla por el async enumerable: al cancelar, interrumpir o
+    /// abandonar la enumeración, la sesión se libera.
+    /// </summary>
+    /// <param name="interval">Intervalo positivo entre muestras. Debe ser mayor que TimeSpan.Zero.</param>
+    /// <exception cref="ArgumentOutOfRangeException">Si <paramref name="interval"/> es menor o igual a TimeSpan.Zero.</exception>
+    IAsyncEnumerable<HardwareTemperatureSnapshot> WatchTemperatureSnapshotsAsync(
+        TimeSpan interval,
         CancellationToken cancellationToken = default);
 }

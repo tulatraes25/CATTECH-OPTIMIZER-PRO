@@ -83,6 +83,7 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 | A.7.2b: Recomendaciones SMART/self-test | — | — | ✅ Implementado |
 | **Total Fase A** | **4 semanas** | | ✅ Completada |
 | B.1.1: Fundación LibreHardwareMonitor + lectura temperatura | — | LibreHardwareMonitorLib 0.9.6 | ✅ Implementado |
+| B.1.2: Muestreo repetido + sesión reutilizable | — | B.1.1 | ✅ Implementado |
 | Fase B.1: Sensores temperatura | 1 semana | LibreHardwareMonitorLib | En curso |
 | Fase B.2: CPU/GPU/Batería | 1 semana | LibreHardwareMonitorLib |
 | Fase B.3: RAM avanzada | 0.5 semana | LibreHardwareMonitorLib |
@@ -105,6 +106,7 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 - [ ] No ejecutar tests destructivos
 
 ### Hardware
+- [x] Fundación sensores de temperatura (B.1.1/B.1.2): sesión reutilizable, muestreo repetido cancelable
 - [ ] Mostrar sensores de temperatura
 - [ ] Mostrar CPU detallada
 - [ ] Mostrar GPU detallada

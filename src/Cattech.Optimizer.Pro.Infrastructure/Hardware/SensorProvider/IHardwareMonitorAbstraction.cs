@@ -32,6 +32,12 @@ internal interface IHardwareMonitorSession : IDisposable
     /// Hardware raíz detectado.
     /// </summary>
     IReadOnlyList<IHardwareNode> Hardware { get; }
+
+    /// <summary>
+    /// Actualiza los valores actuales de hardware y subhardware.
+    /// No recrea ni reabre la sesión.
+    /// </summary>
+    void Refresh();
 }
 
 /// <summary>
@@ -103,12 +109,33 @@ internal interface ISensorNode
 
 /// <summary>
 /// Fábrica de sesiones de monitoreo. Permite simular hardware en tests.
+/// Create() abre la sesión pero NO la refresca: Refresh() es responsabilidad del llamador.
 /// </summary>
 internal interface IHardwareMonitorFactory
 {
     /// <summary>
-    /// Abre y actualiza el monitoreo de hardware.
+    /// Abre el monitoreo de hardware.
     /// Lanza excepción si no puede inicializarse.
     /// </summary>
     IHardwareMonitorSession Create();
+}
+
+/// <summary>
+/// Abstracción del delay entre muestras para poder testear sin esperas reales.
+/// </summary>
+internal interface IHardwareMonitorDelay
+{
+    /// <summary>
+    /// Espera el intervalo especificado o hasta cancelación.
+    /// </summary>
+    Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// Delay real basado en Task.Delay.
+/// </summary>
+internal sealed class TaskDelay : IHardwareMonitorDelay
+{
+    public Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken)
+        => Task.Delay(delay, cancellationToken);
 }

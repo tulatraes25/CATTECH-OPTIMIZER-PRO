@@ -8,6 +8,8 @@ namespace Cattech.Optimizer.Pro.Infrastructure.Hardware.SensorProvider;
 /// </summary>
 internal sealed class LibreHardwareMonitorFactory : IHardwareMonitorFactory
 {
+    private static readonly HardwareUpdateVisitor Visitor = new();
+
     public IHardwareMonitorSession Create()
     {
         var computer = new Computer
@@ -20,14 +22,30 @@ internal sealed class LibreHardwareMonitorFactory : IHardwareMonitorFactory
             IsControllerEnabled = true
         };
 
-        computer.Open();
-        computer.Accept(new HardwareUpdateVisitor());
+        try
+        {
+            computer.Open();
 
-        var hardware = computer.Hardware
-            .Select(h => (IHardwareNode)new HardwareNodeAdapter(h))
-            .ToList();
+            var hardware = computer.Hardware
+                .Select(h => (IHardwareNode)new HardwareNodeAdapter(h))
+                .ToList();
 
-        return new LibreHardwareMonitorSession(computer, hardware);
+            return new LibreHardwareMonitorSession(computer, hardware, Visitor);
+        }
+        catch
+        {
+            // No dejar el Computer abierto si la construcción de la sesión falla.
+            try
+            {
+                computer.Close();
+            }
+            catch
+            {
+                // Conservar la excepción original.
+            }
+
+            throw;
+        }
     }
 }
 
@@ -37,14 +55,18 @@ internal sealed class LibreHardwareMonitorFactory : IHardwareMonitorFactory
 internal sealed class LibreHardwareMonitorSession : IHardwareMonitorSession
 {
     private readonly Computer _computer;
+    private readonly HardwareUpdateVisitor _visitor;
 
     public IReadOnlyList<IHardwareNode> Hardware { get; }
 
-    public LibreHardwareMonitorSession(Computer computer, IReadOnlyList<IHardwareNode> hardware)
+    public LibreHardwareMonitorSession(Computer computer, IReadOnlyList<IHardwareNode> hardware, HardwareUpdateVisitor visitor)
     {
         _computer = computer;
         Hardware = hardware;
+        _visitor = visitor;
     }
+
+    public void Refresh() => _computer.Accept(_visitor);
 
     public void Dispose() => _computer.Close();
 }

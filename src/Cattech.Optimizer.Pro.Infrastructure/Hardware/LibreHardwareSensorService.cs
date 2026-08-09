@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Security.Principal;
 using Cattech.Optimizer.Pro.Core.Interfaces;
 using Cattech.Optimizer.Pro.Core.Models.Hardware;
@@ -12,16 +13,23 @@ namespace Cattech.Optimizer.Pro.Infrastructure.Hardware;
 public class LibreHardwareSensorService : IHardwareSensorService
 {
     private readonly IHardwareMonitorFactory _factory;
+    private readonly IHardwareMonitorDelay _delay;
     private readonly bool _isElevated;
 
     public LibreHardwareSensorService()
-        : this(new LibreHardwareMonitorFactory(), IsProcessElevated())
+        : this(new LibreHardwareMonitorFactory(), new TaskDelay(), IsProcessElevated())
     {
     }
 
     internal LibreHardwareSensorService(IHardwareMonitorFactory factory, bool isElevated)
+        : this(factory, new TaskDelay(), isElevated)
+    {
+    }
+
+    internal LibreHardwareSensorService(IHardwareMonitorFactory factory, IHardwareMonitorDelay delay, bool isElevated)
     {
         _factory = factory;
+        _delay = delay;
         _isElevated = isElevated;
     }
 
@@ -31,14 +39,123 @@ public class LibreHardwareSensorService : IHardwareSensorService
     {
         // La lectura de LibreHardwareMonitor es sincrónica; se ejecuta en background
         // para no bloquear el hilo de la futura UI WPF.
-        return Task.Run(() => ReadSnapshot(cancellationToken), cancellationToken);
+        return Task.Run(() => ReadSingleSnapshot(cancellationToken), cancellationToken);
     }
 
-    private HardwareTemperatureSnapshot ReadSnapshot(CancellationToken cancellationToken)
+    /// <inheritdoc/>
+    public async IAsyncEnumerable<HardwareTemperatureSnapshot> WatchTemperatureSnapshotsAsync(
+        TimeSpan interval,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        if (interval <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(interval),
+                "El intervalo entre muestras debe ser mayor que TimeSpan.Zero.");
+        }
+
+        IHardwareMonitorSession? session = null;
+        try
+        {
+            session = TryCreateSession(out var createError);
+            if (createError != null)
+            {
+                // Un fallo de apertura produce UNA muestra controlada y el stream termina.
+                yield return CreateUnavailableSnapshot(createError);
+                yield break;
+            }
+
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                yield return await CaptureWithRefreshAsync(session, cancellationToken);
+                await _delay.DelayAsync(interval, cancellationToken);
+            }
+        }
+        finally
+        {
+            session?.Dispose();
+        }
+    }
+
+    private IHardwareMonitorSession? TryCreateSession(out string? error)
+    {
+        try
+        {
+            error = null;
+            return _factory.Create();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            error = $"No se pudo inicializar el monitoreo de hardware: {ex.Message}";
+            return null;
+        }
+    }
+
+    private HardwareTemperatureSnapshot ReadSingleSnapshot(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        IHardwareMonitorSession? session = null;
+        try
+        {
+            session = _factory.Create();
+            cancellationToken.ThrowIfCancellationRequested();
+            session.Refresh();
+            return BuildSnapshot(session, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return CreateUnavailableSnapshot($"No se pudo inicializar el monitoreo de hardware: {ex.Message}");
+        }
+        finally
+        {
+            session?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Refresca y captura una muestra. Ejecución en background, estrictamente secuencial.
+    /// Un Refresh fallido produce una muestra no disponible sin cerrar el monitor:
+    /// el siguiente intento puede recuperarse.
+    /// </summary>
+    private async Task<HardwareTemperatureSnapshot> CaptureWithRefreshAsync(
+        IHardwareMonitorSession session,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await Task.Run(() =>
+            {
+                session.Refresh();
+                return BuildSnapshot(session, cancellationToken);
+            }, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return CreateUnavailableSnapshot($"No se pudo actualizar la lectura de sensores: {ex.Message}");
+        }
+    }
+
+    private HardwareTemperatureSnapshot BuildSnapshot(
+        IHardwareMonitorSession session,
+        CancellationToken cancellationToken)
     {
         var snapshot = new HardwareTemperatureSnapshot
         {
             CapturedAt = DateTime.Now,
+            IsAvailable = true,
             IsElevated = _isElevated
         };
 
@@ -47,37 +164,17 @@ public class LibreHardwareSensorService : IHardwareSensorService
             snapshot.Warnings.Add("Algunos sensores pueden no estar disponibles sin permisos de administrador.");
         }
 
-        IHardwareMonitorSession? session = null;
-        try
+        // La deduplicación se reinicia por snapshot: la misma sesión puede
+        // producir muestras independientes.
+        var seen = new HashSet<string>();
+        foreach (var node in session.Hardware)
         {
-            session = _factory.Create();
-            snapshot.IsAvailable = true;
-
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var seen = new HashSet<string>();
-            foreach (var node in session.Hardware)
-            {
-                CollectTemperatureSensors(node, snapshot, seen, cancellationToken);
-            }
-
-            if (snapshot.Sensors.Count == 0)
-            {
-                snapshot.Warnings.Add("No se detectaron sensores de temperatura disponibles.");
-            }
+            CollectTemperatureSensors(node, snapshot, seen, cancellationToken);
         }
-        catch (OperationCanceledException)
+
+        if (snapshot.Sensors.Count == 0)
         {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            snapshot.IsAvailable = false;
-            snapshot.Errors.Add($"No se pudo inicializar el monitoreo de hardware: {ex.Message}");
-        }
-        finally
-        {
-            session?.Dispose();
+            snapshot.Warnings.Add("No se detectaron sensores de temperatura disponibles.");
         }
 
         return snapshot;
@@ -91,7 +188,8 @@ public class LibreHardwareSensorService : IHardwareSensorService
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Un fallo en un hardware no pierde los sensores válidos de otros
+        // Un fallo parcial (sensores o subhardware) no derriba el snapshot completo:
+        // se registra como error y los demás nodos siguen leyéndose.
         try
         {
             foreach (var sensor in node.Sensors)
@@ -118,16 +216,28 @@ public class LibreHardwareSensorService : IHardwareSensorService
                     MaxCelsius = Normalize(sensor.Max)
                 });
             }
+
+            foreach (var sub in node.SubHardware)
+            {
+                CollectTemperatureSensors(sub, snapshot, seen, cancellationToken);
+            }
         }
         catch (Exception ex)
         {
             snapshot.Errors.Add($"Error al leer sensores de {node.Name}: {ex.Message}");
         }
+    }
 
-        foreach (var sub in node.SubHardware)
+    private HardwareTemperatureSnapshot CreateUnavailableSnapshot(string error)
+    {
+        var snapshot = new HardwareTemperatureSnapshot
         {
-            CollectTemperatureSensors(sub, snapshot, seen, cancellationToken);
-        }
+            CapturedAt = DateTime.Now,
+            IsAvailable = false,
+            IsElevated = _isElevated
+        };
+        snapshot.Errors.Add(error);
+        return snapshot;
     }
 
     private static string ResolveIdentifier(IHardwareNode node, ISensorNode sensor)

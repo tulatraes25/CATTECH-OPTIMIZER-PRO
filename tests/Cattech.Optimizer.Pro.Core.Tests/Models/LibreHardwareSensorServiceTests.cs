@@ -1,3 +1,4 @@
+using System.Linq;
 using Cattech.Optimizer.Pro.Core.Interfaces;
 using Cattech.Optimizer.Pro.Core.Models.Hardware;
 using Cattech.Optimizer.Pro.Infrastructure.Hardware;
@@ -16,9 +17,9 @@ public class LibreHardwareSensorServiceTests
         public string Name { get; }
         public string Identifier { get; }
         public InternalSensorType SensorType { get; }
-        public float? Value { get; }
-        public float? Min { get; }
-        public float? Max { get; }
+        public float? Value { get; set; }
+        public float? Min { get; set; }
+        public float? Max { get; set; }
 
         public FakeSensor(string name, string identifier, InternalSensorType type,
             float? value = null, float? min = null, float? max = null)
@@ -60,8 +61,15 @@ public class LibreHardwareSensorServiceTests
     private sealed class FakeSession : IHardwareMonitorSession
     {
         public bool ThrowOnHardwareRead { get; set; }
-        public bool Disposed { get; private set; }
+        public bool ThrowOnRefresh { get; set; }
+        public bool ThrowOnFirstRefresh { get; set; }
+        public Action? OnRefresh { get; set; }
+        public int RefreshCount { get; private set; }
+        public int DisposeCount { get; private set; }
+        public int MaxConcurrentRefreshes { get; private set; }
+        public bool Disposed => DisposeCount > 0;
 
+        private int _inFlight;
         private IReadOnlyList<IHardwareNode> _hardware = new List<IHardwareNode>();
 
         public IReadOnlyList<IHardwareNode> Hardware
@@ -78,7 +86,31 @@ public class LibreHardwareSensorServiceTests
             set => _hardware = value;
         }
 
-        public void Dispose() => Disposed = true;
+        public void Refresh()
+        {
+            RefreshCount++;
+            _inFlight++;
+            try
+            {
+                if (_inFlight > MaxConcurrentRefreshes)
+                {
+                    MaxConcurrentRefreshes = _inFlight;
+                }
+
+                if (ThrowOnRefresh || (ThrowOnFirstRefresh && RefreshCount == 1))
+                {
+                    throw new InvalidOperationException("Simulated refresh failure");
+                }
+
+                OnRefresh?.Invoke();
+            }
+            finally
+            {
+                _inFlight--;
+            }
+        }
+
+        public void Dispose() => DisposeCount++;
     }
 
     private sealed class FakeFactory : IHardwareMonitorFactory
@@ -99,12 +131,33 @@ public class LibreHardwareSensorServiceTests
         }
     }
 
+    private sealed class FakeDelay : IHardwareMonitorDelay
+    {
+        public List<TimeSpan> Delays { get; } = new();
+        public bool ThrowOnDelay { get; set; }
+
+        public Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken)
+        {
+            Delays.Add(delay);
+            if (ThrowOnDelay)
+            {
+                throw new InvalidOperationException("Simulated delay failure");
+            }
+
+            // Completa inmediatamente: los tests no esperan segundos reales.
+            return Task.CompletedTask;
+        }
+    }
+
     private static FakeSensor Temp(string name, string identifier, float? value,
         float? min = null, float? max = null) =>
         new(name, identifier, InternalSensorType.Temperature, value, min, max);
 
     private static LibreHardwareSensorService CreateService(IHardwareMonitorFactory factory,
         bool isElevated = true) => new(factory, isElevated);
+
+    private static LibreHardwareSensorService CreateService(IHardwareMonitorFactory factory,
+        IHardwareMonitorDelay delay, bool isElevated = true) => new(factory, delay, isElevated);
 
     private static async Task<HardwareTemperatureSnapshot> Capture(IHardwareMonitorFactory factory,
         bool isElevated = true)
@@ -693,5 +746,395 @@ public class LibreHardwareSensorServiceTests
         Assert.Equal(1, factory.CreateCount);
         Assert.True(snapshot.IsAvailable);
         Assert.Equal("Simulated CPU", Assert.Single(snapshot.Sensors).HardwareName);
+    }
+
+    // =====================
+    // Tests Fase B.1.2 - Sesión reutilizable y muestreo repetido
+    // =====================
+
+    private static readonly TimeSpan WatchInterval = TimeSpan.FromMilliseconds(250);
+
+    private static FakeSession CreateCpuSession(out FakeSensor packageSensor)
+    {
+        packageSensor = new FakeSensor("Package", "/intelcpu/0/temperature/0", InternalSensorType.Temperature, 45.0f);
+        return new FakeSession
+        {
+            Hardware =
+            [
+                new FakeHardware
+                {
+                    Name = "Intel Core i7-13700K",
+                    Identifier = "/intelcpu/0",
+                    HardwareType = InternalHardwareType.Cpu,
+                    Sensors = [packageSensor]
+                }
+            ]
+        };
+    }
+
+    private static async Task<List<HardwareTemperatureSnapshot>> TakeWatchSamplesAsync(
+        LibreHardwareSensorService service, int count)
+    {
+        var samples = new List<HardwareTemperatureSnapshot>();
+        await using var enumerator = service.WatchTemperatureSnapshotsAsync(WatchInterval).GetAsyncEnumerator();
+        while (samples.Count < count && await enumerator.MoveNextAsync())
+        {
+            samples.Add(enumerator.Current);
+        }
+
+        return samples;
+    }
+
+    [Fact]
+    public async Task SingleSnapshot_CallsCreateOnce()
+    {
+        var factory = new FakeFactory { Session = CreateCpuSession(out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        await service.GetTemperatureSnapshotAsync();
+
+        Assert.Equal(1, factory.CreateCount);
+    }
+
+    [Fact]
+    public async Task SingleSnapshot_CallsRefreshOnce()
+    {
+        var factory = new FakeFactory { Session = CreateCpuSession(out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        await service.GetTemperatureSnapshotAsync();
+
+        Assert.Equal(1, factory.Session!.RefreshCount);
+    }
+
+    [Fact]
+    public async Task SingleSnapshot_DisposesSession()
+    {
+        var factory = new FakeFactory { Session = CreateCpuSession(out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        await service.GetTemperatureSnapshotAsync();
+
+        Assert.True(factory.Session!.Disposed);
+        Assert.Equal(1, factory.Session.DisposeCount);
+    }
+
+    [Fact]
+    public async Task WatchThreeSamples_SingleSession()
+    {
+        var factory = new FakeFactory { Session = CreateCpuSession(out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = await TakeWatchSamplesAsync(service, 3);
+
+        Assert.Equal(3, samples.Count);
+        Assert.Equal(1, factory.CreateCount);
+    }
+
+    [Fact]
+    public async Task WatchThreeSamples_ThreeRefreshes()
+    {
+        var factory = new FakeFactory { Session = CreateCpuSession(out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        await TakeWatchSamplesAsync(service, 3);
+
+        Assert.Equal(3, factory.Session!.RefreshCount);
+    }
+
+    [Fact]
+    public async Task FirstSample_BeforeFirstDelay()
+    {
+        var factory = new FakeFactory { Session = CreateCpuSession(out _) };
+        var delay = new FakeDelay();
+        var service = CreateService(factory, delay);
+
+        await using var enumerator = service.WatchTemperatureSnapshotsAsync(WatchInterval).GetAsyncEnumerator();
+        Assert.True(await enumerator.MoveNextAsync());
+        Assert.Empty(delay.Delays);
+
+        Assert.True(await enumerator.MoveNextAsync());
+        Assert.Single(delay.Delays);
+    }
+
+    [Fact]
+    public async Task Delay_ReceivesExactInterval()
+    {
+        var factory = new FakeFactory { Session = CreateCpuSession(out _) };
+        var delay = new FakeDelay();
+        var service = CreateService(factory, delay);
+
+        await TakeWatchSamplesAsync(service, 3);
+
+        Assert.Equal(2, delay.Delays.Count);
+        Assert.All(delay.Delays, d => Assert.Equal(WatchInterval, d));
+    }
+
+    [Fact]
+    public async Task EachSample_IsDifferentObject()
+    {
+        var factory = new FakeFactory { Session = CreateCpuSession(out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = await TakeWatchSamplesAsync(service, 3);
+
+        Assert.NotSame(samples[0], samples[1]);
+        Assert.NotSame(samples[1], samples[2]);
+    }
+
+    [Fact]
+    public async Task EachSample_IndependentSensorsList()
+    {
+        var factory = new FakeFactory { Session = CreateCpuSession(out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = await TakeWatchSamplesAsync(service, 3);
+
+        Assert.NotSame(samples[0].Sensors, samples[1].Sensors);
+        Assert.NotSame(samples[1].Sensors, samples[2].Sensors);
+    }
+
+    [Fact]
+    public async Task SameIdentifier_DedupedPerSnapshot_NotPerStream()
+    {
+        var package = new FakeSensor("Package", "/intelcpu/0/temperature/0", InternalSensorType.Temperature, 45.0f);
+        var duplicate = new FakeSensor("Package", "/intelcpu/0/temperature/0", InternalSensorType.Temperature, 46.0f);
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "Intel Core i7-13700K",
+                        Identifier = "/intelcpu/0",
+                        HardwareType = InternalHardwareType.Cpu,
+                        Sensors = [package, duplicate]
+                    }
+                ]
+            }
+        };
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = await TakeWatchSamplesAsync(service, 2);
+
+        Assert.All(samples, s => Assert.Single(s.Sensors));
+    }
+
+    [Fact]
+    public async Task ValueChanges_AppearAcrossSamples()
+    {
+        var factory = new FakeFactory { Session = CreateCpuSession(out var sensor) };
+        var current = 45.0f;
+        factory.Session!.OnRefresh = () => { current += 6; sensor.Value = current; };
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = await TakeWatchSamplesAsync(service, 2);
+
+        Assert.Equal(51.0, samples[0].Sensors[0].ValueCelsius);
+        Assert.Equal(57.0, samples[1].Sensors[0].ValueCelsius);
+    }
+
+    [Fact]
+    public async Task MinMaxChanges_AreReflected()
+    {
+        var factory = new FakeFactory { Session = CreateCpuSession(out var sensor) };
+        var max = 80.0f;
+        factory.Session!.OnRefresh = () => { max += 5; sensor.Max = max; };
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = await TakeWatchSamplesAsync(service, 2);
+
+        Assert.Equal(85.0, samples[0].Sensors[0].MaxCelsius);
+        Assert.Equal(90.0, samples[1].Sensors[0].MaxCelsius);
+    }
+
+    [Fact]
+    public async Task ConsumerBreak_DisposesSession()
+    {
+        var factory = new FakeFactory { Session = CreateCpuSession(out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        await foreach (var _ in service.WatchTemperatureSnapshotsAsync(WatchInterval))
+        {
+            break;
+        }
+
+        Assert.True(factory.Session!.Disposed);
+    }
+
+    [Fact]
+    public async Task Cancellation_DisposesSession()
+    {
+        var factory = new FakeFactory { Session = CreateCpuSession(out _) };
+        var service = CreateService(factory, new FakeDelay());
+        using var cts = new CancellationTokenSource();
+
+        var enumerator = service.WatchTemperatureSnapshotsAsync(WatchInterval, cts.Token).GetAsyncEnumerator();
+        Assert.True(await enumerator.MoveNextAsync());
+
+        cts.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            async () => await enumerator.MoveNextAsync());
+
+        Assert.True(factory.Session!.Disposed);
+    }
+
+    [Fact]
+    public async Task Cancellation_PreventsFurtherRefreshes()
+    {
+        var factory = new FakeFactory { Session = CreateCpuSession(out _) };
+        var service = CreateService(factory, new FakeDelay());
+        using var cts = new CancellationTokenSource();
+
+        var enumerator = service.WatchTemperatureSnapshotsAsync(WatchInterval, cts.Token).GetAsyncEnumerator();
+        Assert.True(await enumerator.MoveNextAsync());
+        Assert.Equal(1, factory.Session!.RefreshCount);
+
+        cts.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            async () => await enumerator.MoveNextAsync());
+
+        Assert.Equal(1, factory.Session.RefreshCount);
+    }
+
+    [Fact]
+    public async Task ZeroInterval_ThrowsArgumentOutOfRange()
+    {
+        var factory = new FakeFactory { Session = CreateCpuSession(out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () =>
+        {
+            await foreach (var _ in service.WatchTemperatureSnapshotsAsync(TimeSpan.Zero))
+            {
+            }
+        });
+    }
+
+    [Fact]
+    public async Task NegativeInterval_ThrowsArgumentOutOfRange()
+    {
+        var factory = new FakeFactory { Session = CreateCpuSession(out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () =>
+        {
+            await foreach (var _ in service.WatchTemperatureSnapshotsAsync(TimeSpan.FromMilliseconds(-100)))
+            {
+            }
+        });
+    }
+
+    [Fact]
+    public async Task CreateFailure_SingleUnavailableSample_ThenEnds()
+    {
+        var factory = new FakeFactory { ThrowOnCreate = true };
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = new List<HardwareTemperatureSnapshot>();
+        await foreach (var s in service.WatchTemperatureSnapshotsAsync(WatchInterval))
+        {
+            samples.Add(s);
+        }
+
+        var unavailable = Assert.Single(samples);
+        Assert.False(unavailable.IsAvailable);
+        Assert.NotEmpty(unavailable.Errors);
+        Assert.Empty(unavailable.Sensors);
+    }
+
+    [Fact]
+    public async Task RefreshFailure_UnavailableSnapshot_NoStaleSensors()
+    {
+        var factory = new FakeFactory { Session = CreateCpuSession(out _) };
+        factory.Session!.ThrowOnRefresh = true;
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = await TakeWatchSamplesAsync(service, 1);
+
+        Assert.False(samples[0].IsAvailable);
+        Assert.Empty(samples[0].Sensors);
+        Assert.NotEmpty(samples[0].Errors);
+    }
+
+    [Fact]
+    public async Task RefreshFailure_ThenSuccess_Recovers()
+    {
+        var factory = new FakeFactory { Session = CreateCpuSession(out _) };
+        factory.Session!.ThrowOnFirstRefresh = true;
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = await TakeWatchSamplesAsync(service, 2);
+
+        Assert.False(samples[0].IsAvailable);
+        Assert.True(samples[1].IsAvailable);
+        Assert.Single(samples[1].Sensors);
+        Assert.Equal(45.0, samples[1].Sensors[0].ValueCelsius);
+    }
+
+    [Fact]
+    public async Task Dispose_ExactlyOnce()
+    {
+        var factory = new FakeFactory { Session = CreateCpuSession(out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        await TakeWatchSamplesAsync(service, 3);
+
+        Assert.Equal(1, factory.Session!.DisposeCount);
+    }
+
+    [Fact]
+    public async Task NoConcurrentRefreshes()
+    {
+        var factory = new FakeFactory { Session = CreateCpuSession(out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        await TakeWatchSamplesAsync(service, 3);
+
+        Assert.Equal(1, factory.Session!.MaxConcurrentRefreshes);
+    }
+
+    [Fact]
+    public async Task Watch_UsesInjectedDelay_NoRealTimers()
+    {
+        var factory = new FakeFactory { Session = CreateCpuSession(out _) };
+        var delay = new FakeDelay();
+        var service = CreateService(factory, delay);
+
+        await TakeWatchSamplesAsync(service, 3);
+
+        // El delay inyectado recibió las esperas: el servicio no usa Task.Delay interno
+        Assert.Equal(2, delay.Delays.Count);
+    }
+
+    [Fact]
+    public async Task Watch_WithFakes_NoRealHardwareAccess()
+    {
+        var factory = new FakeFactory { Session = CreateCpuSession(out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = await TakeWatchSamplesAsync(service, 1);
+
+        Assert.Equal(1, factory.CreateCount);
+        Assert.True(samples[0].IsAvailable);
+        Assert.Equal("Intel Core i7-13700K", samples[0].Sensors[0].HardwareName);
+    }
+
+    [Fact]
+    public async Task Watch_NotElevated_ProducesWarning_NoErrors()
+    {
+        var factory = new FakeFactory { Session = CreateCpuSession(out _) };
+        var service = CreateService(factory, new FakeDelay(), isElevated: false);
+
+        var samples = await TakeWatchSamplesAsync(service, 2);
+
+        Assert.All(samples, s =>
+        {
+            Assert.True(s.IsAvailable);
+            Assert.Contains(s.Warnings, w => w.Contains("permisos de administrador", StringComparison.OrdinalIgnoreCase));
+            Assert.Empty(s.Errors);
+        });
     }
 }

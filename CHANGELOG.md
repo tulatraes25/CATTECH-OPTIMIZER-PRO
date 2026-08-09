@@ -192,6 +192,22 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - **Async-compatible**: lectura sincrónica en background (Task.Run), respeta CancellationToken
 - **Testabilidad**: abstracción interna IHardwareMonitorFactory/IHardwareMonitorSession/IHardwareNode/ISensorNode + InternalsVisibleTo; tests con fakes, sin acceso a hardware real
 - 22 tests nuevos (440 total)
+
+### Added (Muestreo repetido - Fase B.1.2)
+- **WatchTemperatureSnapshotsAsync(interval, ct)**: async stream que reutiliza UNA sola sesión abierta; primera muestra inmediata, Refresh por muestra, espera el intervalo entre muestras
+- **IHardwareMonitorSession.Refresh()**: responsabilidades separadas — Create() abre, Refresh() actualiza valores, Dispose() cierra Computer
+- **LibreHardwareMonitorSession.Refresh**: `_computer.Accept(HardwareUpdateVisitor)` reutilizando el mismo visitor; no recrea ni reabre Computer
+- **Leak corregido en Create**: si Open() o la construcción de la sesión falla, se intenta Close() seguro antes de relanzar
+- **Ciclo de vida del stream**: try/finally dispone la sesión exactamente una vez al cancelar, interrumpir (break), fallar o agotar la enumeración
+- **Validación de intervalo**: interval <= 0 lanza ArgumentOutOfRangeException (sin inventar mínimos/máximos ni default)
+- **Fallos tolerantes**: Create fallido → UNA muestra IsAvailable=false y el stream termina (sin retry); Refresh fallido → muestra IsAvailable=false sin sensores stale, el siguiente intento puede recuperarse sobre la misma sesión
+- **Muestras independientes**: objeto nuevo por muestra, lista Sensors nueva, deduplicación por SensorIdentifier reiniciada por snapshot
+- **Min/Max reflejados tal cual informa el proveedor** (sin agregados propios)
+- **Sin concurrencia**: muestras estrictamente secuenciales (Refresh N → Read N → Delay → Refresh N+1), sin Parallel
+- **Delay testeable**: IHardwareMonitorDelay interno (TaskDelay en prod, fake inmediato en tests); sin paquete NuGet adicional
+- **Error parcial por nodo**: sensores y subhardware encapsulados de forma tolerante; IsAvailable=true con error parcial si el monitor sigue abierto
+- **Sin hot-plug**: la lista raíz de hardware se mantiene estable durante la sesión
+- 25 tests nuevos (465 total)
 - SmartctlAvailability, SmartDiskDevice, SmartctlCommandResult
 - ISmartctlRunner, ISmartDiskService interfaces
 - 32 tests de smartctl + 18 tests de SMART (214 total)
