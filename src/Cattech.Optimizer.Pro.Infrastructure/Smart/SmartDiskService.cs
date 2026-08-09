@@ -161,8 +161,9 @@ public class SmartDiskService : ISmartDiskService
 
     private async Task<SmartDiskReport> AnalyzeDiskInternalAsync(SmartDiskDevice device, string smartctlVersion)
     {
-        // Ejecutar smartctl -a -j para leer SMART completo
-        var result = await _smartctlRunner.RunAsync($"-a -j {device.Name}", DiskAnalysisTimeout);
+        // Ejecutar smartctl -a -j [-d TYPE] <device> preservando el transporte detectado
+        var arguments = SmartctlCommandBuilder.BuildAnalyzeArguments(device.Name, device.Type);
+        var result = await _smartctlRunner.RunAsync(arguments, DiskAnalysisTimeout);
 
         if (result.TimedOut)
         {
@@ -175,6 +176,7 @@ public class SmartDiskService : ISmartDiskService
                 ModelName = device.ModelName,
                 SerialNumber = device.SerialNumber,
                 SmartctlVersion = smartctlVersion,
+                SmartctlDeviceType = device.Type,
                 HealthStatus = SmartHealthStatus.Unknown,
                 HealthSummary = "Timeout: smartctl tardó demasiado en responder",
                 IsAnalysisSuccessful = false,
@@ -182,7 +184,9 @@ public class SmartDiskService : ISmartDiskService
             };
         }
 
-        if (!result.IsSuccess && string.IsNullOrWhiteSpace(result.StandardOutput))
+        // Fallo operativo (bits 0-1, proceso no ejecutado) sin JSON utilizable:
+        // no se afirma Good/Warning/Critical sobre el disco.
+        if (result.HasInvocationFailure && string.IsNullOrWhiteSpace(result.StandardOutput))
         {
             return new SmartDiskReport
             {
@@ -193,6 +197,7 @@ public class SmartDiskService : ISmartDiskService
                 ModelName = device.ModelName,
                 SerialNumber = device.SerialNumber,
                 SmartctlVersion = smartctlVersion,
+                SmartctlDeviceType = device.Type,
                 HealthStatus = SmartHealthStatus.NotAvailable,
                 HealthSummary = "No se pudo obtener datos SMART",
                 IsAnalysisSuccessful = false,
@@ -200,8 +205,31 @@ public class SmartDiskService : ISmartDiskService
             };
         }
 
-        // Parsear JSON
-        return SmartctlParser.ParseSmartJson(result.StandardOutput, device, smartctlVersion);
+        // Bit 2 sin JSON utilizable: tampoco hay datos confiables.
+        if (result.HasSmartCommandFailure && string.IsNullOrWhiteSpace(result.StandardOutput))
+        {
+            return new SmartDiskReport
+            {
+                Device = device.Name,
+                DeviceName = device.InfoName,
+                DeviceType = device.ApproximateDiskType,
+                Protocol = device.Protocol,
+                ModelName = device.ModelName,
+                SerialNumber = device.SerialNumber,
+                SmartctlVersion = smartctlVersion,
+                SmartctlDeviceType = device.Type,
+                HealthStatus = SmartHealthStatus.NotAvailable,
+                HealthSummary = "No se pudo obtener datos SMART",
+                IsAnalysisSuccessful = false,
+                ErrorMessage = result.StandardError
+            };
+        }
+
+        // Parsear JSON. Los bits 3-7 (hallazgos de salud/log) NO descartan la salida.
+        // Si el bit 2 está activo pero hay JSON parcial, el parser lo marca
+        // como análisis parcial/no concluyente.
+        return SmartctlParser.ParseSmartJson(result.StandardOutput, device, smartctlVersion,
+            result.HasSmartCommandFailure ? result.ExitFlags : (SmartctlExitFlags?)null);
     }
 
     private void EnsureDirectoryExists()

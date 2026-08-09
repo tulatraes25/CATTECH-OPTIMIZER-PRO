@@ -441,6 +441,7 @@ public partial class SmartDiskViewModel : ObservableObject
                 {
                     Name = SelectedReport.Device,
                     InfoName = SelectedReport.DeviceName,
+                    Type = SelectedReport.SmartctlDeviceType,
                     ApproximateDiskType = SelectedReport.DeviceType,
                     Protocol = SelectedReport.Protocol,
                     ModelName = SelectedReport.ModelName,
@@ -570,6 +571,7 @@ public partial class SmartDiskViewModel : ObservableObject
                 {
                     Name = SelectedReport.Device,
                     InfoName = SelectedReport.DeviceName,
+                    Type = SelectedReport.SmartctlDeviceType,
                     ApproximateDiskType = SelectedReport.DeviceType,
                     Protocol = SelectedReport.Protocol,
                     ModelName = SelectedReport.ModelName,

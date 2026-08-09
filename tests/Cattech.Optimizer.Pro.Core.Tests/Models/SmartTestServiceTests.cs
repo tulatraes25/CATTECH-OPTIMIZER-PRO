@@ -48,8 +48,10 @@ public class SmartTestServiceTests
     }
 
     [Fact]
-    public void ParseStartShortTestJson_ExitStatus4_ReturnsUnsupported()
+    public void ParseStartShortTestJson_ExitStatus4_ReturnsFailedToStart()
     {
+        // Exit 4 = bit 2 (SmartCommandOrChecksumError). NO se infiere "Unsupported"
+        // a partir del número 4: la semántica de smartctl es un bitmask.
         var json = @"{
             ""smartctl"": {
                 ""messages"": [
@@ -62,8 +64,9 @@ public class SmartTestServiceTests
         var result = SmartctlParser.ParseStartShortTestJson(json);
 
         Assert.False(result.Started);
-        Assert.Equal(SmartTestStatus.Unsupported, result.Status);
+        Assert.Equal(SmartTestStatus.FailedToStart, result.Status);
         Assert.Equal(4, result.SmartctlExitStatus);
+        Assert.NotEqual(SmartTestStatus.Unsupported, result.Status);
     }
 
     [Fact]
@@ -448,9 +451,10 @@ public class SmartTestServiceTests
     }
 
     [Fact]
-    public void ParseStartShortTestJson_ExitStatus1_ReturnsInProgress()
+    public void ParseStartShortTestJson_ExitStatus1_ReturnsFailedToStart()
     {
-        // exit_status 1 = success with SMART warnings, test still started
+        // Exit 1 = bit 0 (CommandLineOrInternalError): fallo operativo.
+        // La semántica vieja "1 = success con warnings" es incorrecta.
         var json = @"{
             ""smartctl"": {
                 ""messages"": [
@@ -462,8 +466,8 @@ public class SmartTestServiceTests
 
         var result = SmartctlParser.ParseStartShortTestJson(json);
 
-        Assert.True(result.Started);
-        Assert.Equal(SmartTestStatus.InProgress, result.Status);
+        Assert.False(result.Started);
+        Assert.Equal(SmartTestStatus.FailedToStart, result.Status);
         Assert.Equal(1, result.SmartctlExitStatus);
     }
 
@@ -519,9 +523,10 @@ public class SmartTestServiceTests
     }
 
     [Fact]
-    public void ParseStartShortTestJson_Unsupported_NoTextDependency()
+    public void ParseStartShortTestJson_ExitStatus4_NoUnsupportedInference()
     {
-        // El mecanismo principal es exit_status=4, no el texto "not supported"
+        // Exit 4 es un BIT (2^2), no el "código unsupported".
+        // No se decide Unsupported por el número ni por frases localizadas.
         var json = @"{
             ""smartctl"": {
                 ""messages"": [
@@ -534,7 +539,8 @@ public class SmartTestServiceTests
         var result = SmartctlParser.ParseStartShortTestJson(json);
 
         Assert.False(result.Started);
-        Assert.Equal(SmartTestStatus.Unsupported, result.Status);
+        Assert.Equal(SmartTestStatus.FailedToStart, result.Status);
+        Assert.NotEqual(SmartTestStatus.Unsupported, result.Status);
     }
 
     [Fact]

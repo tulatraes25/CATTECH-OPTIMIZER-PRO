@@ -104,6 +104,9 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 | B.4.3: Integración/pulido final Hardware | — | B.4.2 | ✅ Implementado |
 | Fase B.4: UI Hardware avanzado | 1 semana | Modelos | ✅ Completada |
 | **Fase B: Hardware avanzado** | **3 semanas** | | ✅ Completada |
+| S.1: Exit status + transporte smartctl | — | — | ✅ Implementado |
+| S.2: Semántica de salud SMART / atributos | — | — | ⏳ Pendiente |
+| S.3: Release gate / criterios de aceptación | — | — | ⏳ Pendiente |
 | **Total Fase B** | **3 semanas** | |
 | **Total v0.2** | **7 semanas** | |
 
@@ -149,3 +152,8 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 *Plan v0.2 - CATTECH OPTIMIZER PRO*
 
 Pendiente: estabilización final v0.2 y revisión de release.
+
+### Estabilización v0.2
+- [x] S.1 Exit status + transporte smartctl: bitmask de 8 bits (SmartctlExitFlags), bits 0-2 operativos vs 3-7 hallazgos; JSON exit_status numérico; -d TYPE preservado en análisis/self-tests/consulta; SmartctlDeviceType persistido en reportes/sesiones; ApproximateDiskType nunca se usa como transporte; legacy sin tipo → autodetección
+- [ ] S.2 Semántica de salud SMART / atributos (thresholds, reglas Good/Warning/Critical, heurísticas NVMe)
+- [ ] S.3 Release gate / criterios de aceptación

@@ -341,6 +341,21 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - **Textos corregidos**: Batería, Métrica, Módulo, Núcleos, Mín., Máx., información, dinámicas, telemetría, "— solo lectura" (UTF-8)
 - **Independencia live/inventario** verificada en 5 casos (A-E) y navegación: salir cancela monitoring, volver reutiliza el mismo HardwareViewModel y permite reiniciar
 - 34 tests netos nuevos/adaptados (777 total)
+
+### Fixed (Estabilización v0.2 - S.1: exit status + transporte smartctl)
+- **SmartctlExitFlags** [Flags] en Core: bits 0-7 según spec smartmontools (CommandLineOrInternalError=1, DeviceOpenOrIdentityFailed=2, SmartCommandOrChecksumError=4, SmartStatusFailed=8, PrefailAttributeThreshold=16, PastOrUsageAttributeFailure=32, ErrorLogContainsErrors=64, SelfTestLogContainsErrors=128)
+- **SmartctlCommandResult**: ExitFlags calculada (ExitCode<0 → None), HasInvocationFailure (timeout/exit<0/bits 0-1), HasSmartCommandFailure (bit 2), HasHealthOrLogFindings (bits 3-7); IsSuccess corregido ("sin bits operativos 0-2 ni timeout" — ya NO significa "disco sano" ni trata exit 1 como éxito con warning)
+- **ExitCode -1** (proceso no ejecutado) nunca se convierte a bits
+- **TryGetSmartctlExitStatus**: formato principal numérico; legacy { "value": N } tolerado; ausente/inválido → null sin excepción
+- **ParseStartShortTestJson**: sin switch 0/1/2/3/4; bits 0-2 → FailedToStart; bit 4 ya NO infiere Unsupported; bits 3-7 no impiden inicio; sin exit status → FailedToStart (no se asume éxito)
+- **Inicio de self-tests**: timeout/exit<0/bits 0-2 → FailedToStart (nunca InProgress); SmartctlExitCode asignado SIEMPRE (inclusive fallos); sin análisis de frases localizadas para Unsupported
+- **Consulta/GetLatestResult**: solo fallos operativos bloquean el parseo; exit 128 con self-test log válido se parsea (CompletedWithError detectable)
+- **Análisis**: bits 3-7 con JSON válido se parsean (no descartados por IsSuccess); bit 2 con JSON parcial → IsAnalysisSuccessful=false + HealthStatus=Unknown + "Análisis SMART parcial/no concluyente" (sin marcar Critical ni contaminar report.Errors); bits 0-1 sin JSON → NotAvailable
+- **Transporte -d TYPE**: SmartctlCommandBuilder centraliza argumentos; análisis/short/long/consulta usan `-d {device.Type}` (sat/nvme/sntjmicron...); Type vacío o "auto" omite -d; ApproximateDiskType (clasificación visual CATTECH) NUNCA se usa como transporte
+- **Persistencia**: SmartDiskReport.SmartctlDeviceType y SmartTestSession.SmartctlDeviceType; legacy sin propiedad → "" → autodetección smartctl
+- **Fallback ViewModel**: reconstruye el dispositivo con SelectedReport.SmartctlDeviceType (no DeviceType)
+- **ListDevicesAsync**: salida parcial parseable no se descarta por exit status no cero; CheckAvailabilityAsync sin dependencia de exit 0/1
+- 54 tests nuevos (831 total)
 - SmartctlAvailability, SmartDiskDevice, SmartctlCommandResult
 - ISmartctlRunner, ISmartDiskService interfaces
 - 32 tests de smartctl + 18 tests de SMART (214 total)

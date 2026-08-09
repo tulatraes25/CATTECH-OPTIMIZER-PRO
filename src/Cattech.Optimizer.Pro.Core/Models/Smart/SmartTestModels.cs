@@ -78,6 +78,13 @@ public class SmartTestSession
     /// <summary>Código de salida de smartctl al iniciar.</summary>
     public int SmartctlExitCode { get; set; }
 
+    /// <summary>
+    /// Tipo smartctl del dispositivo (ej: scsi, nvme, sat, sntjmicron).
+    /// Es el argumento -d TYPE usado al iniciar y al consultar la sesión.
+    /// Vacío en sesiones legacy → smartctl autodetecta.
+    /// </summary>
+    public string SmartctlDeviceType { get; set; } = string.Empty;
+
     /// <summary>Errores encontrados.</summary>
     public List<string> Errors { get; set; } = new();
 

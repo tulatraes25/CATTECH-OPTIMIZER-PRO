@@ -89,12 +89,49 @@ public class SmartDiskDevice
 }
 
 /// <summary>
+/// Bitmask de exit status de smartctl (spec smartmontools).
+/// smartctl no retorna códigos enum simples: combina bits de 8 bits.
+/// </summary>
+[Flags]
+public enum SmartctlExitFlags
+{
+    /// <summary>Sin bits activos.</summary>
+    None = 0,
+
+    /// <summary>Bit 0: error de línea de comando o interno (1).</summary>
+    CommandLineOrInternalError = 1,
+
+    /// <summary>Bit 1: fallo al abrir el dispositivo o fallo de identidad (2).</summary>
+    DeviceOpenOrIdentityFailed = 2,
+
+    /// <summary>Bit 2: error de comando SMART o de checksum (4).</summary>
+    SmartCommandOrChecksumError = 4,
+
+    /// <summary>Bit 3: fallo del self-assessment de salud SMART (8).</summary>
+    SmartStatusFailed = 8,
+
+    /// <summary>Bit 4: atributo por debajo del umbral (pre-fail) (16).</summary>
+    PrefailAttributeThreshold = 16,
+
+    /// <summary>Bit 5: fallo de atributo pasada la vida útil (32).</summary>
+    PastOrUsageAttributeFailure = 32,
+
+    /// <summary>Bit 6: el error log contiene errores (64).</summary>
+    ErrorLogContainsErrors = 64,
+
+    /// <summary>Bit 7: el self-test log contiene errores (128).</summary>
+    SelfTestLogContainsErrors = 128
+}
+
+/// <summary>
 /// Resultado de la ejecución de un comando smartctl.
 /// </summary>
 public class SmartctlCommandResult
 {
     /// <summary>
-    /// Código de salida del proceso.
+    /// Código de salida del proceso. Fuente primaria del resultado.
+    /// -1 indica que el proceso no llegó a ejecutarse (smartctl no encontrado,
+    /// excepción de Process) — NO es un bitmask smartctl válido.
     /// </summary>
     public int ExitCode { get; set; }
 
@@ -119,8 +156,42 @@ public class SmartctlCommandResult
     public long DurationMs { get; set; }
 
     /// <summary>
-    /// Si la ejecución fue exitosa (exit code 0 o 1 para smartctl).
-    /// smartctl retorna 0 si no hay errores, 1 si hay errores SMART.
+    /// Exit status interpretado como bitmask smartctl.
+    /// ExitCode &lt; 0 (proceso no ejecutado) NO se convierte a bits: queda None.
     /// </summary>
-    public bool IsSuccess => ExitCode == 0 || ExitCode == 1;
+    public SmartctlExitFlags ExitFlags =>
+        ExitCode >= 0 ? (SmartctlExitFlags)ExitCode : SmartctlExitFlags.None;
+
+    /// <summary>
+    /// Fallo operativo de invocación: timeout, proceso no ejecutado (ExitCode &lt; 0),
+    /// o bits 0-1 (línea de comando / apertura del dispositivo).
+    /// </summary>
+    public bool HasInvocationFailure =>
+        TimedOut || ExitCode < 0 || ExitFlags.HasFlag(SmartctlExitFlags.CommandLineOrInternalError) ||
+        ExitFlags.HasFlag(SmartctlExitFlags.DeviceOpenOrIdentityFailed);
+
+    /// <summary>
+    /// Bit 2: error de comando SMART o checksum.
+    /// </summary>
+    public bool HasSmartCommandFailure =>
+        ExitFlags.HasFlag(SmartctlExitFlags.SmartCommandOrChecksumError);
+
+    /// <summary>
+    /// Bits 3-7: hallazgos de salud/log. NO son fallo de proceso: el JSON
+    /// puede ser utilizable (ej: exit 128 con self-test log parseable).
+    /// </summary>
+    public bool HasHealthOrLogFindings =>
+        ExitFlags.HasFlag(SmartctlExitFlags.SmartStatusFailed) ||
+        ExitFlags.HasFlag(SmartctlExitFlags.PrefailAttributeThreshold) ||
+        ExitFlags.HasFlag(SmartctlExitFlags.PastOrUsageAttributeFailure) ||
+        ExitFlags.HasFlag(SmartctlExitFlags.ErrorLogContainsErrors) ||
+        ExitFlags.HasFlag(SmartctlExitFlags.SelfTestLogContainsErrors);
+
+    /// <summary>
+    /// El comando no tuvo bits operativos 0-2 ni timeout.
+    /// NO significa "disco sano" ni "sin hallazgos SMART":
+    /// los bits 3-7 (hallazgos) pueden estar activos.
+    /// Los servicios aplican políticas específicas por comando.
+    /// </summary>
+    public bool IsSuccess => !HasInvocationFailure && !HasSmartCommandFailure;
 }

@@ -51,45 +51,40 @@ public class SmartTestService : ISmartTestService
             SerialNumber = device.SerialNumber,
             TestType = testType,
             Status = SmartTestStatus.Starting,
-            RequestedAt = DateTime.Now
+            RequestedAt = DateTime.Now,
+            SmartctlDeviceType = device.Type
         };
 
-        // Mapear comando según tipo de test
-        var testCommand = testType switch
-        {
-            SmartTestType.Short => "-t short -j",
-            SmartTestType.Extended => "-t long -j",
-            _ => throw new ArgumentOutOfRangeException(nameof(testType))
-        };
+        // Preservar el transporte -d TYPE detectado al iniciar el test
+        var arguments = SmartctlCommandBuilder.BuildStartTestArguments(device.Name, device.Type,
+            testType == SmartTestType.Extended);
 
-        // Ejecutar smartctl -t short|long -j <device>
-        var result = await _smartctlRunner.RunAsync($"{testCommand} {device.Name}", TestStartTimeout);
+        // Ejecutar smartctl -t short|long -j [-d TYPE] <device>
+        var result = await _smartctlRunner.RunAsync(arguments, TestStartTimeout);
 
-        if (result.TimedOut)
+        // Asignar SIEMPRE el exit code real del intento (inclusive fallos).
+        session.SmartctlExitCode = result.ExitCode;
+
+        // Fallo operativo de invocación (timeout, proceso no ejecutado, bits 0-2):
+        // no se inicia la sesión como InProgress.
+        if (result.TimedOut || result.HasInvocationFailure || result.HasSmartCommandFailure)
         {
             session.Status = SmartTestStatus.FailedToStart;
-            session.Errors.Add("Timeout al iniciar el test");
+            session.Errors.Add(string.IsNullOrWhiteSpace(result.StandardError)
+                ? "Fallo operativo al iniciar el test"
+                : result.StandardError);
             session.ResultMessage = SmartTestStatus.FailedToStart.ToDisplayMessage();
             await SaveSessionAsync(session);
             return session;
         }
 
-        if (!result.IsSuccess)
-        {
-            session.Status = SmartTestStatus.FailedToStart;
-            session.Errors.Add(result.StandardError);
-            session.ResultMessage = SmartTestStatus.FailedToStart.ToDisplayMessage();
-            await SaveSessionAsync(session);
-            return session;
-        }
-
-        // Parsear respuesta JSON de forma estructurada
+        // Parsear respuesta JSON de forma estructurada.
+        // Los bits 3-7 (hallazgos de salud/log) no impiden el inicio del test.
         var parseResult = SmartctlParser.ParseStartShortTestJson(result.StandardOutput);
 
         // Aplicar estado resultante
         session.Status = parseResult.Status;
         session.ResultMessage = parseResult.Message;
-        session.SmartctlExitCode = result.ExitCode;
         session.Errors.AddRange(parseResult.Errors);
         session.Warnings.AddRange(parseResult.Warnings);
 
@@ -122,13 +117,15 @@ public class SmartTestService : ISmartTestService
     /// <inheritdoc/>
     public async Task<SmartTestSession> CheckStatusAsync(SmartTestSession session)
     {
-        // Consultar self-test log (solo lectura)
-        var result = await _smartctlRunner.RunAsync($"-l selftest -j {session.Device}", StatusCheckTimeout);
+        // Consultar self-test log (solo lectura), preservando el transporte de la sesión
+        var arguments = SmartctlCommandBuilder.BuildSelfTestLogArguments(session.Device, session.SmartctlDeviceType);
+        var result = await _smartctlRunner.RunAsync(arguments, StatusCheckTimeout);
 
-        if (result.TimedOut || !result.IsSuccess)
+        // Error temporal de consulta: solo fallos operativos (timeout, proceso no
+        // ejecutado, bits 0-2). Los bits 3-7 NO bloquean el parseo del log.
+        if (result.TimedOut || result.HasInvocationFailure || result.HasSmartCommandFailure)
         {
-            // Error temporal de consulta: NO marcar el test como finalizado.
-            // El test puede seguir ejecutándose internamente en el disco.
+            // NO marcar el test como finalizado: puede seguir ejecutándose en el disco.
             session.LastCheckSucceeded = false;
             session.LastCheckError = result.StandardError ?? "Timeout al consultar estado";
             session.LastCheckedAt = DateTime.Now;
@@ -138,7 +135,7 @@ public class SmartTestService : ISmartTestService
             return session;
         }
 
-        // Parsear estado
+        // Parsear estado (inclusive con exit 128: el log puede contener errores)
         SmartctlParser.ParseSelfTestLogJson(result.StandardOutput, session);
         session.LastCheckedAt = DateTime.Now;
         session.LastCheckSucceeded = true;
@@ -161,9 +158,12 @@ public class SmartTestService : ISmartTestService
     /// <inheritdoc/>
     public async Task<SmartTestResult?> GetLatestResultAsync(SmartDiskDevice device)
     {
-        var result = await _smartctlRunner.RunAsync($"-l selftest -j {device.Name}", StatusCheckTimeout);
+        var arguments = SmartctlCommandBuilder.BuildSelfTestLogArguments(device.Name, device.Type);
+        var result = await _smartctlRunner.RunAsync(arguments, StatusCheckTimeout);
 
-        if (result.TimedOut || !result.IsSuccess || string.IsNullOrWhiteSpace(result.StandardOutput))
+        // Solo fallos operativos bloquean; bits 3-7 (ej: 128 con log) no.
+        if (result.TimedOut || result.HasInvocationFailure || result.HasSmartCommandFailure ||
+            string.IsNullOrWhiteSpace(result.StandardOutput))
             return null;
 
         try

@@ -237,3 +237,39 @@ smartctl -a -j /dev/sda
 ---
 
 *Decisión de integración smartmontools - CATTECH OPTIMIZER PRO*
+
+---
+
+## Estabilización v0.2 - S.1: Exit status y transporte
+
+### Exit status es un BITMASK (no un enum)
+
+smartctl combina 8 bits en el exit code:
+
+| Bit | Valor | Significado |
+|-----|-------|-------------|
+| 0 | 1 | Error de línea de comando o interno |
+| 1 | 2 | Fallo al abrir el dispositivo / identidad |
+| 2 | 4 | Error de comando SMART o checksum |
+| 3 | 8 | Fallo del self-assessment de salud |
+| 4 | 16 | Atributo pre-fail bajo umbral |
+| 5 | 32 | Fallo de atributo pasado uso |
+| 6 | 64 | Error log con errores |
+| 7 | 128 | Self-test log con errores |
+
+Bits 0-2 = problemas operativos de invocación/comando. Bits 3-7 = hallazgos de salud/log que PUEDEN coexistir con JSON utilizable (ej: exit 128 con self-test log parseable para detectar CompletedWithError).
+
+CATTECH NO trata exit 1 como "success con warning": bit 0 es un fallo operativo. ExitCode < 0 (proceso no ejecutado) nunca se convierte a bits. El JSON `smartctl.exit_status` es numérico (legacy `{ "value": N }` tolerado).
+
+### Transporte por dispositivo (-d TYPE)
+
+El tipo detectado por smartctl scan (`device.Type`: scsi, nvme, sat, sntjmicron...) se preserva en TODOS los comandos por dispositivo:
+
+```bash
+smartctl -a -j -d sat /dev/sda             # análisis
+smartctl -t short -j -d sat /dev/sda       # self-test corto
+smartctl -t long -j -d sat /dev/sda        # self-test extendido
+smartctl -l selftest -j -d sat /dev/sda    # consulta de estado
+```
+
+`ApproximateDiskType` (HDD/SSD/NVMe/USB) es clasificación visual CATTECH y NUNCA se usa como argumento -d. `SmartctlDeviceType` se persiste en SmartDiskReport y SmartTestSession; reportes/sesiones legacy sin tipo usan autodetección.

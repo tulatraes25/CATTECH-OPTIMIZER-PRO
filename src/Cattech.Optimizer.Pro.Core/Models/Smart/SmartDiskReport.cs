@@ -209,6 +209,14 @@ public class SmartDiskReport
     /// <summary>Si el análisis fue exitoso.</summary>
     public bool IsAnalysisSuccessful { get; set; }
 
+    /// <summary>
+    /// Tipo smartctl del dispositivo (ej: scsi, nvme, sat, sntjmicron).
+    /// Es el argumento -d TYPE usado en el análisis. Vacío en reportes
+    /// legacy o sin tipo → smartctl autodetecta.
+    /// NO es lo mismo que DeviceType (clasificación visual CATTECH).
+    /// </summary>
+    public string SmartctlDeviceType { get; set; } = string.Empty;
+
     /// <summary>Mensaje de error si falló.</summary>
     public string? ErrorMessage { get; set; }
 }

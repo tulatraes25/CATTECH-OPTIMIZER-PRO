@@ -224,7 +224,8 @@ public static class SmartctlParser
     /// <summary>
     /// Parsea la salida JSON completa de smartctl -a -j para un disco.
     /// </summary>
-    public static SmartDiskReport ParseSmartJson(string json, SmartDiskDevice device, string smartctlVersion)
+    public static SmartDiskReport ParseSmartJson(string json, SmartDiskDevice device, string smartctlVersion,
+        SmartctlExitFlags? exitFlags = null)
     {
         var report = new SmartDiskReport
         {
@@ -235,6 +236,7 @@ public static class SmartctlParser
             ModelName = device.ModelName,
             SerialNumber = device.SerialNumber,
             SmartctlVersion = smartctlVersion,
+            SmartctlDeviceType = device.Type,
             IsAnalysisSuccessful = false
         };
 
@@ -262,6 +264,19 @@ public static class SmartctlParser
             CalculateOverallHealth(report);
 
             report.IsAnalysisSuccessful = true;
+
+            // Bit 2 (SmartCommandOrChecksumError) con JSON parcial utilizable:
+            // se preservan los datos parseables pero el análisis NO es plenamente confiable.
+            // No se marca Critical por este bit y no se agrega a report.Errors
+            // (evita que CalculateOverallHealth lo convierta artificialmente).
+            if (exitFlags.HasValue &&
+                exitFlags.Value.HasFlag(SmartctlExitFlags.SmartCommandOrChecksumError))
+            {
+                report.IsAnalysisSuccessful = false;
+                report.HealthStatus = SmartHealthStatus.Unknown;
+                report.HealthSummary = "Análisis SMART parcial/no concluyente";
+                report.ErrorMessage = "smartctl reportó error de comando SMART o checksum (exit status bit 2)";
+            }
         }
         catch (JsonException ex)
         {
@@ -643,8 +658,48 @@ public static class SmartctlParser
     // =====================
 
     /// <summary>
+    /// Lee smartctl.exit_status del JSON. Formato principal: número (ej: 8).
+    /// Por compatibilidad tolerante acepta también { "value": 8 } (formato legacy).
+    /// Campo ausente o formato inválido → null, sin excepción.
+    /// </summary>
+    public static int? TryGetSmartctlExitStatus(JsonElement root)
+    {
+        try
+        {
+            if (!root.TryGetProperty("smartctl", out var smartctl) ||
+                !smartctl.TryGetProperty("exit_status", out var exitStatusEl))
+            {
+                return null;
+            }
+
+            if (exitStatusEl.ValueKind == JsonValueKind.Number &&
+                exitStatusEl.TryGetInt32(out var numeric))
+            {
+                return numeric;
+            }
+
+            if (exitStatusEl.ValueKind == JsonValueKind.Object &&
+                exitStatusEl.TryGetProperty("value", out var valueEl) &&
+                valueEl.ValueKind == JsonValueKind.Number &&
+                valueEl.TryGetInt32(out var legacy))
+            {
+                return legacy;
+            }
+
+            return null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Parsea la respuesta de smartctl -t short -j para determinar si el test se inició.
     /// smartctl retorna JSON con mensajes de ejecución.
+    /// El exit status es un BITMASK: los bits 0-2 son operativos (fallo de
+    /// invocación/comando); los bits 3-7 son hallazgos de salud/log y NO se
+    /// interpretan como fallo de inicio.
     /// </summary>
     public static SmartTestStartParseResult ParseStartShortTestJson(string json)
     {
@@ -664,21 +719,14 @@ public static class SmartctlParser
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
-            // 1. Leer exit_status estructurado (mecanismo principal)
-            int? exitStatus = null;
-            if (root.TryGetProperty("smartctl", out var smartctl) &&
-                smartctl.TryGetProperty("exit_status", out var exitStatusEl))
-            {
-                if (exitStatusEl.TryGetProperty("value", out var exitValue))
-                {
-                    exitStatus = exitValue.GetInt32();
-                    result.SmartctlExitStatus = exitStatus;
-                }
-            }
+            // 1. Leer exit_status numérico (mecanismo principal)
+            var exitStatus = TryGetSmartctlExitStatus(root);
+            result.SmartctlExitStatus = exitStatus;
 
             // 2. Recopilar mensajes
             var messages = new List<string>();
-            if (smartctl.TryGetProperty("messages", out var messagesEl))
+            if (root.TryGetProperty("smartctl", out var smartctl) &&
+                smartctl.TryGetProperty("messages", out var messagesEl))
             {
                 foreach (var message in messagesEl.EnumerateArray())
                 {
@@ -689,42 +737,51 @@ public static class SmartctlParser
 
             result.Message = messages.Count > 0 ? string.Join(" | ", messages) : string.Empty;
 
-            // 3. Determinar estado por exit_status (estructurado)
-            switch (exitStatus)
+            // 3. Interpretar bitmask: solo los bits 0-2 son operativos.
+            //    NO se infiere "Unsupported" a partir del valor 4.
+            var flags = exitStatus.HasValue && exitStatus.Value >= 0
+                ? (SmartctlExitFlags)exitStatus.Value
+                : SmartctlExitFlags.None;
+
+            if (!exitStatus.HasValue)
             {
-                // 0 = success, 1 = success with warnings/errors in SMART
-                case 0:
-                case 1:
-                    result.Started = true;
-                    result.Status = SmartTestStatus.InProgress;
-                    result.EstimatedDurationMinutes = ExtractEstimatedMinutesFromMessages(messages);
-                    return result;
-
-                // 2 = device open failed, 3 = command failed, 4 = unsupported, 5 = error parsing
-                case 4:
-                    result.Started = false;
-                    result.Status = SmartTestStatus.Unsupported;
-                    result.Errors.Add("smartctl exit_status 4 (unsupported)");
-                    return result;
-
-                case 2:
-                    result.Started = false;
-                    result.Status = SmartTestStatus.FailedToStart;
-                    result.Errors.Add("smartctl exit_status 2 (device open failed / permisos)");
-                    return result;
-
-                case 3:
-                    result.Started = false;
-                    result.Status = SmartTestStatus.FailedToStart;
-                    result.Errors.Add("smartctl exit_status 3 (command failed)");
-                    return result;
-
-                default:
-                    result.Started = false;
-                    result.Status = SmartTestStatus.FailedToStart;
-                    result.Errors.Add($"smartctl exit_status desconocido: {exitStatus?.ToString() ?? "null"}");
-                    return result;
+                // Sin exit status no hay evidencia de inicio ni de fallo:
+                // no se asume éxito.
+                result.Started = false;
+                result.Status = SmartTestStatus.FailedToStart;
+                result.Errors.Add("smartctl no reportó exit status");
+                return result;
             }
+
+            var hasInvocationFailure =
+                flags.HasFlag(SmartctlExitFlags.CommandLineOrInternalError) ||
+                flags.HasFlag(SmartctlExitFlags.DeviceOpenOrIdentityFailed);
+
+            var hasCommandFailure = flags.HasFlag(SmartctlExitFlags.SmartCommandOrChecksumError);
+
+            if (hasInvocationFailure || hasCommandFailure)
+            {
+                result.Started = false;
+                result.Status = SmartTestStatus.FailedToStart;
+                if (hasInvocationFailure)
+                {
+                    result.Errors.Add(
+                        $"smartctl exit status operativo ({exitStatus}): invocación o apertura del dispositivo falló");
+                }
+                else
+                {
+                    result.Errors.Add(
+                        $"smartctl exit status operativo ({exitStatus}): error de comando SMART o checksum");
+                }
+
+                return result;
+            }
+
+            // Bits 3-7 (hallazgos) no impiden el inicio del test.
+            result.Started = true;
+            result.Status = SmartTestStatus.InProgress;
+            result.EstimatedDurationMinutes = ExtractEstimatedMinutesFromMessages(messages);
+            return result;
         }
         catch (JsonException)
         {

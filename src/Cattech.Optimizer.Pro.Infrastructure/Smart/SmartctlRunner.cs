@@ -43,16 +43,21 @@ public class SmartctlRunner : ISmartctlRunner
             availability.SmartctlPath = smartctlPath;
             availability.IsAvailable = true;
 
-            // Obtener versión
+            // Obtener versión: disponible si el proceso ejecutó sin timeout y hay salida de versión válida
             var versionResult = await RunSmartctlAsync(smartctlPath, "--version");
-            if (versionResult.IsSuccess)
+            if (!versionResult.TimedOut && !versionResult.HasInvocationFailure)
             {
                 availability.Version = SmartctlParser.ParseVersion(versionResult.StandardOutput);
             }
 
-            // Verificar soporte JSON
+            // Verificar soporte JSON: validar que la salida del scan contiene JSON parseable.
+            // El exit status del scan no determina el soporte por sí solo.
             var scanResult = await RunSmartctlAsync(smartctlPath, "--scan -j");
-            availability.SupportsJson = scanResult.IsSuccess && !string.IsNullOrWhiteSpace(scanResult.StandardOutput);
+            availability.SupportsJson =
+                !scanResult.TimedOut &&
+                !scanResult.HasInvocationFailure &&
+                !string.IsNullOrWhiteSpace(scanResult.StandardOutput) &&
+                SmartctlParser.ParseScanJson(scanResult.StandardOutput).Count > 0;
 
             return availability;
         }
@@ -97,7 +102,9 @@ public class SmartctlRunner : ISmartctlRunner
         {
             var jsonResult = await RunSmartctlAsync(availability.SmartctlPath, "--scan -j");
 
-            if (jsonResult.IsSuccess && !string.IsNullOrWhiteSpace(jsonResult.StandardOutput))
+            // Salida parcial parseable: no se descarta todo solo por exit status no cero
+            if (!jsonResult.TimedOut && !jsonResult.HasInvocationFailure &&
+                !string.IsNullOrWhiteSpace(jsonResult.StandardOutput))
             {
                 devices.AddRange(SmartctlParser.ParseScanJson(jsonResult.StandardOutput));
             }
@@ -108,7 +115,8 @@ public class SmartctlRunner : ISmartctlRunner
         {
             var textResult = await RunSmartctlAsync(availability.SmartctlPath, "--scan");
 
-            if (textResult.IsSuccess && !string.IsNullOrWhiteSpace(textResult.StandardOutput))
+            if (!textResult.TimedOut && !textResult.HasInvocationFailure &&
+                !string.IsNullOrWhiteSpace(textResult.StandardOutput))
             {
                 devices.AddRange(SmartctlParser.ParseScanText(textResult.StandardOutput));
             }

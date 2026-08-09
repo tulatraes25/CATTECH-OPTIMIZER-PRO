@@ -294,11 +294,14 @@ Homepage: https://www.smartmontools.org/";
     }
 
     [Fact]
-    public void SmartctlCommandResult_IsSuccess_ExitCode1()
+    public void SmartctlCommandResult_ExitCode1_IsInvocationFailure()
     {
-        // smartctl retorna 1 si hay errores SMART, pero sigue siendo "exitoso"
+        // Exit 1 = bit 0 (CommandLineOrInternalError): es un fallo operativo,
+        // NO "success con warning". La semántica vieja (0/1 = éxito) es incorrecta.
         var result = new SmartctlCommandResult { ExitCode = 1 };
-        Assert.True(result.IsSuccess);
+        Assert.False(result.IsSuccess);
+        Assert.True(result.HasInvocationFailure);
+        Assert.Equal(SmartctlExitFlags.CommandLineOrInternalError, result.ExitFlags);
     }
 
     [Fact]
