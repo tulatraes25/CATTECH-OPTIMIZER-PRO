@@ -100,7 +100,7 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 | B.3.2: SPD + timings mediante LibreHardwareMonitor | — | B.3.1 | ✅ Implementado |
 | Fase B.3: RAM avanzada | 0.5 semana | LibreHardwareMonitorLib | ✅ Completada |
 | B.4.1: UI live avanzada (LiveSnapshot + 5 pestañas) | — | B.1.3 + backends | ✅ Implementado |
-| B.4.2: Inventario estático WMI/SMBIOS en HardwareView | — | B.4.1 + B.3.1 | ⏳ Pendiente |
+| B.4.2: Inventario estático WMI/SMBIOS en HardwareView | — | B.4.1 + B.3.1 | ✅ Implementado |
 | B.4.3: Integración/pulido final Hardware | — | B.4.2 | ⏳ Pendiente |
 | Fase B.4: UI Hardware avanzado | 1 semana | Modelos | En curso |
 | **Total Fase B** | **3 semanas** | |
@@ -129,7 +129,7 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 - [x] Inventario RAM avanzado (B.3.1): módulos WMI/SMBIOS con slot, fabricante, part number, serial, capacidad, velocidad configurada, tipo DDR/LPDDR verificado contra spec DMTF, data/total width, rank; slots usados/totales
 - [x] Timings SPD (B.3.2) via LibreHardwareMonitor: SensorType.Timing de hardware Memory en ns, nombres preservados sin parser, sin CL/ciclos, sin XMP/EXPO, sesión con vista dinámica de hardware (SPD tardío observable), sin correlación WMI↔SPD
 - [x] UI live avanzada (B.4.1): 5 pestañas (Temperaturas, CPU/GPU, Memoria GPU, Batería, RAM SPD) alimentadas por un único HardwareLiveSnapshot; sin thresholds, sin selección semántica
-- [ ] Inventario estático WMI/SMBIOS en HardwareView (B.4.2): CPU, GPU, módulos RAM, placa madre/BIOS
+- [x] Inventario estático WMI/SMBIOS (B.4.2): sexta pestaña con CPU/GPU/RAM/módulos/placa/BIOS; actualización manual independiente; WMI fuera del hilo UI; no consulta durante monitoreo; sin correlación con sensores live/SPD; no se consultan discos ni SO
 - [ ] Integración/pulido final Hardware (B.4.3)
 - [ ] Mostrar CPU detallada
 - [ ] Mostrar GPU detallada

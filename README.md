@@ -311,6 +311,7 @@ Ir a **🌡️ Hardware** para monitorear el hardware en tiempo real mediante Li
   - **Memoria GPU**: SmallData en MB, filas independientes ("GPU Memory Used/Free/Total" literales, sin usage calculado)
   - **Batería**: Nivel/Energía/Voltaje/Corriente/Potencia/Tiempo con sus unidades; sin salud ni estado de carga
   - **RAM SPD**: timings en nanosegundos (14,00 | ns — nunca CL14), nombres preservados
+- **Pestaña Inventario (B.4.2)**: consulta manual e independiente de datos estáticos WMI/SMBIOS — CPU (nombre, fabricante, núcleos/hilos, velocidad reportada), GPU (memoria reportada), RAM (total, tipo, velocidad configurada, slots), módulos físicos (slot, banco, fabricante, part number, serie, capacidad, tipo, widths, rank) y placa madre/BIOS. Ejecutada en background; no se consulta durante el monitoreo live; no incluye discos ni SO; valores ausentes → N/D
 - **Resumen compacto**: cantidad de sensores por familia (sin porcentajes semánticos)
 - **Warnings y errores controlados**: batería/SPD vacíos no son errores; sin elevación → aviso informativo
 
@@ -318,7 +319,7 @@ Ir a **🌡️ Hardware** para monitorear el hardware en tiempo real mediante Li
 - No interpreta salud ni rendimiento: sin colores de alerta, thresholds ni estados Hot/Crítico
 - No selecciona sensores semánticos (CPU Total, GPU Core): muestra todo lo que entrega el backend
 - El monitoreo nunca se inicia automáticamente: requiere acción explícita del técnico
-- El inventario estático WMI/SMBIOS (CPU, placa madre, módulos RAM) se integrará en B.4.2
+- El inventario WMI/SMBIOS y la telemetría live son fuentes separadas: no se correlacionan entre sí
 
 ## Memoria RAM (inventario)
 

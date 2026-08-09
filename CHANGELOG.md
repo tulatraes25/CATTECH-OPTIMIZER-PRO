@@ -312,6 +312,20 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - **Timings mostrados en ns** (14,00 | ns — nunca CL14); TimeSpan de batería en segundos sin convertir
 - **Sin interpretación**: sin thresholds, sin colores de salud, sin CPU Total/GPU Core seleccionado, sin VRAM usage, sin salud de batería, sin CL calculado; sin WMI (IHardwareService NO inyectado)
 - Tests ViewModel adaptados a la migración live + 19 tests netos nuevos (718 total)
+
+### Added (Inventario estático WMI/SMBIOS en UI - Fase B.4.2)
+- **HardwareViewModel recibe IHardwareService** (instancia compartida de MainViewModel, sin DI global); toda la lógica live de B.4.1 intacta
+- **RefreshInventoryCommand** ("Actualizar inventario"): consulta manual e independiente; IsInventoryBusy propio (bloquea doble ejecución); no auto-carga al entrar ni durante monitoreo
+- **Sin WMI durante el stream live**: WatchLiveSnapshotsAsync/RefreshAsync nunca llaman IHardwareService (tests de separación con contadores); inventario puede ejecutarse mientras monitorea sin crear segundo stream
+- **WMI fuera del hilo UI**: las 4 consultas (CPU/GPU/RAM/placa) se ejecutan secuencialmente en UN Task.Run; sin Parallel ni WhenAll
+- **Solo las 4 consultas**: GetCpuInfoAsync/GetGpuInfoAsync/GetMemoryInfoAsync/GetMotherboardInfoAsync; NO GetHardwareReportAsync/GetSystemInfoAsync/GetDiskInfoAsync (tests)
+- **Tolerancia parcial**: cada sección protegida individualmente; CPU falla → GPU/RAM/placa continúan; estados: "Inventario actualizado" / "Inventario parcial" / "Inventario no disponible"
+- **Datos aplicados**: Cpu, Gpus (orden Name→Manufacturer), Memory, MemoryModules (orden DeviceLocator→BankLabel→Manufacturer→PartNumber), Motherboard; IsInventoryLoaded/LastUpdated/InventoryErrors separados de live
+- **Sexta pestaña "Inventario"** con ScrollViewer: cabecera + Actualizar inventario, CPU (nombre, fabricante, núcleos/hilos, velocidad reportada — no "frecuencia base"), GPU (nombre, fabricante, memoria reportada GB), RAM resumen (total, tipo, velocidad configurada, slots), Módulos RAM (slot, banco, fabricante, part number, serie, capacidad, velocidad, tipo, widths, rank), Placa madre/BIOS (fabricante, modelo, BIOS, fecha BIOS)
+- **N/D**: EmptyStringToNdConverter (null/vacío/espacios → N/D; "Unknown"/"No detectado" se preservan) y PositiveNumberOrNdConverter (null/NaN/Infinity/<=0 → N/D; 0 no se muestra como dato válido); SpeedMHz=0 → N/D; BiosDate null → N/D (TargetNullValue)
+- **Estados independientes**: live (StatusText) vs inventario (InventoryStatusText); IsBusy vs IsInventoryBusy; Errors vs InventoryErrors
+- **Sin correlación WMI↔LHM/SPD**: dos fuentes separadas (Inventario WMI/SMBIOS, RAM SPD LHM); sin matching por slot/part number/serial; sin CPU/GPU usage/temperature estáticos en la UI
+- Tests: FakeHardwareService con contadores y errores por sección; +25 tests netos (743 total)
 - SmartctlAvailability, SmartDiskDevice, SmartctlCommandResult
 - ISmartctlRunner, ISmartDiskService interfaces
 - 32 tests de smartctl + 18 tests de SMART (214 total)

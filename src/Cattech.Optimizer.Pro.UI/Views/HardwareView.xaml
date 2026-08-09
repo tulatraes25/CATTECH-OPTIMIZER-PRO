@@ -12,6 +12,8 @@
         <converters:NullableNumberConverter x:Key="NumConverter" />
         <converters:PerformanceMetricTypeTextConverter x:Key="PerfMetricConverter" />
         <converters:BatteryMetricTypeTextConverter x:Key="BatteryMetricConverter" />
+        <converters:EmptyStringToNdConverter x:Key="EmptyToNd" />
+        <converters:PositiveNumberOrNdConverter x:Key="PosNumToNd" />
     </UserControl.Resources>
 
     <Grid Margin="30">
@@ -24,12 +26,12 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Row 0: TÃ­tulo -->
+        <!-- Row 0: Titulo -->
         <StackPanel Grid.Row="0" Margin="0,0,0,10">
             <TextBlock Text="Hardware" FontSize="26" FontWeight="Bold" Foreground="#1B1B1B" />
             <TextBlock Text="Monitoreo de hardware en tiempo real" FontSize="13" Foreground="#666"
                        Margin="0,5,0,0" />
-            <TextBlock Text="Lectura mediante LibreHardwareMonitor â€” solo lectura" FontSize="11" Foreground="#888"
+            <TextBlock Text="Lectura mediante LibreHardwareMonitor - solo lectura" FontSize="11" Foreground="#888"
                        Margin="0,4,0,0" />
         </StackPanel>
 
@@ -113,7 +115,7 @@
             <Border Grid.Column="3" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
                     Padding="10,8" Background="White" Margin="4,0">
                 <StackPanel>
-                    <TextBlock Text="BaterÃ­a" FontSize="11" Foreground="#555" />
+                    <TextBlock Text="Bateria" FontSize="11" Foreground="#555" />
                     <TextBlock FontSize="18" FontWeight="Bold" Foreground="#1B1B1B" Margin="0,3,0,0">
                         <Run Text="{Binding BatterySensorCount}" /><Run Text=" sensores" FontSize="11" FontWeight="Normal" />
                     </TextBlock>
@@ -159,9 +161,9 @@
             </Border>
         </StackPanel>
 
-        <!-- Row 5: PestaÃ±as live -->
+        <!-- Row 5: Pestanas live + inventario -->
         <TabControl Grid.Row="5" Background="White" BorderBrush="#E0E0E0">
-            <!-- PestaÃ±a Temperaturas -->
+            <!-- Pestana Temperaturas -->
             <TabItem Header="Temperaturas">
                 <Grid Margin="0,8,0,0">
                     <Grid.RowDefinitions>
@@ -185,12 +187,12 @@
                                     <Binding Path="ValueCelsius" Converter="{StaticResource TempConverter}" />
                                 </DataGridTextColumn.Binding>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Header="MÃ­n." Width="90">
+                            <DataGridTextColumn Header="Min." Width="90">
                                 <DataGridTextColumn.Binding>
                                     <Binding Path="MinCelsius" Converter="{StaticResource TempConverter}" />
                                 </DataGridTextColumn.Binding>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Header="MÃ¡x." Width="90">
+                            <DataGridTextColumn Header="Max." Width="90">
                                 <DataGridTextColumn.Binding>
                                     <Binding Path="MaxCelsius" Converter="{StaticResource TempConverter}" />
                                 </DataGridTextColumn.Binding>
@@ -200,14 +202,14 @@
                 </Grid>
             </TabItem>
 
-            <!-- PestaÃ±a CPU / GPU -->
+            <!-- Pestana CPU / GPU -->
             <TabItem Header="CPU / GPU">
                 <Grid Margin="0,8,0,0">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
-                    <TextBlock Grid.Row="0" Text="No se detectaron mÃ©tricas dinÃ¡micas disponibles."
+                    <TextBlock Grid.Row="0" Text="No se detectaron metricas dinamicas disponibles."
                                FontSize="12" Foreground="#888" Margin="0,0,0,6"
                                Visibility="{Binding PerformanceSensorCount, Converter={StaticResource ZeroToVis}}" />
                     <DataGrid Grid.Row="1" ItemsSource="{Binding PerformanceSensors}" AutoGenerateColumns="False"
@@ -219,18 +221,18 @@
                             <DataGridTextColumn Header="Tipo" Binding="{Binding HardwareType}" Width="70" />
                             <DataGridTextColumn Header="Hardware" Binding="{Binding HardwareName}" Width="*" />
                             <DataGridTextColumn Header="Sensor" Binding="{Binding SensorName}" Width="160" />
-                            <DataGridTextColumn Header="MÃ©trica" Binding="{Binding MetricType, Converter={StaticResource PerfMetricConverter}}" Width="90" />
+                            <DataGridTextColumn Header="Metrica" Binding="{Binding MetricType, Converter={StaticResource PerfMetricConverter}}" Width="90" />
                             <DataGridTextColumn Header="Actual" Width="80">
                                 <DataGridTextColumn.Binding>
                                     <Binding Path="Value" Converter="{StaticResource NumConverter}" />
                                 </DataGridTextColumn.Binding>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Header="MÃ­n." Width="80">
+                            <DataGridTextColumn Header="Min." Width="80">
                                 <DataGridTextColumn.Binding>
                                     <Binding Path="Min" Converter="{StaticResource NumConverter}" />
                                 </DataGridTextColumn.Binding>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Header="MÃ¡x." Width="80">
+                            <DataGridTextColumn Header="Max." Width="80">
                                 <DataGridTextColumn.Binding>
                                     <Binding Path="Max" Converter="{StaticResource NumConverter}" />
                                 </DataGridTextColumn.Binding>
@@ -241,7 +243,7 @@
                 </Grid>
             </TabItem>
 
-            <!-- PestaÃ±a Memoria GPU -->
+            <!-- Pestana Memoria GPU -->
             <TabItem Header="Memoria GPU">
                 <Grid Margin="0,8,0,0">
                     <Grid.RowDefinitions>
@@ -264,12 +266,12 @@
                                     <Binding Path="ValueMB" Converter="{StaticResource NumConverter}" />
                                 </DataGridTextColumn.Binding>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Header="MÃ­n." Width="90">
+                            <DataGridTextColumn Header="Min." Width="90">
                                 <DataGridTextColumn.Binding>
                                     <Binding Path="MinMB" Converter="{StaticResource NumConverter}" />
                                 </DataGridTextColumn.Binding>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Header="MÃ¡x." Width="90">
+                            <DataGridTextColumn Header="Max." Width="90">
                                 <DataGridTextColumn.Binding>
                                     <Binding Path="MaxMB" Converter="{StaticResource NumConverter}" />
                                 </DataGridTextColumn.Binding>
@@ -280,14 +282,14 @@
                 </Grid>
             </TabItem>
 
-            <!-- PestaÃ±a BaterÃ­a -->
-            <TabItem Header="BaterÃ­a">
+            <!-- Pestana Bateria -->
+            <TabItem Header="Bateria">
                 <Grid Margin="0,8,0,0">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
-                    <TextBlock Grid.Row="0" Text="No se detectÃ³ telemetrÃ­a de baterÃ­a aplicable."
+                    <TextBlock Grid.Row="0" Text="No se detecto telemetria de bateria aplicable."
                                FontSize="12" Foreground="#888" Margin="0,0,0,6"
                                Visibility="{Binding BatterySensorCount, Converter={StaticResource ZeroToVis}}" />
                     <DataGrid Grid.Row="1" ItemsSource="{Binding BatterySensors}" AutoGenerateColumns="False"
@@ -296,20 +298,20 @@
                               Background="White" BorderBrush="#E0E0E0" BorderThickness="1"
                               AlternatingRowBackground="#FAFAFA">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="BaterÃ­a" Binding="{Binding HardwareName}" Width="*" />
+                            <DataGridTextColumn Header="Bateria" Binding="{Binding HardwareName}" Width="*" />
                             <DataGridTextColumn Header="Sensor" Binding="{Binding SensorName}" Width="180" />
-                            <DataGridTextColumn Header="MÃ©trica" Binding="{Binding MetricType, Converter={StaticResource BatteryMetricConverter}}" Width="80" />
+                            <DataGridTextColumn Header="Metrica" Binding="{Binding MetricType, Converter={StaticResource BatteryMetricConverter}}" Width="80" />
                             <DataGridTextColumn Header="Actual" Width="80">
                                 <DataGridTextColumn.Binding>
                                     <Binding Path="Value" Converter="{StaticResource NumConverter}" />
                                 </DataGridTextColumn.Binding>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Header="MÃ­n." Width="80">
+                            <DataGridTextColumn Header="Min." Width="80">
                                 <DataGridTextColumn.Binding>
                                     <Binding Path="Min" Converter="{StaticResource NumConverter}" />
                                 </DataGridTextColumn.Binding>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Header="MÃ¡x." Width="80">
+                            <DataGridTextColumn Header="Max." Width="80">
                                 <DataGridTextColumn.Binding>
                                     <Binding Path="Max" Converter="{StaticResource NumConverter}" />
                                 </DataGridTextColumn.Binding>
@@ -320,7 +322,7 @@
                 </Grid>
             </TabItem>
 
-            <!-- PestaÃ±a RAM SPD -->
+            <!-- Pestana RAM SPD -->
             <TabItem Header="RAM SPD">
                 <Grid Margin="0,8,0,0">
                     <Grid.RowDefinitions>
@@ -336,19 +338,19 @@
                               Background="White" BorderBrush="#E0E0E0" BorderThickness="1"
                               AlternatingRowBackground="#FAFAFA">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="MÃ³dulo SPD" Binding="{Binding HardwareName}" Width="*" />
+                            <DataGridTextColumn Header="Modulo SPD" Binding="{Binding HardwareName}" Width="*" />
                             <DataGridTextColumn Header="Timing" Binding="{Binding SensorName}" Width="200" />
                             <DataGridTextColumn Header="Actual" Width="90">
                                 <DataGridTextColumn.Binding>
                                     <Binding Path="ValueNanoseconds" Converter="{StaticResource NumConverter}" />
                                 </DataGridTextColumn.Binding>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Header="MÃ­n." Width="90">
+                            <DataGridTextColumn Header="Min." Width="90">
                                 <DataGridTextColumn.Binding>
                                     <Binding Path="MinNanoseconds" Converter="{StaticResource NumConverter}" />
                                 </DataGridTextColumn.Binding>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Header="MÃ¡x." Width="90">
+                            <DataGridTextColumn Header="Max." Width="90">
                                 <DataGridTextColumn.Binding>
                                     <Binding Path="MaxNanoseconds" Converter="{StaticResource NumConverter}" />
                                 </DataGridTextColumn.Binding>
@@ -358,7 +360,220 @@
                     </DataGrid>
                 </Grid>
             </TabItem>
+
+            <!-- Pestana Inventario (B.4.2) -->
+            <TabItem Header="Inventario">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,8,0,0">
+                    <StackPanel Margin="0,0,12,12">
+                        <!-- Cabecera del inventario -->
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <Button Content="Actualizar inventario" Padding="14,8"
+                                    Command="{Binding RefreshInventoryCommand}" />
+                            <StackPanel VerticalAlignment="Center" Margin="16,0,0,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Estado:" FontSize="12" Foreground="#555" />
+                                    <TextBlock Text="{Binding InventoryStatusText}" FontSize="12" FontWeight="SemiBold"
+                                               Foreground="#1B1B1B" Margin="6,0,0,0" />
+                                </StackPanel>
+                                <TextBlock Text="{Binding InventoryLastUpdatedText}" FontSize="11" Foreground="#777"
+                                           Margin="0,3,0,0"
+                                           Visibility="{Binding InventoryLastUpdatedText, Converter={StaticResource StringToVis}}" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <Border CornerRadius="6" Padding="12,10" Margin="0,0,0,10"
+                                Background="#FDECEA" BorderBrush="#D93025" BorderThickness="1"
+                                Visibility="{Binding HasInventoryErrors, Converter={StaticResource BoolToVis}}">
+                            <ItemsControl ItemsSource="{Binding InventoryErrors}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}" FontSize="12" Foreground="#C62828"
+                                                   TextWrapping="Wrap" Margin="0,1" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Border>
+
+                        <!-- Hint inicial -->
+                        <TextBlock Text="Presione 'Actualizar inventario' para leer CPU, GPU, RAM y placa madre."
+                                   FontSize="12" Foreground="#888" Margin="0,0,0,10"
+                                   Visibility="{Binding IsInventoryLoaded, Converter={StaticResource InvertBoolToVis}}" />
+
+                        <StackPanel Visibility="{Binding IsInventoryLoaded, Converter={StaticResource BoolToVis}}">
+
+                            <!-- CPU -->
+                            <Border BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
+                                    Padding="12,10" Background="White" Margin="0,0,0,10">
+                                <StackPanel>
+                                    <TextBlock Text="CPU" FontSize="13" FontWeight="Bold" Foreground="#1B1B1B" Margin="0,0,0,8" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="160" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Nombre:" FontSize="12" Foreground="#555" />
+                                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Cpu.Name, Converter={StaticResource EmptyToNd}}" FontSize="12" FontWeight="SemiBold" />
+                                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Fabricante:" FontSize="12" Foreground="#555" Margin="0,4,0,0" />
+                                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Cpu.Manufacturer, Converter={StaticResource EmptyToNd}}" FontSize="12" Margin="0,4,0,0" />
+                                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Nucleos / Hilos:" FontSize="12" Foreground="#555" Margin="0,4,0,0" />
+                                        <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Margin="0,4,0,0">
+                                            <TextBlock Text="{Binding Cpu.Cores, Converter={StaticResource PosNumToNd}}" FontSize="12" />
+                                            <TextBlock Text=" / " FontSize="12" Foreground="#888" />
+                                            <TextBlock Text="{Binding Cpu.Threads, Converter={StaticResource PosNumToNd}}" FontSize="12" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Velocidad reportada (GHz):" FontSize="12" Foreground="#555" Margin="0,4,0,0" />
+                                        <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Cpu.BaseSpeedGHz, Converter={StaticResource PosNumToNd}}" FontSize="12" Margin="0,4,0,0" />
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- GPU -->
+                            <Border BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
+                                    Padding="12,10" Background="White" Margin="0,0,0,10">
+                                <StackPanel>
+                                    <TextBlock Text="GPU" FontSize="13" FontWeight="Bold" Foreground="#1B1B1B" Margin="0,0,0,8" />
+                                    <TextBlock Text="No se detecto informacion estatica de GPU disponible."
+                                               FontSize="12" Foreground="#888" Margin="0,0,0,6"
+                                               Visibility="{Binding Gpus.Count, Converter={StaticResource ZeroToVis}}" />
+                                    <DataGrid ItemsSource="{Binding Gpus}" AutoGenerateColumns="False"
+                                              IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False"
+                                              HeadersVisibility="Column" RowHeight="28" GridLinesVisibility="Horizontal"
+                                              Background="White" BorderBrush="#E0E0E0" BorderThickness="1"
+                                              AlternatingRowBackground="#FAFAFA">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="GPU" Binding="{Binding Name, Converter={StaticResource EmptyToNd}}" Width="*" />
+                                            <DataGridTextColumn Header="Fabricante" Binding="{Binding Manufacturer, Converter={StaticResource EmptyToNd}}" Width="*" />
+                                            <DataGridTextColumn Header="Memoria reportada (GB)" Width="160">
+                                                <DataGridTextColumn.Binding>
+                                                    <Binding Path="MemoryGB" Converter="{StaticResource PosNumToNd}" />
+                                                </DataGridTextColumn.Binding>
+                                            </DataGridTextColumn>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- RAM resumen -->
+                            <Border BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
+                                    Padding="12,10" Background="White" Margin="0,0,0,10">
+                                <StackPanel>
+                                    <TextBlock Text="RAM" FontSize="13" FontWeight="Bold" Foreground="#1B1B1B" Margin="0,0,0,8" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="160" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="RAM total (GB):" FontSize="12" Foreground="#555" />
+                                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Memory.TotalGB, Converter={StaticResource PosNumToNd}}" FontSize="12" FontWeight="SemiBold" />
+                                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Tipo:" FontSize="12" Foreground="#555" Margin="0,4,0,0" />
+                                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Memory.Type, Converter={StaticResource EmptyToNd}}" FontSize="12" Margin="0,4,0,0" />
+                                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Velocidad configurada (MHz):" FontSize="12" Foreground="#555" Margin="0,4,0,0" />
+                                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Memory.SpeedMHz, Converter={StaticResource PosNumToNd}}" FontSize="12" Margin="0,4,0,0" />
+                                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Slots:" FontSize="12" Foreground="#555" Margin="0,4,0,0" />
+                                        <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" Margin="0,4,0,0">
+                                            <TextBlock Text="{Binding Memory.SlotsUsed}" FontSize="12" />
+                                            <TextBlock Text=" / " FontSize="12" Foreground="#888" />
+                                            <TextBlock Text="{Binding Memory.SlotsTotal}" FontSize="12" />
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Modulos RAM -->
+                            <Border BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
+                                    Padding="12,10" Background="White" Margin="0,0,0,10">
+                                <StackPanel>
+                                    <TextBlock Text="Modulos de memoria" FontSize="13" FontWeight="Bold" Foreground="#1B1B1B" Margin="0,0,0,8" />
+                                    <TextBlock Text="No se detecto detalle de modulos RAM mediante WMI/SMBIOS."
+                                               FontSize="12" Foreground="#888" Margin="0,0,0,6"
+                                               Visibility="{Binding MemoryModules.Count, Converter={StaticResource ZeroToVis}}" />
+                                    <DataGrid ItemsSource="{Binding MemoryModules}" AutoGenerateColumns="False"
+                                              IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False"
+                                              HeadersVisibility="Column" RowHeight="28" GridLinesVisibility="Horizontal"
+                                              Background="White" BorderBrush="#E0E0E0" BorderThickness="1"
+                                              AlternatingRowBackground="#FAFAFA">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Slot" Binding="{Binding DeviceLocator, Converter={StaticResource EmptyToNd}}" Width="80" />
+                                            <DataGridTextColumn Header="Banco" Binding="{Binding BankLabel, Converter={StaticResource EmptyToNd}}" Width="80" />
+                                            <DataGridTextColumn Header="Fabricante" Binding="{Binding Manufacturer, Converter={StaticResource EmptyToNd}}" Width="100" />
+                                            <DataGridTextColumn Header="Part number" Binding="{Binding PartNumber, Converter={StaticResource EmptyToNd}}" Width="120" />
+                                            <DataGridTextColumn Header="Serie" Binding="{Binding SerialNumber, Converter={StaticResource EmptyToNd}}" Width="100" />
+                                            <DataGridTextColumn Header="Capacidad (GB)" Width="90">
+                                                <DataGridTextColumn.Binding>
+                                                    <Binding Path="CapacityGB" Converter="{StaticResource PosNumToNd}" />
+                                                </DataGridTextColumn.Binding>
+                                            </DataGridTextColumn>
+                                            <DataGridTextColumn Header="Velocidad (MHz)" Width="90">
+                                                <DataGridTextColumn.Binding>
+                                                    <Binding Path="ConfiguredClockSpeedMHz" Converter="{StaticResource PosNumToNd}" />
+                                                </DataGridTextColumn.Binding>
+                                            </DataGridTextColumn>
+                                            <DataGridTextColumn Header="Tipo" Binding="{Binding MemoryType, Converter={StaticResource EmptyToNd}}" Width="90" />
+                                            <DataGridTextColumn Header="Data width" Width="80">
+                                                <DataGridTextColumn.Binding>
+                                                    <Binding Path="DataWidthBits" Converter="{StaticResource PosNumToNd}" />
+                                                </DataGridTextColumn.Binding>
+                                            </DataGridTextColumn>
+                                            <DataGridTextColumn Header="Total width" Width="80">
+                                                <DataGridTextColumn.Binding>
+                                                    <Binding Path="TotalWidthBits" Converter="{StaticResource PosNumToNd}" />
+                                                </DataGridTextColumn.Binding>
+                                            </DataGridTextColumn>
+                                            <DataGridTextColumn Header="Rank" Width="60">
+                                                <DataGridTextColumn.Binding>
+                                                    <Binding Path="Rank" Converter="{StaticResource PosNumToNd}" />
+                                                </DataGridTextColumn.Binding>
+                                            </DataGridTextColumn>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Placa madre / BIOS -->
+                            <Border BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
+                                    Padding="12,10" Background="White">
+                                <StackPanel>
+                                    <TextBlock Text="Placa madre / BIOS" FontSize="13" FontWeight="Bold" Foreground="#1B1B1B" Margin="0,0,0,8" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="160" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Fabricante:" FontSize="12" Foreground="#555" />
+                                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Motherboard.Manufacturer, Converter={StaticResource EmptyToNd}}" FontSize="12" FontWeight="SemiBold" />
+                                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Modelo:" FontSize="12" Foreground="#555" Margin="0,4,0,0" />
+                                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Motherboard.Model, Converter={StaticResource EmptyToNd}}" FontSize="12" Margin="0,4,0,0" />
+                                        <TextBlock Grid.Row="2" Grid.Column="0" Text="BIOS:" FontSize="12" Foreground="#555" Margin="0,4,0,0" />
+                                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Motherboard.BiosVersion, Converter={StaticResource EmptyToNd}}" FontSize="12" Margin="0,4,0,0" />
+                                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Fecha BIOS:" FontSize="12" Foreground="#555" Margin="0,4,0,0" />
+                                        <TextBlock Grid.Row="3" Grid.Column="1" FontSize="12" Margin="0,4,0,0"
+                                                   Text="{Binding Motherboard.BiosDate, StringFormat='{}{0:dd/MM/yyyy}', TargetNullValue='N/D'}" />
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
         </TabControl>
     </Grid>
 </UserControl>
-

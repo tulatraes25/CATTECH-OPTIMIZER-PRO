@@ -525,6 +525,70 @@ public class NullableNumberConverter : IValueConverter
 }
 
 /// <summary>
+/// Convierte un string a texto: null/vacío/espacios → "N/D"; caso contrario, el string tal cual.
+/// No traduce "Unknown" ni "No detectado" (se preservan del proveedor).
+/// </summary>
+public class EmptyStringToNdConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        return string.IsNullOrWhiteSpace(value as string) ? "N/D" : value;
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+/// <summary>
+/// Convierte un número a texto: null/NaN/Infinity/<=0 → "N/D" (0 representa ausencia);
+/// valor positivo → formato culture con hasta 2 decimales.
+/// </summary>
+public class PositiveNumberOrNdConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (value is double d)
+        {
+            if (double.IsNaN(d) || double.IsInfinity(d) || d <= 0)
+            {
+                return "N/D";
+            }
+
+            return d.ToString("0.##", culture);
+        }
+
+        if (value is float f)
+        {
+            if (float.IsNaN(f) || float.IsInfinity(f) || f <= 0)
+            {
+                return "N/D";
+            }
+
+            return ((double)f).ToString("0.##", culture);
+        }
+
+        if (value is int i)
+        {
+            return i > 0 ? i.ToString(culture) : "N/D";
+        }
+
+        if (value is uint ui)
+        {
+            return ui > 0 ? ui.ToString(culture) : "N/D";
+        }
+
+        return "N/D";
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+/// <summary>
 /// Convierte HardwarePerformanceMetricType a texto de presentación (nunca por SensorName).
 /// </summary>
 public class PerformanceMetricTypeTextConverter : IValueConverter

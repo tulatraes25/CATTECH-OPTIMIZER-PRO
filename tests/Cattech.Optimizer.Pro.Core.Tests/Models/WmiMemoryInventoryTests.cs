@@ -649,14 +649,17 @@ public class WmiMemoryInventoryTests
     }
 
     [Fact]
-    public void HardwareViewModel_NoMemoryModulesExposure()
+    public void HardwareViewModel_ExposesMemoryModules()
     {
+        // B.4.2 agrega el inventario estático a la UI: el ViewModel expone los módulos RAM.
         var propertyNames = typeof(Cattech.Optimizer.Pro.UI.ViewModels.HardwareViewModel)
             .GetProperties()
             .Select(p => p.Name)
             .ToList();
 
-        Assert.DoesNotContain(propertyNames, n => n is "Modules" or "MemoryModules" or "RamModules");
+        Assert.Contains("MemoryModules", propertyNames);
+        Assert.Contains("Gpus", propertyNames);
+        Assert.Contains("Motherboard", propertyNames);
     }
 
     [Fact]

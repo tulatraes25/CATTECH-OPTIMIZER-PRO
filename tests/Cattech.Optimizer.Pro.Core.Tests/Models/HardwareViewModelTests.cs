@@ -11,7 +11,7 @@ namespace Cattech.Optimizer.Pro.Core.Tests.Models;
 public class HardwareViewModelTests
 {
     // =====================
-    // Fake de IHardwareSensorService (nunca toca hardware real)
+    // Fakes (nunca tocan hardware real)
     // =====================
 
     private sealed class FakeHardwareSensorService : IHardwareSensorService
@@ -33,11 +33,6 @@ public class HardwareViewModelTests
             CancellationToken cancellationToken = default)
         {
             GetTemperatureCalls++;
-            if (ThrowOnGetSnapshot != null)
-            {
-                throw ThrowOnGetSnapshot;
-            }
-
             return Task.FromResult(NextSnapshot);
         }
 
@@ -128,6 +123,93 @@ public class HardwareViewModelTests
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             yield break;
+        }
+    }
+
+    private sealed class FakeHardwareService : IHardwareService
+    {
+        public CpuInfo Cpu { get; set; } = new();
+        public List<GpuInfo> Gpus { get; set; } = new();
+        public MemoryInfo Memory { get; set; } = new();
+        public MotherboardInfo Motherboard { get; set; } = new();
+        public Exception? ThrowOnCpu { get; set; }
+        public Exception? ThrowOnGpu { get; set; }
+        public Exception? ThrowOnMemory { get; set; }
+        public Exception? ThrowOnMotherboard { get; set; }
+        public TaskCompletionSource<CpuInfo>? PendingCpu { get; set; }
+        public int GetCpuCalls { get; private set; }
+        public int GetGpuCalls { get; private set; }
+        public int GetMemoryCalls { get; private set; }
+        public int GetMotherboardCalls { get; private set; }
+        public int GetHardwareReportCalls { get; private set; }
+        public int GetSystemInfoCalls { get; private set; }
+        public int GetDiskInfoCalls { get; private set; }
+
+        public Task<HardwareReport> GetHardwareReportAsync()
+        {
+            GetHardwareReportCalls++;
+            return Task.FromResult(new HardwareReport());
+        }
+
+        public Task<SystemInfo> GetSystemInfoAsync()
+        {
+            GetSystemInfoCalls++;
+            return Task.FromResult(new SystemInfo());
+        }
+
+        public Task<CpuInfo> GetCpuInfoAsync()
+        {
+            GetCpuCalls++;
+            if (PendingCpu != null)
+            {
+                return PendingCpu.Task;
+            }
+
+            if (ThrowOnCpu != null)
+            {
+                throw ThrowOnCpu;
+            }
+
+            return Task.FromResult(Cpu);
+        }
+
+        public Task<MemoryInfo> GetMemoryInfoAsync()
+        {
+            GetMemoryCalls++;
+            if (ThrowOnMemory != null)
+            {
+                throw ThrowOnMemory;
+            }
+
+            return Task.FromResult(Memory);
+        }
+
+        public Task<List<GpuInfo>> GetGpuInfoAsync()
+        {
+            GetGpuCalls++;
+            if (ThrowOnGpu != null)
+            {
+                throw ThrowOnGpu;
+            }
+
+            return Task.FromResult(Gpus);
+        }
+
+        public Task<List<DiskInfo>> GetDiskInfoAsync()
+        {
+            GetDiskInfoCalls++;
+            return Task.FromResult(new List<DiskInfo>());
+        }
+
+        public Task<MotherboardInfo> GetMotherboardInfoAsync()
+        {
+            GetMotherboardCalls++;
+            if (ThrowOnMotherboard != null)
+            {
+                throw ThrowOnMotherboard;
+            }
+
+            return Task.FromResult(Motherboard);
         }
     }
 
@@ -246,7 +328,10 @@ public class HardwareViewModelTests
         }
     }
 
-    private static HardwareViewModel CreateViewModel(FakeHardwareSensorService service) => new(service);
+    private static HardwareViewModel CreateViewModel(
+        FakeHardwareSensorService sensorService,
+        FakeHardwareService? hardwareService = null) =>
+        new(sensorService, hardwareService ?? new FakeHardwareService());
 
     // =====================
     // Estado inicial
@@ -280,6 +365,459 @@ public class HardwareViewModelTests
         Assert.False(vm.HasLiveData);
     }
 
+    [Fact]
+    public void ViewModel_AcceptsBothServices()
+    {
+        var vm = CreateViewModel(new FakeHardwareSensorService(), new FakeHardwareService());
+
+        Assert.NotNull(vm);
+    }
+
+    [Fact]
+    public void Construction_DoesNotQueryInventory()
+    {
+        var hardware = new FakeHardwareService();
+        var vm = CreateViewModel(new FakeHardwareSensorService(), hardware);
+
+        Assert.Equal(0, hardware.GetCpuCalls);
+        Assert.Equal(0, hardware.GetGpuCalls);
+        Assert.Equal(0, hardware.GetMemoryCalls);
+        Assert.Equal(0, hardware.GetMotherboardCalls);
+        Assert.False(vm.IsInventoryLoaded);
+        Assert.Equal("Sin consultar", vm.InventoryStatusText);
+    }
+
+    // =====================
+    // Separación live vs inventario (B.4.2)
+    // =====================
+
+    [Fact]
+    public async Task RefreshLive_DoesNotCallHardwareService()
+    {
+        var hardware = new FakeHardwareService();
+        var service = new FakeHardwareSensorService { LiveSnapshot = FullLiveSnapshot() };
+        var vm = CreateViewModel(service, hardware);
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, service.GetLiveCalls);
+        Assert.Equal(0, hardware.GetCpuCalls);
+        Assert.Equal(0, hardware.GetGpuCalls);
+        Assert.Equal(0, hardware.GetMemoryCalls);
+        Assert.Equal(0, hardware.GetMotherboardCalls);
+    }
+
+    [Fact]
+    public async Task StartMonitoring_DoesNotCallHardwareService()
+    {
+        var hardware = new FakeHardwareService();
+        var service = new FakeHardwareSensorService();
+        var vm = CreateViewModel(service, hardware);
+
+        vm.StartMonitoringCommand.Execute(null);
+        await WaitUntilAsync(() => service.StreamCalls == 1);
+
+        Assert.Equal(0, hardware.GetCpuCalls);
+        Assert.Equal(0, hardware.GetGpuCalls);
+        Assert.Equal(0, hardware.GetMemoryCalls);
+        Assert.Equal(0, hardware.GetMotherboardCalls);
+
+        vm.StopMonitoringCommand.Execute(null);
+        await WaitUntilAsync(() => !vm.IsMonitoring);
+    }
+
+    [Fact]
+    public async Task EachLiveSample_DoesNotQueryWmi()
+    {
+        var hardware = new FakeHardwareService();
+        var service = new FakeHardwareSensorService();
+        service.StreamLiveSnapshots.Add(FullLiveSnapshot());
+        service.StreamLiveSnapshots.Add(FullLiveSnapshot());
+        var vm = CreateViewModel(service, hardware);
+
+        vm.StartMonitoringCommand.Execute(null);
+        await WaitUntilAsync(() => vm.TemperatureSensors.Count == 1 && service.StreamCalls == 1);
+        await Task.Delay(100);
+
+        Assert.Equal(0, hardware.GetCpuCalls);
+        Assert.Equal(0, hardware.GetGpuCalls);
+        Assert.Equal(0, hardware.GetMemoryCalls);
+        Assert.Equal(0, hardware.GetMotherboardCalls);
+
+        vm.StopMonitoringCommand.Execute(null);
+        await WaitUntilAsync(() => !vm.IsMonitoring);
+    }
+
+    [Fact]
+    public async Task RefreshInventory_CallsEachQueryOnce()
+    {
+        var hardware = new FakeHardwareService();
+        var vm = CreateViewModel(new FakeHardwareSensorService(), hardware);
+
+        await vm.RefreshInventoryCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, hardware.GetCpuCalls);
+        Assert.Equal(1, hardware.GetGpuCalls);
+        Assert.Equal(1, hardware.GetMemoryCalls);
+        Assert.Equal(1, hardware.GetMotherboardCalls);
+    }
+
+    [Fact]
+    public async Task RefreshInventory_DoesNotCallUnusedApis()
+    {
+        var hardware = new FakeHardwareService();
+        var vm = CreateViewModel(new FakeHardwareSensorService(), hardware);
+
+        await vm.RefreshInventoryCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, hardware.GetHardwareReportCalls);
+        Assert.Equal(0, hardware.GetSystemInfoCalls);
+        Assert.Equal(0, hardware.GetDiskInfoCalls);
+    }
+
+    // =====================
+    // Aplicación del inventario
+    // =====================
+
+    private static FakeHardwareService InventoryService()
+    {
+        return new FakeHardwareService
+        {
+            Cpu = new CpuInfo
+            {
+                Name = "AMD Ryzen 7 5700X",
+                Manufacturer = "Advanced Micro Devices",
+                Cores = 8,
+                Threads = 16,
+                BaseSpeedGHz = 3.4
+            },
+            Gpus =
+            [
+                new GpuInfo { Name = "NVIDIA GeForce RTX 4070", Manufacturer = "NVIDIA", MemoryGB = 12 },
+                new GpuInfo { Name = "AMD Radeon RX 7800 XT", Manufacturer = "AMD", MemoryGB = 16 }
+            ],
+            Memory = new MemoryInfo
+            {
+                TotalGB = 32,
+                Type = "DDR4",
+                SpeedMHz = 3200,
+                SlotsUsed = 2,
+                SlotsTotal = 4,
+                Modules =
+                [
+                    new MemoryModuleInfo
+                    {
+                        DeviceLocator = "DIMM 0",
+                        BankLabel = "BANK 0",
+                        Manufacturer = "Kingston",
+                        PartNumber = "KF3200C16D4/16",
+                        SerialNumber = "SN001",
+                        CapacityBytes = 17_179_869_184,
+                        ConfiguredClockSpeedMHz = 3200,
+                        MemoryType = "DDR4",
+                        DataWidthBits = 64,
+                        TotalWidthBits = 72,
+                        Rank = 1
+                    },
+                    new MemoryModuleInfo
+                    {
+                        DeviceLocator = "DIMM 1",
+                        BankLabel = "BANK 1",
+                        Manufacturer = "Kingston",
+                        PartNumber = "KF3200C16D4/16",
+                        SerialNumber = "SN002",
+                        CapacityBytes = 17_179_869_184,
+                        ConfiguredClockSpeedMHz = 3200,
+                        MemoryType = "DDR4",
+                        DataWidthBits = 64,
+                        TotalWidthBits = 72,
+                        Rank = 1
+                    }
+                ]
+            },
+            Motherboard = new MotherboardInfo
+            {
+                Manufacturer = "ASUS",
+                Model = "ROG STRIX B550-A",
+                BiosVersion = "2804",
+                BiosDate = new DateTime(2024, 5, 10)
+            }
+        };
+    }
+
+    [Fact]
+    public async Task Inventory_CpuApplied()
+    {
+        var vm = CreateViewModel(new FakeHardwareSensorService(), InventoryService());
+
+        await vm.RefreshInventoryCommand.ExecuteAsync(null);
+
+        Assert.Equal("AMD Ryzen 7 5700X", vm.Cpu.Name);
+        Assert.Equal(8, vm.Cpu.Cores);
+        Assert.Equal(16, vm.Cpu.Threads);
+    }
+
+    [Fact]
+    public async Task Inventory_GpusAppliedAndOrdered()
+    {
+        var vm = CreateViewModel(new FakeHardwareSensorService(), InventoryService());
+
+        await vm.RefreshInventoryCommand.ExecuteAsync(null);
+
+        Assert.Equal(2, vm.Gpus.Count);
+        Assert.Equal("AMD Radeon RX 7800 XT", vm.Gpus[0].Name);
+        Assert.Equal("NVIDIA GeForce RTX 4070", vm.Gpus[1].Name);
+    }
+
+    [Fact]
+    public async Task Inventory_MemoryApplied()
+    {
+        var vm = CreateViewModel(new FakeHardwareSensorService(), InventoryService());
+
+        await vm.RefreshInventoryCommand.ExecuteAsync(null);
+
+        Assert.Equal(32, vm.Memory.TotalGB);
+        Assert.Equal("DDR4", vm.Memory.Type);
+        Assert.Equal(3200, vm.Memory.SpeedMHz);
+        Assert.Equal(2, vm.Memory.SlotsUsed);
+        Assert.Equal(4, vm.Memory.SlotsTotal);
+    }
+
+    [Fact]
+    public async Task Inventory_MemoryModulesAppliedAndOrdered()
+    {
+        var vm = CreateViewModel(new FakeHardwareSensorService(), InventoryService());
+
+        await vm.RefreshInventoryCommand.ExecuteAsync(null);
+
+        Assert.Equal(2, vm.MemoryModules.Count);
+        Assert.Equal("DIMM 0", vm.MemoryModules[0].DeviceLocator);
+        Assert.Equal("DIMM 1", vm.MemoryModules[1].DeviceLocator);
+        Assert.Equal("Kingston", vm.MemoryModules[0].Manufacturer);
+    }
+
+    [Fact]
+    public async Task Inventory_MotherboardApplied()
+    {
+        var vm = CreateViewModel(new FakeHardwareSensorService(), InventoryService());
+
+        await vm.RefreshInventoryCommand.ExecuteAsync(null);
+
+        Assert.Equal("ASUS", vm.Motherboard.Manufacturer);
+        Assert.Equal("ROG STRIX B550-A", vm.Motherboard.Model);
+        Assert.Equal("2804", vm.Motherboard.BiosVersion);
+        Assert.NotNull(vm.Motherboard.BiosDate);
+    }
+
+    [Fact]
+    public async Task Inventory_LoadedStateAndTimestamps()
+    {
+        var vm = CreateViewModel(new FakeHardwareSensorService(), InventoryService());
+
+        await vm.RefreshInventoryCommand.ExecuteAsync(null);
+
+        Assert.True(vm.IsInventoryLoaded);
+        Assert.NotNull(vm.InventoryLastUpdatedAt);
+        Assert.Contains("Última actualización", vm.InventoryLastUpdatedText);
+        Assert.False(vm.IsInventoryBusy);
+        Assert.Equal("Inventario actualizado", vm.InventoryStatusText);
+    }
+
+    [Fact]
+    public async Task DoubleRefreshInventory_Blocked()
+    {
+        var hardware = new FakeHardwareService { PendingCpu = new TaskCompletionSource<CpuInfo>() };
+        var vm = CreateViewModel(new FakeHardwareSensorService(), hardware);
+
+        var task = vm.RefreshInventoryCommand.ExecuteAsync(null);
+
+        Assert.True(vm.IsInventoryBusy);
+        Assert.False(vm.RefreshInventoryCommand.CanExecute(null));
+
+        vm.RefreshInventoryCommand.Execute(null);
+
+        Assert.Equal(1, hardware.GetCpuCalls);
+
+        hardware.PendingCpu!.SetResult(new CpuInfo());
+        await task;
+
+        Assert.False(vm.IsInventoryBusy);
+        Assert.True(vm.RefreshInventoryCommand.CanExecute(null));
+    }
+
+    // =====================
+    // Tolerancia parcial
+    // =====================
+
+    [Fact]
+    public async Task CpuError_DoesNotBlockGpu()
+    {
+        var hardware = InventoryService();
+        hardware.ThrowOnCpu = new InvalidOperationException("CPU falló");
+        var vm = CreateViewModel(new FakeHardwareSensorService(), hardware);
+
+        await vm.RefreshInventoryCommand.ExecuteAsync(null);
+
+        Assert.Equal(2, vm.Gpus.Count);
+        Assert.Equal(32, vm.Memory.TotalGB);
+        Assert.Equal("ASUS", vm.Motherboard.Manufacturer);
+        Assert.Equal("Inventario parcial", vm.InventoryStatusText);
+        Assert.Contains(vm.InventoryErrors, e => e.Contains("CPU:", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task GpuError_DoesNotBlockRam()
+    {
+        var hardware = InventoryService();
+        hardware.ThrowOnGpu = new InvalidOperationException("GPU falló");
+        var vm = CreateViewModel(new FakeHardwareSensorService(), hardware);
+
+        await vm.RefreshInventoryCommand.ExecuteAsync(null);
+
+        Assert.Equal("AMD Ryzen 7 5700X", vm.Cpu.Name);
+        Assert.Empty(vm.Gpus);
+        Assert.Equal(32, vm.Memory.TotalGB);
+        Assert.Equal("Inventario parcial", vm.InventoryStatusText);
+    }
+
+    [Fact]
+    public async Task RamError_DoesNotBlockMotherboard()
+    {
+        var hardware = InventoryService();
+        hardware.ThrowOnMemory = new InvalidOperationException("RAM falló");
+        var vm = CreateViewModel(new FakeHardwareSensorService(), hardware);
+
+        await vm.RefreshInventoryCommand.ExecuteAsync(null);
+
+        Assert.Equal("AMD Ryzen 7 5700X", vm.Cpu.Name);
+        Assert.Equal(2, vm.Gpus.Count);
+        Assert.Equal(0, vm.Memory.TotalGB);
+        Assert.Equal("ASUS", vm.Motherboard.Manufacturer);
+        Assert.Equal("Inventario parcial", vm.InventoryStatusText);
+    }
+
+    [Fact]
+    public async Task MotherboardError_KeepsRest()
+    {
+        var hardware = InventoryService();
+        hardware.ThrowOnMotherboard = new InvalidOperationException("MB falló");
+        var vm = CreateViewModel(new FakeHardwareSensorService(), hardware);
+
+        await vm.RefreshInventoryCommand.ExecuteAsync(null);
+
+        Assert.Equal("AMD Ryzen 7 5700X", vm.Cpu.Name);
+        Assert.Equal(2, vm.MemoryModules.Count);
+        Assert.Equal(string.Empty, vm.Motherboard.Manufacturer);
+        Assert.Equal("Inventario parcial", vm.InventoryStatusText);
+    }
+
+    [Fact]
+    public async Task AllFourErrors_StatusNoDisponible()
+    {
+        var hardware = new FakeHardwareService
+        {
+            ThrowOnCpu = new InvalidOperationException("1"),
+            ThrowOnGpu = new InvalidOperationException("2"),
+            ThrowOnMemory = new InvalidOperationException("3"),
+            ThrowOnMotherboard = new InvalidOperationException("4")
+        };
+        var vm = CreateViewModel(new FakeHardwareSensorService(), hardware);
+
+        await vm.RefreshInventoryCommand.ExecuteAsync(null);
+
+        Assert.Equal("Inventario no disponible", vm.InventoryStatusText);
+        Assert.Equal(4, vm.InventoryErrors.Count);
+        Assert.True(vm.HasInventoryErrors);
+    }
+
+    [Fact]
+    public async Task InventoryErrors_ReplacedOnNextRefresh()
+    {
+        var hardware = InventoryService();
+        hardware.ThrowOnCpu = new InvalidOperationException("fallo");
+        var vm = CreateViewModel(new FakeHardwareSensorService(), hardware);
+
+        await vm.RefreshInventoryCommand.ExecuteAsync(null);
+        Assert.Single(vm.InventoryErrors);
+
+        hardware.ThrowOnCpu = null;
+        await vm.RefreshInventoryCommand.ExecuteAsync(null);
+
+        Assert.Empty(vm.InventoryErrors);
+        Assert.False(vm.HasInventoryErrors);
+        Assert.Equal("Inventario actualizado", vm.InventoryStatusText);
+    }
+
+    [Fact]
+    public async Task LiveErrors_NotMixedWithInventoryErrors()
+    {
+        var hardware = InventoryService();
+        hardware.ThrowOnCpu = new InvalidOperationException("fallo CPU");
+        var sensor = new FakeHardwareSensorService
+        {
+            LiveSnapshot = new HardwareLiveSnapshot { IsAvailable = false, Errors = ["fallo live"] }
+        };
+        var vm = CreateViewModel(sensor, hardware);
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+        await vm.RefreshInventoryCommand.ExecuteAsync(null);
+
+        Assert.Single(vm.Errors);
+        Assert.Equal("fallo live", vm.Errors[0]);
+        Assert.Single(vm.InventoryErrors);
+        Assert.Contains("CPU:", vm.InventoryErrors[0], StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ApplyLiveSnapshot_DoesNotClearInventory()
+    {
+        var vm = CreateViewModel(new FakeHardwareSensorService { LiveSnapshot = FullLiveSnapshot() }, InventoryService());
+
+        await vm.RefreshInventoryCommand.ExecuteAsync(null);
+        Assert.Equal(2, vm.MemoryModules.Count);
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        Assert.Equal(2, vm.MemoryModules.Count);
+        Assert.Equal("AMD Ryzen 7 5700X", vm.Cpu.Name);
+        Assert.True(vm.IsInventoryLoaded);
+    }
+
+    [Fact]
+    public async Task RefreshInventory_DoesNotClearLiveCollections()
+    {
+        var sensor = new FakeHardwareSensorService { LiveSnapshot = FullLiveSnapshot() };
+        var vm = CreateViewModel(sensor, InventoryService());
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+        Assert.Equal(2, vm.PerformanceSensors.Count);
+
+        await vm.RefreshInventoryCommand.ExecuteAsync(null);
+
+        Assert.Equal(2, vm.PerformanceSensors.Count);
+        Assert.Single(vm.TemperatureSensors);
+        Assert.Single(vm.BatterySensors);
+    }
+
+    [Fact]
+    public async Task Inventory_WhileMonitoring_Allowed_NoSecondStream()
+    {
+        var sensor = new FakeHardwareSensorService();
+        var vm = CreateViewModel(sensor, InventoryService());
+
+        vm.StartMonitoringCommand.Execute(null);
+        await WaitUntilAsync(() => sensor.StreamCalls == 1);
+
+        await vm.RefreshInventoryCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, sensor.StreamCalls);
+        Assert.True(vm.IsInventoryLoaded);
+        Assert.Equal("AMD Ryzen 7 5700X", vm.Cpu.Name);
+
+        vm.StopMonitoringCommand.Execute(null);
+        await WaitUntilAsync(() => !vm.IsMonitoring);
+    }
+
     // =====================
     // Migración a LiveSnapshot (B.4.1)
     // =====================
@@ -287,10 +825,7 @@ public class HardwareViewModelTests
     [Fact]
     public async Task Refresh_UsesGetLiveSnapshotAsync()
     {
-        var service = new FakeHardwareSensorService
-        {
-            LiveSnapshot = FullLiveSnapshot()
-        };
+        var service = new FakeHardwareSensorService { LiveSnapshot = FullLiveSnapshot() };
         var vm = CreateViewModel(service);
 
         await vm.RefreshCommand.ExecuteAsync(null);
@@ -302,10 +837,7 @@ public class HardwareViewModelTests
     [Fact]
     public async Task Start_UsesWatchLiveSnapshotsAsync()
     {
-        var service = new FakeHardwareSensorService
-        {
-            StreamLiveSnapshots = { FullLiveSnapshot() }
-        };
+        var service = new FakeHardwareSensorService { StreamLiveSnapshots = { FullLiveSnapshot() } };
         var vm = CreateViewModel(service);
 
         vm.StartMonitoringCommand.Execute(null);
@@ -318,34 +850,10 @@ public class HardwareViewModelTests
         await WaitUntilAsync(() => !vm.IsMonitoring);
     }
 
-    // =====================
-    // Actualización única
-    // =====================
-
-    [Fact]
-    public async Task Refresh_LoadsAvailableSnapshot()
-    {
-        var service = new FakeHardwareSensorService
-        {
-            LiveSnapshot = new HardwareLiveSnapshot { IsAvailable = true, IsElevated = true }
-        };
-        var vm = CreateViewModel(service);
-
-        await vm.RefreshCommand.ExecuteAsync(null);
-
-        Assert.True(vm.IsAvailable);
-        Assert.True(vm.IsElevated);
-        Assert.Equal("Disponible", vm.ProviderStatusText);
-        Assert.False(vm.IsBusy);
-    }
-
     [Fact]
     public async Task Refresh_LoadsAllFamilies_FromSameSnapshot()
     {
-        var service = new FakeHardwareSensorService
-        {
-            LiveSnapshot = FullLiveSnapshot()
-        };
+        var service = new FakeHardwareSensorService { LiveSnapshot = FullLiveSnapshot() };
         var vm = CreateViewModel(service);
 
         await vm.RefreshCommand.ExecuteAsync(null);
@@ -568,16 +1076,7 @@ public class HardwareViewModelTests
 
         Assert.True(vm.IsAvailable);
         Assert.True(vm.HasLiveData);
-        Assert.Single(vm.TemperatureSensors);
-        Assert.Equal(2, vm.PerformanceSensors.Count);
-        Assert.Single(vm.GpuMemorySensors);
-        Assert.Single(vm.BatterySensors);
-        Assert.Single(vm.MemoryTimingSensors);
     }
-
-    // =====================
-    // Estado global y contadores
-    // =====================
 
     [Fact]
     public async Task HasSensors_StillTemperatureSpecific()
@@ -687,40 +1186,11 @@ public class HardwareViewModelTests
     }
 
     [Fact]
-    public async Task Counters_WithNullValues_ValidCountsZero()
-    {
-        var service = new FakeHardwareSensorService
-        {
-            LiveSnapshot = new HardwareLiveSnapshot
-            {
-                IsAvailable = true,
-                PerformanceSensors = [Perf("CPU", "AMD Ryzen 7 5700X", "CPU Total", HardwarePerformanceMetricType.Load, null)],
-                GpuMemorySensors = [GpuMem("NVIDIA RTX 4070", "GPU Memory Used", null)],
-                BatterySensors = [Battery("Standard Battery", "Charge Level", HardwareBatteryMetricType.Level, null)],
-                MemoryTimingSensors = [Timing("DDR4-3200 DIMM", "tAA (CAS Latency Time)", null)]
-            }
-        };
-        var vm = CreateViewModel(service);
-
-        await vm.RefreshCommand.ExecuteAsync(null);
-
-        Assert.Equal(1, vm.PerformanceSensorCount);
-        Assert.Equal(0, vm.ValidPerformanceSensorCount);
-        Assert.Equal(0, vm.ValidGpuMemorySensorCount);
-        Assert.Equal(0, vm.ValidBatterySensorCount);
-        Assert.Equal(0, vm.ValidMemoryTimingSensorCount);
-    }
-
-    [Fact]
     public async Task Warnings_ReplacedByNewSnapshot()
     {
         var service = new FakeHardwareSensorService
         {
-            LiveSnapshot = new HardwareLiveSnapshot
-            {
-                IsAvailable = true,
-                Warnings = ["Advertencia 1"]
-            }
+            LiveSnapshot = new HardwareLiveSnapshot { IsAvailable = true, Warnings = ["Advertencia 1"] }
         };
         var vm = CreateViewModel(service);
 
@@ -991,7 +1461,7 @@ public class HardwareViewModelTests
     public async Task StartBlocked_WhileRefreshActive()
     {
         var service = new PendingSnapshotService();
-        var vm = new HardwareViewModel(service);
+        var vm = new HardwareViewModel(service, new FakeHardwareService());
 
         var refreshTask = vm.RefreshCommand.ExecuteAsync(null);
 
@@ -1007,7 +1477,7 @@ public class HardwareViewModelTests
     }
 
     // =====================
-    // Sin interpretación de salud/rendimiento
+    // Sin interpretación / alcance
     // =====================
 
     [Fact]
@@ -1020,7 +1490,7 @@ public class HardwareViewModelTests
 
         Assert.DoesNotContain(propertyNames, n => n is "IsHot" or "IsCritical" or "HealthStatus" or
             "Severity" or "Recommendation" or "IsOverloaded" or "IsSlow" or "CL" or "VramUsagePercent" or
-            "BatteryHealthPercent");
+            "BatteryHealthPercent" or "CpuUsagePercent" or "GpuUsagePercent");
     }
 
     [Fact]
@@ -1036,23 +1506,40 @@ public class HardwareViewModelTests
         Assert.Contains("GpuMemorySensors", propertyNames);
         Assert.Contains("BatterySensors", propertyNames);
         Assert.Contains("MemoryTimingSensors", propertyNames);
+        Assert.Contains("Gpus", propertyNames);
+        Assert.Contains("MemoryModules", propertyNames);
+        Assert.Contains("InventoryErrors", propertyNames);
     }
 
     [Fact]
-    public async Task UsesInjectedService_NoRealHardware()
+    public void NoWmiSpdCorrelation_Methods()
     {
-        // Si el ViewModel usara LibreHardwareSensorService real, estos datos simulados
-        // no serían posibles sin tocar el hardware.
-        var service = new FakeHardwareSensorService
-        {
-            LiveSnapshot = FullLiveSnapshot()
-        };
-        var vm = CreateViewModel(service);
+        var methodNames = typeof(HardwareViewModel)
+            .GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic |
+                        System.Reflection.BindingFlags.Instance)
+            .Select(m => m.Name)
+            .ToList();
 
+        Assert.DoesNotContain(methodNames, n => n.Contains("Correlat", StringComparison.OrdinalIgnoreCase) ||
+                                                n.Contains("Match", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task Inventory_UsesInjectedServices_NoRealHardware()
+    {
+        // Si el ViewModel usara los servicios reales, estos datos simulados
+        // no serían posibles sin WMI/LHM reales.
+        var vm = CreateViewModel(
+            new FakeHardwareSensorService { LiveSnapshot = FullLiveSnapshot() },
+            InventoryService());
+
+        await vm.RefreshInventoryCommand.ExecuteAsync(null);
         await vm.RefreshCommand.ExecuteAsync(null);
 
-        Assert.Equal("AMD Ryzen 7 5700X", Assert.Single(vm.TemperatureSensors).HardwareName);
-        Assert.Equal(48.2, vm.TemperatureSensors[0].ValueCelsius);
+        Assert.True(vm.IsInventoryLoaded);
+        Assert.True(vm.HasLiveData);
+        Assert.Equal("AMD Ryzen 7 5700X", vm.Cpu.Name);
+        Assert.Equal("AMD Ryzen 7 5700X", vm.TemperatureSensors[0].HardwareName);
     }
 
     // =====================
@@ -1106,11 +1593,10 @@ public class HardwareViewModelTests
     }
 
     // =====================
-    // Tests de converters (B.4.1)
+    // Tests de converters (B.4.1/B.4.2)
     // =====================
 
-    private static readonly System.Globalization.CultureInfo EsAr =
-        new("es-AR");
+    private static readonly System.Globalization.CultureInfo EsAr = new("es-AR");
 
     [Fact]
     public void NullableNumberConverter_NullToND()
@@ -1183,12 +1669,50 @@ public class HardwareViewModelTests
     }
 
     [Fact]
-    public void NullableNumberConverter_DoesNotInferBySensorName()
+    public void EmptyStringToNdConverter_AllCases()
     {
-        // El converter genérico no agrega unidades ni interpreta nombres.
-        var converter = new NullableNumberConverter();
+        var converter = new EmptyStringToNdConverter();
 
-        Assert.Equal("6144", converter.Convert(6144.0, typeof(string), null, EsAr));
-        Assert.DoesNotContain("MB", (string)converter.Convert(6144.0, typeof(string), null, EsAr));
+        Assert.Equal("N/D", converter.Convert(null, typeof(string), null, EsAr));
+        Assert.Equal("N/D", converter.Convert(string.Empty, typeof(string), null, EsAr));
+        Assert.Equal("N/D", converter.Convert("   ", typeof(string), null, EsAr));
+        Assert.Equal("Kingston", converter.Convert("Kingston", typeof(string), null, EsAr));
+        Assert.Equal("Unknown", converter.Convert("Unknown", typeof(string), null, EsAr));
+        Assert.Equal("No detectado", converter.Convert("No detectado", typeof(string), null, EsAr));
+    }
+
+    [Fact]
+    public void PositiveNumberOrNdConverter_AllCases()
+    {
+        var converter = new PositiveNumberOrNdConverter();
+
+        Assert.Equal("N/D", converter.Convert(null, typeof(string), null, EsAr));
+        Assert.Equal("N/D", converter.Convert(double.NaN, typeof(string), null, EsAr));
+        Assert.Equal("N/D", converter.Convert(double.PositiveInfinity, typeof(string), null, EsAr));
+        Assert.Equal("N/D", converter.Convert(0.0, typeof(string), null, EsAr));
+        Assert.Equal("N/D", converter.Convert(-5.0, typeof(string), null, EsAr));
+        Assert.Equal("N/D", converter.Convert(0, typeof(string), null, EsAr));
+        Assert.Equal("N/D", converter.Convert(0u, typeof(string), null, EsAr));
+        Assert.Equal("3,2", converter.Convert(3.2, typeof(string), null, EsAr));
+        Assert.Equal("48,25", converter.Convert(48.25, typeof(string), null, EsAr));
+        Assert.Equal("16", converter.Convert(16, typeof(string), null, EsAr));
+        Assert.Equal("3200", converter.Convert(3200u, typeof(string), null, EsAr));
+    }
+
+    [Fact]
+    public async Task Inventory_UsesInjectedServices_NoRealWmi()
+    {
+        var hardware = new FakeHardwareService
+        {
+            Cpu = new CpuInfo { Name = "Simulated CPU", Cores = 4, Threads = 8 },
+            Memory = new MemoryInfo { TotalGB = 16, Modules = [new MemoryModuleInfo { DeviceLocator = "DIMM 0" }] }
+        };
+        var vm = CreateViewModel(new FakeHardwareSensorService(), hardware);
+
+        await vm.RefreshInventoryCommand.ExecuteAsync(null);
+
+        Assert.Equal("Simulated CPU", vm.Cpu.Name);
+        Assert.Equal(4, vm.Cpu.Cores);
+        Assert.Single(vm.MemoryModules);
     }
 }

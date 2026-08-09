@@ -234,7 +234,9 @@ public partial class MainViewModel : ObservableObject
 
     private object CreateHardwareView()
     {
-        _hardwareViewModel ??= new HardwareViewModel(_hardwareSensorService);
+        _hardwareViewModel ??= new HardwareViewModel(
+            _hardwareSensorService,
+            _hardwareService);
 
         return new HardwareView
         {

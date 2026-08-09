@@ -20,6 +20,7 @@ public partial class HardwareViewModel : ObservableObject
     public static readonly TimeSpan MonitorInterval = TimeSpan.FromSeconds(2);
 
     private readonly IHardwareSensorService _hardwareSensorService;
+    private readonly IHardwareService _hardwareService;
     private CancellationTokenSource? _cts;
 
     public ObservableCollection<HardwareTemperatureSensor> TemperatureSensors { get; } = new();
@@ -30,9 +31,18 @@ public partial class HardwareViewModel : ObservableObject
     public ObservableCollection<string> Warnings { get; } = new();
     public ObservableCollection<string> Errors { get; } = new();
 
-    public HardwareViewModel(IHardwareSensorService hardwareSensorService)
+    // --- Inventario estático (WMI/SMBIOS) ---
+
+    public ObservableCollection<GpuInfo> Gpus { get; } = new();
+    public ObservableCollection<MemoryModuleInfo> MemoryModules { get; } = new();
+    public ObservableCollection<string> InventoryErrors { get; } = new();
+
+    public HardwareViewModel(
+        IHardwareSensorService hardwareSensorService,
+        IHardwareService hardwareService)
     {
         _hardwareSensorService = hardwareSensorService;
+        _hardwareService = hardwareService;
     }
 
     // --- Estado ---
@@ -117,6 +127,38 @@ public partial class HardwareViewModel : ObservableObject
     [ObservableProperty]
     private int _validMemoryTimingSensorCount;
 
+    // --- Estado de inventario ---
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(RefreshInventoryCommand))]
+    private bool _isInventoryBusy;
+
+    [ObservableProperty]
+    private bool _isInventoryLoaded;
+
+    [ObservableProperty]
+    private string _inventoryStatusText = "Sin consultar";
+
+    [ObservableProperty]
+    private DateTime? _inventoryLastUpdatedAt;
+
+    [ObservableProperty]
+    private string _inventoryLastUpdatedText = string.Empty;
+
+    [ObservableProperty]
+    private bool _hasInventoryErrors;
+
+    [ObservableProperty]
+    private CpuInfo _cpu = new();
+
+    [ObservableProperty]
+    private MemoryInfo _memory = new();
+
+    [ObservableProperty]
+    private MotherboardInfo _motherboard = new();
+
+    private bool CanRefreshInventory => !IsInventoryBusy;
+
     private bool CanRefresh => !IsMonitoring && !IsBusy;
 
     private bool CanStartMonitoring => !IsMonitoring && !IsBusy;
@@ -174,6 +216,124 @@ public partial class HardwareViewModel : ObservableObject
     private void StopMonitoring()
     {
         _cts?.Cancel();
+    }
+
+    /// <summary>
+    /// Consulta manual el inventario estático (CPU/GPU/RAM/placa madre) vía WMI/SMBIOS.
+    /// Se ejecuta en background y es independiente del monitoreo live.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanRefreshInventory))]
+    private async Task RefreshInventoryAsync()
+    {
+        if (IsInventoryBusy)
+        {
+            return;
+        }
+
+        IsInventoryBusy = true;
+        InventoryStatusText = "Leyendo inventario...";
+        try
+        {
+            var result = await Task.Run(ReadInventory);
+            ApplyInventory(result);
+        }
+        catch (Exception ex)
+        {
+            InventoryStatusText = "Inventario no disponible";
+            InventoryErrors.Add($"Error de inventario: {ex.Message}");
+        }
+        finally
+        {
+            IsInventoryBusy = false;
+        }
+    }
+
+    /// <summary>
+    /// Ejecuta las consultas estáticas de forma secuencial en background.
+    /// Cada sección está protegida individualmente: un fallo no cancela el resto.
+    /// </summary>
+    private HardwareInventoryResult ReadInventory()
+    {
+        var result = new HardwareInventoryResult();
+
+        try
+        {
+            result.Cpu = _hardwareService.GetCpuInfoAsync().GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            result.Errors.Add($"CPU: {ex.Message}");
+        }
+
+        try
+        {
+            result.Gpus = _hardwareService.GetGpuInfoAsync().GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            result.Errors.Add($"GPU: {ex.Message}");
+        }
+
+        try
+        {
+            result.Memory = _hardwareService.GetMemoryInfoAsync().GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            result.Errors.Add($"RAM: {ex.Message}");
+        }
+
+        try
+        {
+            result.Motherboard = _hardwareService.GetMotherboardInfoAsync().GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            result.Errors.Add($"Placa madre: {ex.Message}");
+        }
+
+        return result;
+    }
+
+    private void ApplyInventory(HardwareInventoryResult result)
+    {
+        Cpu = result.Cpu;
+        Memory = result.Memory;
+        Motherboard = result.Motherboard;
+
+        Gpus.Clear();
+        foreach (var gpu in result.Gpus.OrderBy(g => g.Name).ThenBy(g => g.Manufacturer))
+        {
+            Gpus.Add(gpu);
+        }
+
+        MemoryModules.Clear();
+        foreach (var module in result.Memory.Modules
+                     .OrderBy(m => m.DeviceLocator)
+                     .ThenBy(m => m.BankLabel)
+                     .ThenBy(m => m.Manufacturer)
+                     .ThenBy(m => m.PartNumber))
+        {
+            MemoryModules.Add(module);
+        }
+
+        InventoryErrors.Clear();
+        foreach (var error in result.Errors)
+        {
+            InventoryErrors.Add(error);
+        }
+
+        HasInventoryErrors = result.Errors.Count > 0;
+        IsInventoryLoaded = true;
+        InventoryLastUpdatedAt = DateTime.Now;
+        InventoryLastUpdatedText = $"Última actualización: {InventoryLastUpdatedAt:dd/MM/yyyy HH:mm:ss}";
+
+        InventoryStatusText = result.Errors.Count switch
+        {
+            0 => "Inventario actualizado",
+            _ when result.Errors.Count >= 4 => "Inventario no disponible",
+            _ => "Inventario parcial"
+        };
     }
 
     private async Task RunMonitoringAsync(CancellationToken cancellationToken)
@@ -304,5 +464,17 @@ public partial class HardwareViewModel : ObservableObject
         StatusText = snapshot.IsAvailable
             ? HasLiveData ? "Lectura disponible" : "Sin sensores disponibles"
             : "Lectura no disponible";
+    }
+
+    /// <summary>
+    /// Resultado interno de la consulta estática. Detalle de presentación/orquestación.
+    /// </summary>
+    private sealed class HardwareInventoryResult
+    {
+        public CpuInfo Cpu { get; set; } = new();
+        public List<GpuInfo> Gpus { get; set; } = new();
+        public MemoryInfo Memory { get; set; } = new();
+        public MotherboardInfo Motherboard { get; set; } = new();
+        public List<string> Errors { get; } = new();
     }
 }
