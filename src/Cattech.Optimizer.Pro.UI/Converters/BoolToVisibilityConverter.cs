@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Data;
 using System.Windows.Media;
 using Cattech.Optimizer.Pro.Core.Models.Cleanup;
+using Cattech.Optimizer.Pro.Core.Models.Hardware;
 using Cattech.Optimizer.Pro.Core.Models.VisualOptimization;
 
 namespace Cattech.Optimizer.Pro.UI.Converters;
@@ -478,6 +479,93 @@ public class NullableTemperatureConverter : IValueConverter
         }
 
         return "N/D";
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+/// <summary>
+/// Convierte un número nullable a texto sin unidad.
+/// null/NaN/Infinity → "N/D"; valor → formato numérico con hasta 2 decimales (CultureInfo de la UI).
+/// </summary>
+public class NullableNumberConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (value is double d)
+        {
+            if (double.IsNaN(d) || double.IsInfinity(d))
+            {
+                return "N/D";
+            }
+
+            return d.ToString("0.##", culture);
+        }
+
+        if (value is float f)
+        {
+            if (float.IsNaN(f) || float.IsInfinity(f))
+            {
+                return "N/D";
+            }
+
+            return ((double)f).ToString("0.##", culture);
+        }
+
+        return "N/D";
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+/// <summary>
+/// Convierte HardwarePerformanceMetricType a texto de presentación (nunca por SensorName).
+/// </summary>
+public class PerformanceMetricTypeTextConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        return value is HardwarePerformanceMetricType type
+            ? type switch
+            {
+                HardwarePerformanceMetricType.Load => "Carga",
+                HardwarePerformanceMetricType.Clock => "Frecuencia",
+                _ => string.Empty
+            }
+            : string.Empty;
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+/// <summary>
+/// Convierte HardwareBatteryMetricType a texto de presentación (nunca por SensorName).
+/// </summary>
+public class BatteryMetricTypeTextConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        return value is HardwareBatteryMetricType type
+            ? type switch
+            {
+                HardwareBatteryMetricType.Level => "Nivel",
+                HardwareBatteryMetricType.Energy => "Energía",
+                HardwareBatteryMetricType.Voltage => "Voltaje",
+                HardwareBatteryMetricType.Current => "Corriente",
+                HardwareBatteryMetricType.Power => "Potencia",
+                HardwareBatteryMetricType.TimeSpan => "Tiempo",
+                _ => string.Empty
+            }
+            : string.Empty;
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)

@@ -298,21 +298,27 @@ Ir a **🛡️ Punto de restauración** para crear un punto de restauración de 
 
 Los resultados se guardan en `data/restore-points/restore-point-result-YYYYMMDD-HHMMSS.json`.
 
-## Hardware (temperaturas)
+## Hardware (tiempo real)
 
-Ir a **🌡️ Hardware** para monitorear los sensores de temperatura en tiempo real mediante LibreHardwareMonitorLib (solo lectura).
+Ir a **🌡️ Hardware** para monitorear el hardware en tiempo real mediante LibreHardwareMonitorLib (solo lectura), todo desde **una única captura live** por muestra.
 
 **Funcionalidades:**
-- **Actualizar una vez**: lee un snapshot único de los sensores
+- **Actualizar una vez**: lee un snapshot live único (temperaturas + Load/Clock + memoria GPU + batería + timings SPD juntos)
 - **Iniciar monitoreo / Detener**: muestreo periódico (cada 2 segundos) reutilizando una sola sesión; se cancela automáticamente al salir de la sección
-- **Tabla de temperaturas**: Tipo, Hardware, Sensor, Actual, Mín., Máx. — valores no disponibles se muestran como N/D (nunca 0 °C)
-- **Resumen**: sensores detectados, sensores con lectura válida, proveedor disponible/no disponible, modo administrador
-- **Warnings y errores controlados**: sin permisos de administrador se muestra un aviso informativo; no se exige elevación
+- **5 pestañas live**:
+  - **Temperaturas**: Tipo, Hardware, Sensor, Actual, Mín., Máx. (N/D nunca 0 °C)
+  - **CPU / GPU**: Load y Clock con sus unidades (% y MHz), métrica mostrada como Carga/Frecuencia
+  - **Memoria GPU**: SmallData en MB, filas independientes ("GPU Memory Used/Free/Total" literales, sin usage calculado)
+  - **Batería**: Nivel/Energía/Voltaje/Corriente/Potencia/Tiempo con sus unidades; sin salud ni estado de carga
+  - **RAM SPD**: timings en nanosegundos (14,00 | ns — nunca CL14), nombres preservados
+- **Resumen compacto**: cantidad de sensores por familia (sin porcentajes semánticos)
+- **Warnings y errores controlados**: batería/SPD vacíos no son errores; sin elevación → aviso informativo
 
 **Consideraciones:**
-- No interpreta salud térmica: no hay colores de alerta, thresholds ni estados Hot/Crítico
+- No interpreta salud ni rendimiento: sin colores de alerta, thresholds ni estados Hot/Crítico
+- No selecciona sensores semánticos (CPU Total, GPU Core): muestra todo lo que entrega el backend
 - El monitoreo nunca se inicia automáticamente: requiere acción explícita del técnico
-- Algunos sensores pueden requerir privilegios administrativos para estar disponibles
+- El inventario estático WMI/SMBIOS (CPU, placa madre, módulos RAM) se integrará en B.4.2
 
 ## Memoria RAM (inventario)
 

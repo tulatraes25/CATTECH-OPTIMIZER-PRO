@@ -7,8 +7,10 @@ using Cattech.Optimizer.Pro.Core.Models.Hardware;
 namespace Cattech.Optimizer.Pro.UI.ViewModels;
 
 /// <summary>
-/// ViewModel de la pantalla Hardware: muestra sensores de temperatura en tiempo real.
-/// Recolecta datos únicamente: no interpreta salud térmica ni aplica thresholds.
+/// ViewModel de la pantalla Hardware: presenta hardware live en tiempo real
+/// (temperaturas, Load/Clock CPU-GPU, memoria GPU, batería, timings SPD)
+/// a partir de UN único HardwareLiveSnapshot por captura o muestra.
+/// Presenta datos únicamente: no interpreta salud, rendimiento ni aplica thresholds.
 /// </summary>
 public partial class HardwareViewModel : ObservableObject
 {
@@ -21,6 +23,10 @@ public partial class HardwareViewModel : ObservableObject
     private CancellationTokenSource? _cts;
 
     public ObservableCollection<HardwareTemperatureSensor> TemperatureSensors { get; } = new();
+    public ObservableCollection<HardwarePerformanceSensor> PerformanceSensors { get; } = new();
+    public ObservableCollection<HardwareGpuMemorySensor> GpuMemorySensors { get; } = new();
+    public ObservableCollection<HardwareBatterySensor> BatterySensors { get; } = new();
+    public ObservableCollection<HardwareMemoryTimingSensor> MemoryTimingSensors { get; } = new();
     public ObservableCollection<string> Warnings { get; } = new();
     public ObservableCollection<string> Errors { get; } = new();
 
@@ -48,11 +54,15 @@ public partial class HardwareViewModel : ObservableObject
     [ObservableProperty]
     private bool _isElevated;
 
+    // HasSensors/ValidSensorCount siguen siendo específicos de TEMPERATURA (compatibilidad B.1).
     [ObservableProperty]
     private bool _hasSensors;
 
     [ObservableProperty]
     private int _validSensorCount;
+
+    [ObservableProperty]
+    private bool _hasLiveData;
 
     [ObservableProperty]
     private DateTime? _lastUpdatedAt;
@@ -81,6 +91,32 @@ public partial class HardwareViewModel : ObservableObject
     [ObservableProperty]
     private bool _hasErrors;
 
+    // --- Contadores por familia ---
+
+    [ObservableProperty]
+    private int _performanceSensorCount;
+
+    [ObservableProperty]
+    private int _validPerformanceSensorCount;
+
+    [ObservableProperty]
+    private int _gpuMemorySensorCount;
+
+    [ObservableProperty]
+    private int _validGpuMemorySensorCount;
+
+    [ObservableProperty]
+    private int _batterySensorCount;
+
+    [ObservableProperty]
+    private int _validBatterySensorCount;
+
+    [ObservableProperty]
+    private int _memoryTimingSensorCount;
+
+    [ObservableProperty]
+    private int _validMemoryTimingSensorCount;
+
     private bool CanRefresh => !IsMonitoring && !IsBusy;
 
     private bool CanStartMonitoring => !IsMonitoring && !IsBusy;
@@ -88,7 +124,7 @@ public partial class HardwareViewModel : ObservableObject
     private bool CanStopMonitoring => IsMonitoring;
 
     /// <summary>
-    /// Lee una vez el estado actual de los sensores.
+    /// Lee una vez el estado live completo del hardware (una sola captura).
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanRefresh))]
     private async Task RefreshAsync()
@@ -97,8 +133,8 @@ public partial class HardwareViewModel : ObservableObject
         StatusText = "Leyendo...";
         try
         {
-            var snapshot = await _hardwareSensorService.GetTemperatureSnapshotAsync();
-            ApplySnapshot(snapshot);
+            var snapshot = await _hardwareSensorService.GetLiveSnapshotAsync();
+            ApplyLiveSnapshot(snapshot);
         }
         catch (OperationCanceledException)
         {
@@ -145,9 +181,9 @@ public partial class HardwareViewModel : ObservableObject
         try
         {
             await foreach (var snapshot in _hardwareSensorService
-                               .WatchTemperatureSnapshotsAsync(MonitorInterval, cancellationToken))
+                               .WatchLiveSnapshotsAsync(MonitorInterval, cancellationToken))
             {
-                ApplySnapshot(snapshot);
+                ApplyLiveSnapshot(snapshot);
             }
         }
         catch (OperationCanceledException)
@@ -173,10 +209,10 @@ public partial class HardwareViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Aplica un snapshot al estado de la UI. Cada muestra representa el estado ACTUAL:
-    /// los sensores anteriores se descartan, nunca se conservan como actuales.
+    /// Aplica un snapshot live al estado de la UI. Cada muestra representa el estado ACTUAL:
+    /// todas las familias anteriores se descartan, nunca se conservan como actuales.
     /// </summary>
-    private void ApplySnapshot(HardwareTemperatureSnapshot snapshot)
+    private void ApplyLiveSnapshot(HardwareLiveSnapshot snapshot)
     {
         IsAvailable = snapshot.IsAvailable;
         IsElevated = snapshot.IsElevated;
@@ -184,12 +220,47 @@ public partial class HardwareViewModel : ObservableObject
         LastUpdatedText = $"Última actualización: {snapshot.CapturedAt:dd/MM/yyyy HH:mm:ss}";
 
         TemperatureSensors.Clear();
-        foreach (var sensor in snapshot.Sensors
+        foreach (var sensor in snapshot.TemperatureSensors
                      .OrderBy(s => s.HardwareType)
                      .ThenBy(s => s.HardwareName)
                      .ThenBy(s => s.SensorName))
         {
             TemperatureSensors.Add(sensor);
+        }
+
+        PerformanceSensors.Clear();
+        foreach (var sensor in snapshot.PerformanceSensors
+                     .OrderBy(s => s.HardwareType)
+                     .ThenBy(s => s.HardwareName)
+                     .ThenBy(s => s.MetricType)
+                     .ThenBy(s => s.SensorName))
+        {
+            PerformanceSensors.Add(sensor);
+        }
+
+        GpuMemorySensors.Clear();
+        foreach (var sensor in snapshot.GpuMemorySensors
+                     .OrderBy(s => s.HardwareName)
+                     .ThenBy(s => s.SensorName))
+        {
+            GpuMemorySensors.Add(sensor);
+        }
+
+        BatterySensors.Clear();
+        foreach (var sensor in snapshot.BatterySensors
+                     .OrderBy(s => s.HardwareName)
+                     .ThenBy(s => s.MetricType)
+                     .ThenBy(s => s.SensorName))
+        {
+            BatterySensors.Add(sensor);
+        }
+
+        MemoryTimingSensors.Clear();
+        foreach (var sensor in snapshot.MemoryTimingSensors
+                     .OrderBy(s => s.HardwareName)
+                     .ThenBy(s => s.SensorName))
+        {
+            MemoryTimingSensors.Add(sensor);
         }
 
         Warnings.Clear();
@@ -207,15 +278,31 @@ public partial class HardwareViewModel : ObservableObject
         HasWarnings = snapshot.Warnings.Count > 0;
         HasErrors = snapshot.Errors.Count > 0;
 
-        HasSensors = snapshot.HasSensors;
-        ValidSensorCount = snapshot.ValidSensorCount;
-        SensorCountText = snapshot.Sensors.Count.ToString();
-        ValidSensorCountText = snapshot.ValidSensorCount.ToString();
+        HasSensors = snapshot.HasTemperatureSensors;
+        ValidSensorCount = snapshot.ValidTemperatureSensorCount;
+        SensorCountText = snapshot.TemperatureSensors.Count.ToString();
+        ValidSensorCountText = snapshot.ValidTemperatureSensorCount.ToString();
+
+        PerformanceSensorCount = snapshot.PerformanceSensors.Count;
+        ValidPerformanceSensorCount = snapshot.ValidPerformanceSensorCount;
+        GpuMemorySensorCount = snapshot.GpuMemorySensors.Count;
+        ValidGpuMemorySensorCount = snapshot.ValidGpuMemorySensorCount;
+        BatterySensorCount = snapshot.BatterySensors.Count;
+        ValidBatterySensorCount = snapshot.ValidBatterySensorCount;
+        MemoryTimingSensorCount = snapshot.MemoryTimingSensors.Count;
+        ValidMemoryTimingSensorCount = snapshot.ValidMemoryTimingSensorCount;
+
+        HasLiveData = snapshot.TemperatureSensors.Count > 0 ||
+                      snapshot.PerformanceSensors.Count > 0 ||
+                      snapshot.GpuMemorySensors.Count > 0 ||
+                      snapshot.BatterySensors.Count > 0 ||
+                      snapshot.MemoryTimingSensors.Count > 0;
+
         ProviderStatusText = snapshot.IsAvailable ? "Disponible" : "No disponible";
         AdminText = snapshot.IsElevated ? "Sí" : "No";
 
         StatusText = snapshot.IsAvailable
-            ? snapshot.HasSensors ? "Lectura disponible" : "Sin sensores disponibles"
+            ? HasLiveData ? "Lectura disponible" : "Sin sensores disponibles"
             : "Lectura no disponible";
     }
 }

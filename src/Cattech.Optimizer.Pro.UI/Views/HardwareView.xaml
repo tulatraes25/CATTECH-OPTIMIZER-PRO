@@ -1,12 +1,17 @@
-<UserControl x:Class="Cattech.Optimizer.Pro.UI.Views.HardwareView"
+﻿<UserControl x:Class="Cattech.Optimizer.Pro.UI.Views.HardwareView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:converters="clr-namespace:Cattech.Optimizer.Pro.UI.Converters">
 
     <UserControl.Resources>
         <converters:BoolToVisibilityConverter x:Key="BoolToVis" />
-        <converters:InvertBoolConverter x:Key="InvertBool" />
+        <converters:InverseBoolToVisibilityConverter x:Key="InvertBoolToVis" />
+        <converters:ZeroToVisibilityConverter x:Key="ZeroToVis" />
+        <converters:StringToVisibilityConverter x:Key="StringToVis" />
         <converters:NullableTemperatureConverter x:Key="TempConverter" />
+        <converters:NullableNumberConverter x:Key="NumConverter" />
+        <converters:PerformanceMetricTypeTextConverter x:Key="PerfMetricConverter" />
+        <converters:BatteryMetricTypeTextConverter x:Key="BatteryMetricConverter" />
     </UserControl.Resources>
 
     <Grid Margin="30">
@@ -17,15 +22,14 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- Row 0: Título -->
+        <!-- Row 0: TÃ­tulo -->
         <StackPanel Grid.Row="0" Margin="0,0,0,10">
             <TextBlock Text="Hardware" FontSize="26" FontWeight="Bold" Foreground="#1B1B1B" />
-            <TextBlock Text="Monitoreo de temperaturas en tiempo real" FontSize="13" Foreground="#666"
+            <TextBlock Text="Monitoreo de hardware en tiempo real" FontSize="13" Foreground="#666"
                        Margin="0,5,0,0" />
-            <TextBlock Text="Lectura mediante LibreHardwareMonitor — solo lectura" FontSize="11" Foreground="#888"
+            <TextBlock Text="Lectura mediante LibreHardwareMonitor â€” solo lectura" FontSize="11" Foreground="#888"
                        Margin="0,4,0,0" />
         </StackPanel>
 
@@ -54,7 +58,7 @@
                                Foreground="#1B1B1B" Margin="6,0,0,0" />
                 </StackPanel>
                 <TextBlock Text="{Binding LastUpdatedText}" FontSize="11" Foreground="#777" Margin="0,3,0,0"
-                           Visibility="{Binding LastUpdatedText, Converter={StaticResource BoolToVis}}" />
+                           Visibility="{Binding LastUpdatedText, Converter={StaticResource StringToVis}}" />
                 <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
                     <TextBlock Text="Modo administrador:" FontSize="11" Foreground="#555" />
                     <TextBlock Text="{Binding AdminText}" FontSize="11" FontWeight="SemiBold" Margin="6,0,0,0" />
@@ -66,9 +70,10 @@
         <TextBlock Grid.Row="2" Text="Presione 'Actualizar una vez' o 'Iniciar monitoreo'."
                    FontSize="12" Foreground="#888" Margin="0,0,0,12" />
 
-        <!-- Row 3: Resumen -->
+        <!-- Row 3: Resumen compacto por familia -->
         <Grid Grid.Row="3" Margin="0,0,0,12">
             <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="*" />
@@ -76,38 +81,52 @@
             </Grid.ColumnDefinitions>
 
             <Border Grid.Column="0" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
-                    Padding="12,10" Background="White" Margin="0,0,6,0">
+                    Padding="10,8" Background="White" Margin="0,0,4,0">
                 <StackPanel>
-                    <TextBlock Text="Sensores detectados" FontSize="11" Foreground="#555" />
-                    <TextBlock Text="{Binding SensorCountText}" FontSize="22" FontWeight="Bold"
-                               Foreground="#1B1B1B" Margin="0,4,0,0" />
+                    <TextBlock Text="Temperaturas" FontSize="11" Foreground="#555" />
+                    <TextBlock FontSize="18" FontWeight="Bold" Foreground="#1B1B1B" Margin="0,3,0,0">
+                        <Run Text="{Binding SensorCountText}" /><Run Text=" sensores" FontSize="11" FontWeight="Normal" />
+                    </TextBlock>
                 </StackPanel>
             </Border>
 
             <Border Grid.Column="1" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
-                    Padding="12,10" Background="White" Margin="6,0">
+                    Padding="10,8" Background="White" Margin="4,0">
                 <StackPanel>
-                    <TextBlock Text="Sensores con lectura válida" FontSize="11" Foreground="#555" />
-                    <TextBlock Text="{Binding ValidSensorCountText}" FontSize="22" FontWeight="Bold"
-                               Foreground="#1B1B1B" Margin="0,4,0,0" />
+                    <TextBlock Text="CPU / GPU" FontSize="11" Foreground="#555" />
+                    <TextBlock FontSize="18" FontWeight="Bold" Foreground="#1B1B1B" Margin="0,3,0,0">
+                        <Run Text="{Binding PerformanceSensorCount}" /><Run Text=" sensores" FontSize="11" FontWeight="Normal" />
+                    </TextBlock>
                 </StackPanel>
             </Border>
 
             <Border Grid.Column="2" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
-                    Padding="12,10" Background="White" Margin="6,0">
+                    Padding="10,8" Background="White" Margin="4,0">
                 <StackPanel>
-                    <TextBlock Text="Proveedor" FontSize="11" Foreground="#555" />
-                    <TextBlock Text="{Binding ProviderStatusText}" FontSize="22" FontWeight="Bold"
-                               Foreground="#1B1B1B" Margin="0,4,0,0" />
+                    <TextBlock Text="Memoria GPU" FontSize="11" Foreground="#555" />
+                    <TextBlock FontSize="18" FontWeight="Bold" Foreground="#1B1B1B" Margin="0,3,0,0">
+                        <Run Text="{Binding GpuMemorySensorCount}" /><Run Text=" sensores" FontSize="11" FontWeight="Normal" />
+                    </TextBlock>
                 </StackPanel>
             </Border>
 
             <Border Grid.Column="3" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
-                    Padding="12,10" Background="White" Margin="6,0,0,0">
+                    Padding="10,8" Background="White" Margin="4,0">
                 <StackPanel>
-                    <TextBlock Text="Administrador" FontSize="11" Foreground="#555" />
-                    <TextBlock Text="{Binding AdminText}" FontSize="22" FontWeight="Bold"
-                               Foreground="#1B1B1B" Margin="0,4,0,0" />
+                    <TextBlock Text="BaterÃ­a" FontSize="11" Foreground="#555" />
+                    <TextBlock FontSize="18" FontWeight="Bold" Foreground="#1B1B1B" Margin="0,3,0,0">
+                        <Run Text="{Binding BatterySensorCount}" /><Run Text=" sensores" FontSize="11" FontWeight="Normal" />
+                    </TextBlock>
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Column="4" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
+                    Padding="10,8" Background="White" Margin="4,0,0,0">
+                <StackPanel>
+                    <TextBlock Text="RAM SPD" FontSize="11" Foreground="#555" />
+                    <TextBlock FontSize="18" FontWeight="Bold" Foreground="#1B1B1B" Margin="0,3,0,0">
+                        <Run Text="{Binding MemoryTimingSensorCount}" /><Run Text=" sensores" FontSize="11" FontWeight="Normal" />
+                    </TextBlock>
                 </StackPanel>
             </Border>
         </Grid>
@@ -140,32 +159,206 @@
             </Border>
         </StackPanel>
 
-        <!-- Row 5: Tabla de temperaturas -->
-        <DataGrid Grid.Row="5" ItemsSource="{Binding TemperatureSensors}" AutoGenerateColumns="False"
-                  IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False"
-                  HeadersVisibility="Column" RowHeight="30" GridLinesVisibility="Horizontal"
-                  Background="White" BorderBrush="#E0E0E0" BorderThickness="1"
-                  AlternatingRowBackground="#FAFAFA">
-            <DataGrid.Columns>
-                <DataGridTextColumn Header="Tipo" Binding="{Binding HardwareType}" Width="130" />
-                <DataGridTextColumn Header="Hardware" Binding="{Binding HardwareName}" Width="*" />
-                <DataGridTextColumn Header="Sensor" Binding="{Binding SensorName}" Width="180" />
-                <DataGridTextColumn Header="Actual" Width="90">
-                    <DataGridTextColumn.Binding>
-                        <Binding Path="ValueCelsius" Converter="{StaticResource TempConverter}" />
-                    </DataGridTextColumn.Binding>
-                </DataGridTextColumn>
-                <DataGridTextColumn Header="Mín." Width="90">
-                    <DataGridTextColumn.Binding>
-                        <Binding Path="MinCelsius" Converter="{StaticResource TempConverter}" />
-                    </DataGridTextColumn.Binding>
-                </DataGridTextColumn>
-                <DataGridTextColumn Header="Máx." Width="90">
-                    <DataGridTextColumn.Binding>
-                        <Binding Path="MaxCelsius" Converter="{StaticResource TempConverter}" />
-                    </DataGridTextColumn.Binding>
-                </DataGridTextColumn>
-            </DataGrid.Columns>
-        </DataGrid>
+        <!-- Row 5: PestaÃ±as live -->
+        <TabControl Grid.Row="5" Background="White" BorderBrush="#E0E0E0">
+            <!-- PestaÃ±a Temperaturas -->
+            <TabItem Header="Temperaturas">
+                <Grid Margin="0,8,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Text="No se detectaron sensores de temperatura disponibles."
+                               FontSize="12" Foreground="#888" Margin="0,0,0,6"
+                               Visibility="{Binding HasSensors, Converter={StaticResource InvertBoolToVis}}" />
+                    <DataGrid Grid.Row="1" ItemsSource="{Binding TemperatureSensors}" AutoGenerateColumns="False"
+                              IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False"
+                              HeadersVisibility="Column" RowHeight="28" GridLinesVisibility="Horizontal"
+                              Background="White" BorderBrush="#E0E0E0" BorderThickness="1"
+                              AlternatingRowBackground="#FAFAFA">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Tipo" Binding="{Binding HardwareType}" Width="110" />
+                            <DataGridTextColumn Header="Hardware" Binding="{Binding HardwareName}" Width="*" />
+                            <DataGridTextColumn Header="Sensor" Binding="{Binding SensorName}" Width="180" />
+                            <DataGridTextColumn Header="Actual" Width="90">
+                                <DataGridTextColumn.Binding>
+                                    <Binding Path="ValueCelsius" Converter="{StaticResource TempConverter}" />
+                                </DataGridTextColumn.Binding>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="MÃ­n." Width="90">
+                                <DataGridTextColumn.Binding>
+                                    <Binding Path="MinCelsius" Converter="{StaticResource TempConverter}" />
+                                </DataGridTextColumn.Binding>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="MÃ¡x." Width="90">
+                                <DataGridTextColumn.Binding>
+                                    <Binding Path="MaxCelsius" Converter="{StaticResource TempConverter}" />
+                                </DataGridTextColumn.Binding>
+                            </DataGridTextColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+
+            <!-- PestaÃ±a CPU / GPU -->
+            <TabItem Header="CPU / GPU">
+                <Grid Margin="0,8,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Text="No se detectaron mÃ©tricas dinÃ¡micas disponibles."
+                               FontSize="12" Foreground="#888" Margin="0,0,0,6"
+                               Visibility="{Binding PerformanceSensorCount, Converter={StaticResource ZeroToVis}}" />
+                    <DataGrid Grid.Row="1" ItemsSource="{Binding PerformanceSensors}" AutoGenerateColumns="False"
+                              IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False"
+                              HeadersVisibility="Column" RowHeight="28" GridLinesVisibility="Horizontal"
+                              Background="White" BorderBrush="#E0E0E0" BorderThickness="1"
+                              AlternatingRowBackground="#FAFAFA">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Tipo" Binding="{Binding HardwareType}" Width="70" />
+                            <DataGridTextColumn Header="Hardware" Binding="{Binding HardwareName}" Width="*" />
+                            <DataGridTextColumn Header="Sensor" Binding="{Binding SensorName}" Width="160" />
+                            <DataGridTextColumn Header="MÃ©trica" Binding="{Binding MetricType, Converter={StaticResource PerfMetricConverter}}" Width="90" />
+                            <DataGridTextColumn Header="Actual" Width="80">
+                                <DataGridTextColumn.Binding>
+                                    <Binding Path="Value" Converter="{StaticResource NumConverter}" />
+                                </DataGridTextColumn.Binding>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="MÃ­n." Width="80">
+                                <DataGridTextColumn.Binding>
+                                    <Binding Path="Min" Converter="{StaticResource NumConverter}" />
+                                </DataGridTextColumn.Binding>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="MÃ¡x." Width="80">
+                                <DataGridTextColumn.Binding>
+                                    <Binding Path="Max" Converter="{StaticResource NumConverter}" />
+                                </DataGridTextColumn.Binding>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Unidad" Binding="{Binding Unit}" Width="60" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+
+            <!-- PestaÃ±a Memoria GPU -->
+            <TabItem Header="Memoria GPU">
+                <Grid Margin="0,8,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Text="No se detectaron sensores de memoria GPU disponibles."
+                               FontSize="12" Foreground="#888" Margin="0,0,0,6"
+                               Visibility="{Binding GpuMemorySensorCount, Converter={StaticResource ZeroToVis}}" />
+                    <DataGrid Grid.Row="1" ItemsSource="{Binding GpuMemorySensors}" AutoGenerateColumns="False"
+                              IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False"
+                              HeadersVisibility="Column" RowHeight="28" GridLinesVisibility="Horizontal"
+                              Background="White" BorderBrush="#E0E0E0" BorderThickness="1"
+                              AlternatingRowBackground="#FAFAFA">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="GPU" Binding="{Binding HardwareName}" Width="*" />
+                            <DataGridTextColumn Header="Sensor" Binding="{Binding SensorName}" Width="180" />
+                            <DataGridTextColumn Header="Actual" Width="90">
+                                <DataGridTextColumn.Binding>
+                                    <Binding Path="ValueMB" Converter="{StaticResource NumConverter}" />
+                                </DataGridTextColumn.Binding>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="MÃ­n." Width="90">
+                                <DataGridTextColumn.Binding>
+                                    <Binding Path="MinMB" Converter="{StaticResource NumConverter}" />
+                                </DataGridTextColumn.Binding>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="MÃ¡x." Width="90">
+                                <DataGridTextColumn.Binding>
+                                    <Binding Path="MaxMB" Converter="{StaticResource NumConverter}" />
+                                </DataGridTextColumn.Binding>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Unidad" Binding="{Binding Unit}" Width="60" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+
+            <!-- PestaÃ±a BaterÃ­a -->
+            <TabItem Header="BaterÃ­a">
+                <Grid Margin="0,8,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Text="No se detectÃ³ telemetrÃ­a de baterÃ­a aplicable."
+                               FontSize="12" Foreground="#888" Margin="0,0,0,6"
+                               Visibility="{Binding BatterySensorCount, Converter={StaticResource ZeroToVis}}" />
+                    <DataGrid Grid.Row="1" ItemsSource="{Binding BatterySensors}" AutoGenerateColumns="False"
+                              IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False"
+                              HeadersVisibility="Column" RowHeight="28" GridLinesVisibility="Horizontal"
+                              Background="White" BorderBrush="#E0E0E0" BorderThickness="1"
+                              AlternatingRowBackground="#FAFAFA">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="BaterÃ­a" Binding="{Binding HardwareName}" Width="*" />
+                            <DataGridTextColumn Header="Sensor" Binding="{Binding SensorName}" Width="180" />
+                            <DataGridTextColumn Header="MÃ©trica" Binding="{Binding MetricType, Converter={StaticResource BatteryMetricConverter}}" Width="80" />
+                            <DataGridTextColumn Header="Actual" Width="80">
+                                <DataGridTextColumn.Binding>
+                                    <Binding Path="Value" Converter="{StaticResource NumConverter}" />
+                                </DataGridTextColumn.Binding>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="MÃ­n." Width="80">
+                                <DataGridTextColumn.Binding>
+                                    <Binding Path="Min" Converter="{StaticResource NumConverter}" />
+                                </DataGridTextColumn.Binding>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="MÃ¡x." Width="80">
+                                <DataGridTextColumn.Binding>
+                                    <Binding Path="Max" Converter="{StaticResource NumConverter}" />
+                                </DataGridTextColumn.Binding>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Unidad" Binding="{Binding Unit}" Width="60" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+
+            <!-- PestaÃ±a RAM SPD -->
+            <TabItem Header="RAM SPD">
+                <Grid Margin="0,8,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Text="No se detectaron timings SPD disponibles."
+                               FontSize="12" Foreground="#888" Margin="0,0,0,6"
+                               Visibility="{Binding MemoryTimingSensorCount, Converter={StaticResource ZeroToVis}}" />
+                    <DataGrid Grid.Row="1" ItemsSource="{Binding MemoryTimingSensors}" AutoGenerateColumns="False"
+                              IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False"
+                              HeadersVisibility="Column" RowHeight="28" GridLinesVisibility="Horizontal"
+                              Background="White" BorderBrush="#E0E0E0" BorderThickness="1"
+                              AlternatingRowBackground="#FAFAFA">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="MÃ³dulo SPD" Binding="{Binding HardwareName}" Width="*" />
+                            <DataGridTextColumn Header="Timing" Binding="{Binding SensorName}" Width="200" />
+                            <DataGridTextColumn Header="Actual" Width="90">
+                                <DataGridTextColumn.Binding>
+                                    <Binding Path="ValueNanoseconds" Converter="{StaticResource NumConverter}" />
+                                </DataGridTextColumn.Binding>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="MÃ­n." Width="90">
+                                <DataGridTextColumn.Binding>
+                                    <Binding Path="MinNanoseconds" Converter="{StaticResource NumConverter}" />
+                                </DataGridTextColumn.Binding>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="MÃ¡x." Width="90">
+                                <DataGridTextColumn.Binding>
+                                    <Binding Path="MaxNanoseconds" Converter="{StaticResource NumConverter}" />
+                                </DataGridTextColumn.Binding>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Unidad" Binding="{Binding Unit}" Width="60" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+        </TabControl>
     </Grid>
 </UserControl>
+

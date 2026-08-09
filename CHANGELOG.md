@@ -298,6 +298,20 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - **Mismo Refresh**: CPU/GPU/Battery/MemoryTiming con Create=1, Refresh=1, Dispose=1; fallos vacían las cinco listas y se recuperan; error parcial de DIMM conserva las demás familias
 - **Sin correlación WMI ↔ SPD**: HardwareIdentifier preservado sin matching por slot/part number/serial
 - 39 tests nuevos (699 total)
+
+### Added (UI live avanzada - Fase B.4.1)
+- **HardwareViewModel migrado a LiveSnapshot**: RefreshCommand usa GetLiveSnapshotAsync; RunMonitoringAsync usa WatchLiveSnapshotsAsync (2 s) — UNA sola sesión/captura por muestra alimenta las 5 secciones; sin streams paralelos
+- **5 colecciones live** (modelos Core directos): TemperatureSensors, PerformanceSensors, GpuMemorySensors, BatterySensors, MemoryTimingSensors
+- **ApplyLiveSnapshot**: limpia las 5 familias por muestra (sin datos stale); IsAvailable=false → las 5 vacías; warnings/errors reemplazados por los del snapshot actual
+- **Órdenes estables**: temp (Tipo→Hardware→Sensor), performance (Tipo→Hardware→Métrica→Sensor), GPU mem (Hardware→Sensor), battery (Hardware→Métrica→Sensor), timing (Hardware→Sensor); sin ordenar por valor
+- **Estado global**: HasLiveData (cualquier familia con datos); StatusText: Lectura no disponible / Lectura disponible / Sin sensores disponibles / Monitoreando / Leyendo...; HasSensors y ValidSensorCount siguen siendo específicos de TEMPERATURA
+- **Contadores por familia**: Performance/GpuMemory/Battery/MemoryTiming (totales y válidos) sin porcentajes de disponibilidad
+- **HardwareView rediseñada**: subtítulo "Monitoreo de hardware en tiempo real"; TabControl con 5 pestañas (Temperaturas, CPU / GPU, Memoria GPU, Batería, RAM SPD); tarjetas compactas de resumen por familia (solo cantidad de sensores); warnings/errors fuera del TabControl
+- **Converters**: NullableNumberConverter (null/NaN/Infinity → N/D, hasta 2 decimales según culture, sin unidad), PerformanceMetricTypeTextConverter (Load→Carga, Clock→Frecuencia), BatteryMetricTypeTextConverter (Level→Nivel, Energy→Energía, Voltage→Voltaje, Current→Corriente, Power→Potencia, TimeSpan→Tiempo) — solo presentación, nunca por SensorName
+- **Pestañas vacías neutrales**: "No se detectaron métricas dinámicas disponibles.", "No se detectó telemetría de batería aplicable.", "No se detectaron timings SPD disponibles." etc.; batería vacía en desktop y SPD vacío NO son errores
+- **Timings mostrados en ns** (14,00 | ns — nunca CL14); TimeSpan de batería en segundos sin convertir
+- **Sin interpretación**: sin thresholds, sin colores de salud, sin CPU Total/GPU Core seleccionado, sin VRAM usage, sin salud de batería, sin CL calculado; sin WMI (IHardwareService NO inyectado)
+- Tests ViewModel adaptados a la migración live + 19 tests netos nuevos (718 total)
 - SmartctlAvailability, SmartDiskDevice, SmartctlCommandResult
 - ISmartctlRunner, ISmartDiskService interfaces
 - 32 tests de smartctl + 18 tests de SMART (214 total)
