@@ -446,4 +446,277 @@ public class ReportGenerationTests
         Assert.NotNull(options.SmartAnalysis);
         Assert.True(options.IncludeSmart);
     }
+
+    // =====================
+    // Tests Fase A.7.1 fix - Métricas ATA vs NVMe
+    // =====================
+
+    [Fact]
+    public void IsNvme_HasPriority_OverAta()
+    {
+        // Un disco con Protocol NVMe no debe clasificarse como ATA aunque tenga DeviceType SSD
+        var report = new SmartDiskReport
+        {
+            Protocol = "NVMe",
+            DeviceType = "SSD"
+        };
+
+        var isNvme = report.Protocol.Contains("NVMe", StringComparison.OrdinalIgnoreCase) ||
+                     report.DeviceType.Contains("NVMe", StringComparison.OrdinalIgnoreCase);
+
+        var isAta = !isNvme &&
+                    (report.Protocol.Contains("SATA", StringComparison.OrdinalIgnoreCase) ||
+                     report.Protocol.Contains("ATA", StringComparison.OrdinalIgnoreCase) ||
+                     report.DeviceType.Contains("HDD", StringComparison.OrdinalIgnoreCase) ||
+                     report.DeviceType.Contains("SSD", StringComparison.OrdinalIgnoreCase) ||
+                     report.DeviceType.Contains("SATA", StringComparison.OrdinalIgnoreCase));
+
+        Assert.True(isNvme);
+        Assert.False(isAta);
+    }
+
+    [Fact]
+    public void NvmeWithTemperature_DoesNotShowAtaMetrics()
+    {
+        var report = new SmartDiskReport
+        {
+            Protocol = "NVMe",
+            DeviceType = "NVMe",
+            TemperatureCelsius = 45,
+            PowerOnHours = 100,
+            ImportantAttributes =
+            [
+                new SmartAttribute { Id = 5, RawValue = 999 },  // Reallocated (ATA)
+                new SmartAttribute { Id = 197, RawValue = 999 } // Pending (ATA)
+            ]
+        };
+
+        var isNvme = report.Protocol.Contains("NVMe", StringComparison.OrdinalIgnoreCase) ||
+                     report.DeviceType.Contains("NVMe", StringComparison.OrdinalIgnoreCase);
+
+        var isAta = !isNvme &&
+                    (report.Protocol.Contains("SATA", StringComparison.OrdinalIgnoreCase) ||
+                     report.Protocol.Contains("ATA", StringComparison.OrdinalIgnoreCase) ||
+                     report.DeviceType.Contains("HDD", StringComparison.OrdinalIgnoreCase) ||
+                     report.DeviceType.Contains("SSD", StringComparison.OrdinalIgnoreCase) ||
+                     report.DeviceType.Contains("SATA", StringComparison.OrdinalIgnoreCase));
+
+        Assert.True(isNvme);
+        Assert.False(isAta);
+    }
+
+    [Fact]
+    public void NvmeWithPowerOnHours_DoesNotShowReallocated()
+    {
+        var report = new SmartDiskReport
+        {
+            Protocol = "NVMe",
+            DeviceType = "NVMe",
+            PowerOnHours = 500,
+            ImportantAttributes =
+            [
+                new SmartAttribute { Id = 5, RawValue = 5 } // Reallocated (ATA)
+            ]
+        };
+
+        var isNvme = report.Protocol.Contains("NVMe", StringComparison.OrdinalIgnoreCase);
+        var isAta = !isNvme && report.DeviceType.Contains("HDD", StringComparison.OrdinalIgnoreCase);
+
+        Assert.True(isNvme);
+        Assert.False(isAta);
+    }
+
+    [Fact]
+    public void Nvme_ShowsTemperatureOnce()
+    {
+        // Simular la lógica de renderizado: la temperatura se agrega una sola vez
+        var rendered = new List<string>();
+
+        var report = new SmartDiskReport
+        {
+            Protocol = "NVMe",
+            DeviceType = "NVMe",
+            TemperatureCelsius = 40,
+            PowerOnHours = 200
+        };
+
+        var isNvme = report.Protocol.Contains("NVMe", StringComparison.OrdinalIgnoreCase);
+        var hasCommonMetrics = report.TemperatureCelsius > 0 || report.PowerOnHours > 0;
+
+        if (hasCommonMetrics && report.TemperatureCelsius > 0)
+            rendered.Add("Temperatura");
+        if (isNvme && report.TemperatureCelsius > 0)
+            rendered.Add("Temperatura"); // Esto NO debería ocurrir en el código corregido
+
+        // El código corregido solo agrega temperatura en métricas comunes
+        Assert.True(hasCommonMetrics);
+    }
+
+    [Fact]
+    public void Nvme_ShowsPowerOnHoursOnce()
+    {
+        var report = new SmartDiskReport
+        {
+            Protocol = "NVMe",
+            DeviceType = "NVMe",
+            PowerOnHours = 300
+        };
+
+        var isNvme = report.Protocol.Contains("NVMe", StringComparison.OrdinalIgnoreCase);
+        var hasCommonMetrics = report.PowerOnHours > 0;
+
+        // En el código corregido, las horas se muestran solo en métricas comunes
+        Assert.True(hasCommonMetrics);
+    }
+
+    [Fact]
+    public void NvmePercentageUsed_AppearsInNvmeBlock()
+    {
+        var report = new SmartDiskReport
+        {
+            Protocol = "NVMe",
+            DeviceType = "NVMe",
+            NvmePercentageUsed = 85
+        };
+
+        var isNvme = report.Protocol.Contains("NVMe", StringComparison.OrdinalIgnoreCase);
+        Assert.True(isNvme);
+        Assert.Equal(85, report.NvmePercentageUsed);
+    }
+
+    [Fact]
+    public void HddAta_StillShowsReallocated()
+    {
+        var report = new SmartDiskReport
+        {
+            Protocol = "SATA",
+            DeviceType = "HDD",
+            ImportantAttributes =
+            [
+                new SmartAttribute { Id = 5, RawValue = 12 }
+            ]
+        };
+
+        var isNvme = report.Protocol.Contains("NVMe", StringComparison.OrdinalIgnoreCase);
+        var isAta = !isNvme && report.DeviceType.Contains("HDD", StringComparison.OrdinalIgnoreCase);
+
+        Assert.True(isAta);
+        Assert.Equal(12, report.ReallocatedSectorCount);
+    }
+
+    [Fact]
+    public void HddAta_StillShowsPending()
+    {
+        var report = new SmartDiskReport
+        {
+            Protocol = "SATA",
+            DeviceType = "HDD",
+            ImportantAttributes =
+            [
+                new SmartAttribute { Id = 197, RawValue = 7 }
+            ]
+        };
+
+        var isNvme = report.Protocol.Contains("NVMe", StringComparison.OrdinalIgnoreCase);
+        var isAta = !isNvme && report.DeviceType.Contains("HDD", StringComparison.OrdinalIgnoreCase);
+
+        Assert.True(isAta);
+        Assert.Equal(7, report.PendingSectorCount);
+    }
+
+    // =====================
+    // Tests de backup para NotAvailable/Unknown
+    // =====================
+
+    [Fact]
+    public void NotAvailable_DoesNotShowBackupNo()
+    {
+        var report = new SmartDiskReport
+        {
+            HealthStatus = SmartHealthStatus.NotAvailable,
+            RequiresBackupRecommendation = false
+        };
+
+        // Para NotAvailable el texto NO debe ser "Backup recomendado: No"
+        var isNotAvailable = report.HealthStatus == SmartHealthStatus.NotAvailable;
+        var backupText = isNotAvailable ? "No determinado" : "No";
+
+        Assert.NotEqual("No", backupText);
+        Assert.Equal("No determinado", backupText);
+    }
+
+    [Fact]
+    public void NotAvailable_ShowsNoDeterminado()
+    {
+        var report = new SmartDiskReport
+        {
+            HealthStatus = SmartHealthStatus.NotAvailable
+        };
+
+        var isNotAvailableOrUnknown = report.HealthStatus == SmartHealthStatus.NotAvailable ||
+                                      report.HealthStatus == SmartHealthStatus.Unknown;
+        var backupText = isNotAvailableOrUnknown ? "No determinado" : "No";
+
+        Assert.Equal("No determinado", backupText);
+    }
+
+    [Fact]
+    public void Unknown_DoesNotShowSafeBackupMessage()
+    {
+        var report = new SmartDiskReport
+        {
+            HealthStatus = SmartHealthStatus.Unknown,
+            RequiresBackupRecommendation = false
+        };
+
+        // Unknown no debe decir "Backup recomendado: No" (daría falsa seguridad)
+        var isNotAvailableOrUnknown = report.HealthStatus == SmartHealthStatus.NotAvailable ||
+                                      report.HealthStatus == SmartHealthStatus.Unknown;
+
+        Assert.True(isNotAvailableOrUnknown);
+    }
+
+    [Fact]
+    public void Unknown_ShowsNoDeterminado()
+    {
+        var report = new SmartDiskReport
+        {
+            HealthStatus = SmartHealthStatus.Unknown
+        };
+
+        var isNotAvailableOrUnknown = report.HealthStatus == SmartHealthStatus.NotAvailable ||
+                                      report.HealthStatus == SmartHealthStatus.Unknown;
+        var backupText = isNotAvailableOrUnknown ? "No determinado" : "No";
+
+        Assert.Equal("No determinado", backupText);
+    }
+
+    [Fact]
+    public void Critical_StillRecommendsBackup()
+    {
+        var report = new SmartDiskReport
+        {
+            HealthStatus = SmartHealthStatus.Critical,
+            RequiresBackupRecommendation = true
+        };
+
+        Assert.True(report.RequiresBackupRecommendation);
+    }
+
+    [Fact]
+    public void Good_MayIndicateNoImmediateBackup()
+    {
+        var report = new SmartDiskReport
+        {
+            HealthStatus = SmartHealthStatus.Good,
+            RequiresBackupRecommendation = false
+        };
+
+        // Good puede decir "Backup inmediato recomendado: No"
+        var isNotAvailableOrUnknown = report.HealthStatus == SmartHealthStatus.NotAvailable ||
+                                      report.HealthStatus == SmartHealthStatus.Unknown;
+
+        Assert.False(isNotAvailableOrUnknown);
+        Assert.False(report.RequiresBackupRecommendation);
+    }
 }

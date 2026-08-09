@@ -463,12 +463,20 @@ public class HtmlReportService : IReportGenerationService
         if (report.HealthStatus == SmartHealthStatus.NotAvailable)
             sb.AppendLine("<tr><td colspan='2'><em>SMART no disponible. Esto no permite confirmar que el disco esté sano.</em></td></tr>");
 
-        // Métricas ATA/SATA
-        var isAta = report.DeviceType.Contains("HDD", StringComparison.OrdinalIgnoreCase) ||
-                    report.DeviceType.Contains("SSD", StringComparison.OrdinalIgnoreCase) ||
-                    report.Protocol.Contains("SATA", StringComparison.OrdinalIgnoreCase);
+        // Detección del tipo: NVMe tiene prioridad
+        var isNvme = report.Protocol.Contains("NVMe", StringComparison.OrdinalIgnoreCase) ||
+                     report.DeviceType.Contains("NVMe", StringComparison.OrdinalIgnoreCase);
 
-        if (isAta || report.TemperatureCelsius > 0 || report.PowerOnHours > 0)
+        var isAta = !isNvme &&
+                    (report.Protocol.Contains("SATA", StringComparison.OrdinalIgnoreCase) ||
+                     report.Protocol.Contains("ATA", StringComparison.OrdinalIgnoreCase) ||
+                     report.DeviceType.Contains("HDD", StringComparison.OrdinalIgnoreCase) ||
+                     report.DeviceType.Contains("SSD", StringComparison.OrdinalIgnoreCase) ||
+                     report.DeviceType.Contains("SATA", StringComparison.OrdinalIgnoreCase));
+
+        // Métricas comunes (se muestran una sola vez)
+        var hasCommonMetrics = report.TemperatureCelsius > 0 || report.PowerOnHours > 0 || report.PowerCycleCount > 0;
+        if (hasCommonMetrics)
         {
             if (report.TemperatureCelsius > 0)
                 sb.AppendLine($"<tr><td class='label'>Temperatura:</td><td>{report.TemperatureCelsius} °C</td></tr>");
@@ -476,19 +484,20 @@ public class HtmlReportService : IReportGenerationService
                 sb.AppendLine($"<tr><td class='label'>Horas de uso:</td><td>{report.PowerOnHours}</td></tr>");
             if (report.PowerCycleCount > 0)
                 sb.AppendLine($"<tr><td class='label'>Ciclos de encendido:</td><td>{report.PowerCycleCount}</td></tr>");
+        }
+
+        // Métricas ATA/SATA exclusivas (solo si el disco NO es NVMe)
+        if (isAta)
+        {
             sb.AppendLine($"<tr><td class='label'>Sectores reasignados:</td><td>{report.ReallocatedSectorCount}</td></tr>");
             sb.AppendLine($"<tr><td class='label'>Sectores pendientes:</td><td>{report.PendingSectorCount}</td></tr>");
             sb.AppendLine($"<tr><td class='label'>Offline no corregibles:</td><td>{report.OfflineUncorrectableCount}</td></tr>");
             sb.AppendLine($"<tr><td class='label'>Errores CRC UDMA:</td><td>{report.UDMACrcErrorCount}</td></tr>");
         }
 
-        // Métricas NVMe
-        if (report.Protocol.Contains("NVMe", StringComparison.OrdinalIgnoreCase))
+        // Métricas NVMe exclusivas
+        if (isNvme)
         {
-            if (report.TemperatureCelsius > 0)
-                sb.AppendLine($"<tr><td class='label'>Temperatura:</td><td>{report.TemperatureCelsius} °C</td></tr>");
-            if (report.PowerOnHours > 0)
-                sb.AppendLine($"<tr><td class='label'>Horas de uso:</td><td>{report.PowerOnHours}</td></tr>");
             if (report.NvmePercentageUsed.HasValue)
                 sb.AppendLine($"<tr><td class='label'>Porcentaje usado:</td><td>{report.NvmePercentageUsed}%</td></tr>");
             if (report.NvmeAvailableSpare.HasValue)
@@ -501,14 +510,19 @@ public class HtmlReportService : IReportGenerationService
 
         sb.AppendLine("</table>");
 
-        // Backup recomendado
-        if (report.RequiresBackupRecommendation)
+        // Backup recomendado según estado
+        if (report.HealthStatus == SmartHealthStatus.NotAvailable ||
+            report.HealthStatus == SmartHealthStatus.Unknown)
         {
-            sb.AppendLine("<div class='smart-backup-warning'><strong>Backup recomendado: Sí</strong> - Se recomienda realizar backup de los datos importantes antes de continuar con pruebas o reparaciones.</div>");
+            sb.AppendLine("<div class='smart-backup-unknown'><strong>Backup recomendado: No determinado</strong> - No fue posible determinar completamente el estado SMART del disco.</div>");
+        }
+        else if (report.RequiresBackupRecommendation)
+        {
+            sb.AppendLine("<div class='smart-backup-warning'><strong>Backup inmediato recomendado: Sí</strong> - Se recomienda realizar backup de los datos importantes antes de continuar con pruebas o reparaciones.</div>");
         }
         else
         {
-            sb.AppendLine("<div class='smart-backup-ok'><strong>Backup recomendado: No</strong></div>");
+            sb.AppendLine("<div class='smart-backup-ok'><strong>Backup inmediato recomendado: No</strong></div>");
         }
 
         // Warnings
@@ -652,6 +666,7 @@ public class HtmlReportService : IReportGenerationService
     .smart-unknown { background: #F5F5F5; color: #616161; padding: 2px 8px; border-radius: 3px; font-size: 9pt; font-weight: 600; }
     .smart-backup-warning { background: #FFF8E1; border-left: 4px solid #F9A825; padding: 8px 12px; margin: 8px 0; font-size: 10pt; }
     .smart-backup-ok { background: #E8F5E9; border-left: 4px solid #4CAF50; padding: 8px 12px; margin: 8px 0; font-size: 10pt; }
+    .smart-backup-unknown { background: #F5F5F5; border-left: 4px solid #9E9E9E; padding: 8px 12px; margin: 8px 0; font-size: 10pt; color: #616161; }
     .smart-warnings { background: #FFF8E1; padding: 8px 12px; margin: 8px 0; border-radius: 4px; font-size: 10pt; }
     .smart-errors { background: #FDECEA; padding: 8px 12px; margin: 8px 0; border-radius: 4px; font-size: 10pt; }
     .smart-warnings ul, .smart-errors ul { margin: 4px 0 0 18px; }

@@ -140,6 +140,14 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - **Backup recomendado**: indicador claro en discos con RequiresBackupRecommendation
 - **IncludedSections**: agrega "SMART" cuando corresponde
 - 19 tests nuevos (323 total)
+
+### Fixed (SMART en Informe)
+- **Métricas ATA/NVMe corregidas**: NVMe ya no muestra métricas ATA irrelevantes (sectores reasignados, pendientes, offline, CRC)
+- **Detección de tipo**: NVMe tiene prioridad sobre ATA; un NVMe con temperatura/horas no se clasifica como ATA
+- **Métricas comunes sin duplicación**: temperatura y horas de uso se muestran una sola vez
+- **Backup para NotAvailable/Unknown**: "Backup recomendado: No determinado" con aclaración, nunca "Backup: No"
+- **Clase visual neutra**: smart-backup-unknown para estados no determinados
+- 14 tests nuevos (337 total)
 - SmartctlAvailability, SmartDiskDevice, SmartctlCommandResult
 - ISmartctlRunner, ISmartDiskService interfaces
 - 32 tests de smartctl + 18 tests de SMART (214 total)
