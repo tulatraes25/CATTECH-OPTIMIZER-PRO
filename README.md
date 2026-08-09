@@ -314,6 +314,20 @@ Ir a **🌡️ Hardware** para monitorear los sensores de temperatura en tiempo 
 - El monitoreo nunca se inicia automáticamente: requiere acción explícita del técnico
 - Algunos sensores pueden requerir privilegios administrativos para estar disponibles
 
+## Memoria RAM (inventario)
+
+El inventario de memoria RAM se obtiene mediante WMI/SMBIOS (B.3.1):
+
+- **Módulos instalados**: slot (DeviceLocator), banco, fabricante, part number, serial
+- **Capacidad** exacta en bytes por módulo (con equivalente en GB)
+- **Velocidad configurada** en MHz (ConfiguredClockSpeed)
+- **Tipo de memoria** desde SMBIOSMemoryType verificado contra la spec DMTF: DDR, DDR2, DDR3, DDR4, DDR5, LPDDR, LPDDR2, LPDDR3, LPDDR4, LPDDR5 (código desconocido → "Desconocida", sin inventar tipo por velocidad)
+- **Anchos**: data width y total width en bits; rank desde Attributes
+- **Topología de slots**: usados (módulos con capacidad válida) y totales (suma de arrays de memoria de sistema)
+- Resúmenes: SpeedMHz solo si todos los módulos válidos coinciden; Type uniforme, "Mixta" o "Desconocida"
+
+Los timings SPD (CAS, TRCD, etc.) se incorporarán en B.3.2 mediante LibreHardwareMonitor.
+
 ## Informe técnico HTML
 
 Ir a **📊 Informes** para generar un informe profesional en HTML.

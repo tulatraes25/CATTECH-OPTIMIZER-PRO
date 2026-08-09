@@ -9,6 +9,17 @@ namespace Cattech.Optimizer.Pro.Infrastructure.Hardware;
 /// </summary>
 public class WmiHardwareService : IHardwareService
 {
+    private readonly IWmiMemoryReader _memoryReader;
+
+    public WmiHardwareService()
+        : this(new WmiMemoryReader())
+    {
+    }
+
+    internal WmiHardwareService(IWmiMemoryReader memoryReader)
+    {
+        _memoryReader = memoryReader;
+    }
     /// <inheritdoc/>
     public async Task<HardwareReport> GetHardwareReportAsync()
     {
@@ -115,43 +126,22 @@ public class WmiHardwareService : IHardwareService
 
         try
         {
-            // Obtener memoria total
-            using (var searcher = new ManagementObjectSearcher("SELECT * FROM Win32_ComputerSystem"))
+            var snapshot = _memoryReader.Read();
+
+            if (snapshot.TotalPhysicalMemoryBytes.HasValue)
             {
-                foreach (var obj in searcher.Get())
-                {
-                    var totalBytes = Convert.ToDouble(obj["TotalPhysicalMemory"] ?? 0);
-                    info.TotalGB = Math.Round(totalBytes / (1024 * 1024 * 1024), 2);
-                    break;
-                }
+                info.TotalGB = Math.Round((double)snapshot.TotalPhysicalMemoryBytes.Value / (1024 * 1024 * 1024), 2);
             }
 
-            // Obtener memoria disponible
-            using (var searcher = new ManagementObjectSearcher("SELECT * FROM Win32_OperatingSystem"))
+            if (snapshot.FreePhysicalMemoryKilobytes.HasValue)
             {
-                foreach (var obj in searcher.Get())
-                {
-                    var freeBytes = Convert.ToDouble(obj["FreePhysicalMemory"] ?? 0);
-                    info.AvailableGB = Math.Round(freeBytes / (1024 * 1024), 2);
-                    break;
-                }
+                info.AvailableGB = Math.Round((double)snapshot.FreePhysicalMemoryKilobytes.Value / (1024 * 1024), 2);
             }
 
-            // Obtener información de slots
-            using (var searcher = new ManagementObjectSearcher("SELECT * FROM Win32_PhysicalMemory"))
-            {
-                var slots = searcher.Get();
-                info.SlotsUsed = slots.Count;
-            }
-
-            using (var searcher = new ManagementObjectSearcher("SELECT * FROM Win32_PhysicalMemoryArray"))
-            {
-                foreach (var obj in searcher.Get())
-                {
-                    info.SlotsTotal = Convert.ToInt32(obj["MemoryDevices"] ?? 0);
-                    break;
-                }
-            }
+            BuildModuleInventory(snapshot, info);
+            BuildSlotSummary(snapshot, info);
+            BuildSummaryType(snapshot, info);
+            BuildSummarySpeed(snapshot, info);
         }
         catch
         {
@@ -161,6 +151,92 @@ public class WmiHardwareService : IHardwareService
 
         return Task.FromResult(info);
     }
+
+    private static void BuildModuleInventory(WmiMemorySnapshot snapshot, MemoryInfo info)
+    {
+        foreach (var module in snapshot.Modules)
+        {
+            info.Modules.Add(new MemoryModuleInfo
+            {
+                DeviceLocator = TrimOrEmpty(module.DeviceLocator),
+                BankLabel = TrimOrEmpty(module.BankLabel),
+                Manufacturer = TrimOrEmpty(module.Manufacturer),
+                PartNumber = TrimOrEmpty(module.PartNumber),
+                SerialNumber = TrimOrEmpty(module.SerialNumber),
+                CapacityBytes = module.CapacityBytes,
+                ConfiguredClockSpeedMHz = module.ConfiguredClockSpeedMHz is > 0 ? module.ConfiguredClockSpeedMHz : null,
+                SMBIOSMemoryTypeCode = module.SMBIOSMemoryTypeCode,
+                MemoryType = MapSmbiosMemoryType(module.SMBIOSMemoryTypeCode),
+                DataWidthBits = module.DataWidthBits,
+                TotalWidthBits = module.TotalWidthBits,
+                Rank = module.Attributes is > 0 ? module.Attributes : null
+            });
+        }
+
+        // Slots usados: únicamente módulos con capacidad válida
+        info.SlotsUsed = snapshot.Modules.Count(m => m.CapacityBytes is > 0);
+    }
+
+    private static void BuildSlotSummary(WmiMemorySnapshot snapshot, MemoryInfo info)
+    {
+        // Sumar MemoryDevices de todos los arrays de memoria de sistema (Use == 3)
+        info.SlotsTotal = snapshot.Arrays
+            .Where(a => a.Use == 3)
+            .Sum(a => (int)a.MemoryDevices);
+    }
+
+    private static void BuildSummaryType(WmiMemorySnapshot snapshot, MemoryInfo info)
+    {
+        var recognized = info.Modules
+            .Select(m => m.MemoryType)
+            .Where(t => t != "Desconocida")
+            .Distinct()
+            .ToList();
+
+        info.Type = recognized.Count switch
+        {
+            0 => "Desconocida",
+            1 => recognized[0],
+            _ => "Mixta"
+        };
+    }
+
+    private static void BuildSummarySpeed(WmiMemorySnapshot snapshot, MemoryInfo info)
+    {
+        var validSpeeds = info.Modules
+            .Select(m => m.ConfiguredClockSpeedMHz)
+            .Where(s => s.HasValue)
+            .Select(s => s!.Value)
+            .Distinct()
+            .ToList();
+
+        info.SpeedMHz = validSpeeds.Count == 1 ? (int)validSpeeds[0] : 0;
+    }
+
+    private static string MapSmbiosMemoryType(uint? code)
+    {
+        if (!code.HasValue)
+        {
+            return "Desconocida";
+        }
+
+        return code.Value switch
+        {
+            18 => "DDR",
+            19 => "DDR2",
+            24 => "DDR3",
+            26 => "DDR4",
+            27 => "LPDDR",
+            28 => "LPDDR2",
+            29 => "LPDDR3",
+            30 => "LPDDR4",
+            34 => "DDR5",
+            35 => "LPDDR5",
+            _ => "Desconocida"
+        };
+    }
+
+    private static string TrimOrEmpty(string value) => value?.Trim() ?? string.Empty;
 
     /// <inheritdoc/>
     public Task<List<GpuInfo>> GetGpuInfoAsync()

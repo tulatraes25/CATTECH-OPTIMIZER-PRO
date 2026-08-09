@@ -270,6 +270,20 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - **Stream**: WatchLiveSnapshotsAsync incluye BatterySensors por muestra; fallos vacían las CUATRO listas y se recuperan
 - **Backend B.2 completado**: adquisición de datos de CPU/GPU/Batería cerrada; presentación avanzada en B.4
 - 51 tests nuevos (620 total)
+
+### Added (Inventario RAM avanzado - Fase B.3.1)
+- **MemoryModuleInfo** (Core): DeviceLocator, BankLabel, Manufacturer, PartNumber, SerialNumber, CapacityBytes (ulong exacto), ConfiguredClockSpeedMHz, SMBIOSMemoryTypeCode, MemoryType, DataWidthBits, TotalWidthBits, Rank + CapacityGB calculada (1024^3)
+- **MemoryInfo extendido**: + Modules y HasModuleDetails; SpeedMHz/Type/SlotsUsed/SlotsTotal conservan firma (sin romper consumidores)
+- **WMI/SMBIOS**: Win32_PhysicalMemory (11 campos), Win32_PhysicalMemoryArray (MemoryDevices, Use), Win32_ComputerSystem (TotalPhysicalMemory), Win32_OperatingSystem (FreePhysicalMemory) — solo campos requeridos, namespace root\CIMV2
+- **Tipos SMBIOS verificados contra spec DMTF DSP0134 §7.18.2** (confirmado por EDK2 SmBios.h y dmidecode): DDR=18, DDR2=19, DDR3=24, DDR4=26, LPDDR=27, LPDDR2=28, LPDDR3=29, LPDDR4=30, DDR5=34, LPDDR5=35; código desconocido → "Desconocida" conservando el raw
+- **Sin inventar por velocidad**: el tipo nunca se deduce de la velocidad; la velocidad configurada se guarda tal cual (0/null → null)
+- **Resumen SpeedMHz**: valor único si todos los válidos coinciden, 0 si distintos o ausentes (nunca máx/mín/promedio)
+- **Resumen Type**: uniforme, "Mixta" si hay tipos reconocidos distintos, "Desconocida" sin información
+- **SlotsUsed**: solo módulos con CapacityBytes > 0; **SlotsTotal**: suma de MemoryDevices de arrays Use==3 (System Memory); inconsistencia SlotsUsed > SlotsTotal NO se corrige
+- **Strings con Trim**; sin normalización de fabricantes; **Rank** desde Attributes (>0 → valor, 0/null → null); sin inferencia ECC
+- **Testabilidad**: IWmiMemoryReader + WmiMemorySnapshot + constructores internal en WmiHardwareService; tests con fake reader, sin WMI real
+- **Tolerancia**: módulos parciales conservados; reader fallido → MemoryInfo vacío sin propagar excepción
+- 40 tests nuevos (660 total)
 - SmartctlAvailability, SmartDiskDevice, SmartctlCommandResult
 - ISmartctlRunner, ISmartDiskService interfaces
 - 32 tests de smartctl + 18 tests de SMART (214 total)

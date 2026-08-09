@@ -78,6 +78,79 @@ public class CpuInfo
 }
 
 /// <summary>
+/// Módulo de memoria física instalado (SMBIOS/WMI).
+/// </summary>
+public class MemoryModuleInfo
+{
+    /// <summary>
+    /// Etiqueta del socket o ranura (ej: "DIMM 0").
+    /// </summary>
+    public string DeviceLocator { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Banco físico donde se ubica (ej: "BANK 0").
+    /// </summary>
+    public string BankLabel { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Fabricante según SMBIOS. Nunca se inventa ni normaliza.
+    /// </summary>
+    public string Manufacturer { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Part number del módulo.
+    /// </summary>
+    public string PartNumber { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Número de serie del módulo.
+    /// </summary>
+    public string SerialNumber { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Capacidad en bytes. Null si no informada. Nunca se convierte null en 0.
+    /// </summary>
+    public ulong? CapacityBytes { get; set; }
+
+    /// <summary>
+    /// Velocidad configurada en MHz (ConfiguredClockSpeed). Null si 0 o ausente.
+    /// </summary>
+    public uint? ConfiguredClockSpeedMHz { get; set; }
+
+    /// <summary>
+    /// Código SMBIOS raw del tipo de memoria (SMBIOSMemoryType). Se conserva siempre.
+    /// </summary>
+    public uint? SMBIOSMemoryTypeCode { get; set; }
+
+    /// <summary>
+    /// Tipo de memoria legible ("DDR4", "LPDDR5", "Desconocida").
+    /// </summary>
+    public string MemoryType { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Ancho de datos en bits (DataWidth). Null si no disponible.
+    /// </summary>
+    public ushort? DataWidthBits { get; set; }
+
+    /// <summary>
+    /// Ancho total en bits incluyendo bits de corrección (TotalWidth). Null si no disponible.
+    /// </summary>
+    public ushort? TotalWidthBits { get; set; }
+
+    /// <summary>
+    /// Rank del módulo (Attributes SMBIOS). Null si 0 o no disponible.
+    /// </summary>
+    public uint? Rank { get; set; }
+
+    /// <summary>
+    /// Capacidad en GB calculada desde CapacityBytes (1024^3).
+    /// </summary>
+    public double? CapacityGB => CapacityBytes.HasValue
+        ? (double)CapacityBytes.Value / (1024 * 1024 * 1024)
+        : null;
+}
+
+/// <summary>
 /// Información de la memoria RAM.
 /// </summary>
 public class MemoryInfo
@@ -103,24 +176,34 @@ public class MemoryInfo
     public double UsagePercent => TotalGB > 0 ? (UsedGB / TotalGB) * 100 : 0;
 
     /// <summary>
-    /// Velocidad de la memoria (ej: 3200 MHz).
+    /// Velocidad resumen en MHz: valor único si todos los módulos válidos coinciden, 0 en otro caso.
     /// </summary>
     public int SpeedMHz { get; set; }
 
     /// <summary>
-    /// Tipo de memoria (DDR4, DDR5).
+    /// Tipo de memoria resumen: uniforme, "Mixta" o "Desconocida".
     /// </summary>
     public string Type { get; set; } = string.Empty;
 
     /// <summary>
-    /// Número de slots ocupados.
+    /// Número de slots ocupados por módulos con capacidad válida.
     /// </summary>
     public int SlotsUsed { get; set; }
 
     /// <summary>
-    /// Número total de slots.
+    /// Número total de slots (suma de arrays de memoria de sistema).
     /// </summary>
     public int SlotsTotal { get; set; }
+
+    /// <summary>
+    /// Módulos de memoria física detectados.
+    /// </summary>
+    public List<MemoryModuleInfo> Modules { get; set; } = new();
+
+    /// <summary>
+    /// Si existe inventario de módulos con detalles.
+    /// </summary>
+    public bool HasModuleDetails => Modules.Count > 0;
 }
 
 /// <summary>
