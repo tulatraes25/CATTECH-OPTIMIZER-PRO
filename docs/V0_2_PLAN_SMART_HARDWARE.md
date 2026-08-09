@@ -101,8 +101,9 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 | Fase B.3: RAM avanzada | 0.5 semana | LibreHardwareMonitorLib | ✅ Completada |
 | B.4.1: UI live avanzada (LiveSnapshot + 5 pestañas) | — | B.1.3 + backends | ✅ Implementado |
 | B.4.2: Inventario estático WMI/SMBIOS en HardwareView | — | B.4.1 + B.3.1 | ✅ Implementado |
-| B.4.3: Integración/pulido final Hardware | — | B.4.2 | ⏳ Pendiente |
-| Fase B.4: UI Hardware avanzado | 1 semana | Modelos | En curso |
+| B.4.3: Integración/pulido final Hardware | — | B.4.2 | ✅ Implementado |
+| Fase B.4: UI Hardware avanzado | 1 semana | Modelos | ✅ Completada |
+| **Fase B: Hardware avanzado** | **3 semanas** | | ✅ Completada |
 | **Total Fase B** | **3 semanas** | |
 | **Total v0.2** | **7 semanas** | |
 
@@ -130,15 +131,15 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 - [x] Timings SPD (B.3.2) via LibreHardwareMonitor: SensorType.Timing de hardware Memory en ns, nombres preservados sin parser, sin CL/ciclos, sin XMP/EXPO, sesión con vista dinámica de hardware (SPD tardío observable), sin correlación WMI↔SPD
 - [x] UI live avanzada (B.4.1): 5 pestañas (Temperaturas, CPU/GPU, Memoria GPU, Batería, RAM SPD) alimentadas por un único HardwareLiveSnapshot; sin thresholds, sin selección semántica
 - [x] Inventario estático WMI/SMBIOS (B.4.2): sexta pestaña con CPU/GPU/RAM/módulos/placa/BIOS; actualización manual independiente; WMI fuera del hilo UI; no consulta durante monitoreo; sin correlación con sensores live/SPD; no se consultan discos ni SO
-- [ ] Integración/pulido final Hardware (B.4.3)
-- [ ] Mostrar CPU detallada
-- [ ] Mostrar GPU detallada
-- [ ] Mostrar batería (si aplica)
-- [ ] Mostrar placa madre
-- [ ] Mostrar RAM avanzada
+- [x] Integración/pulido final Hardware (B.4.3): estados live consistentes ("Monitoreando" estable, derivación al detener, HasLiveReading, sin datos stale ante excepciones), hints de pestañas vacías solo en lectura disponible, flags de error sincronizados, proveedor visible, textos con tildes correctas, independencia live/inventario, reutilización del ViewModel al navegar
+- [x] Mostrar CPU detallada
+- [x] Mostrar GPU detallada
+- [x] Mostrar batería (si aplica)
+- [x] Mostrar placa madre
+- [x] Mostrar RAM avanzada
 
 ### General
-- [ ] 164+ tests pasando
+- [ ] 164+ tests pasando (777 actuales)
 - [ ] Build sin errores
 - [ ] Documentación actualizada
 - [ ] Tests para SMART y hardware
@@ -146,3 +147,5 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 ---
 
 *Plan v0.2 - CATTECH OPTIMIZER PRO*
+
+Pendiente: estabilización final v0.2 y revisión de release.

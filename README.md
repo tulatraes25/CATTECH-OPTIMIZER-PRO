@@ -320,6 +320,7 @@ Ir a **🌡️ Hardware** para monitorear el hardware en tiempo real mediante Li
 - No selecciona sensores semánticos (CPU Total, GPU Core): muestra todo lo que entrega el backend
 - El monitoreo nunca se inicia automáticamente: requiere acción explícita del técnico
 - El inventario WMI/SMBIOS y la telemetría live son fuentes separadas: no se correlacionan entre sí
+- Los estados live distinguen "sin lectura" (no consultado), "lectura disponible/no disponible" y "sin sensores disponibles" (consulta válida vacía); durante el monitoreo activo el estado permanece "Monitoreando"
 
 ## Memoria RAM (inventario)
 

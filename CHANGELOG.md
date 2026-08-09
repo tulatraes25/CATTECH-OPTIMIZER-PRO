@@ -326,6 +326,21 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - **Estados independientes**: live (StatusText) vs inventario (InventoryStatusText); IsBusy vs IsInventoryBusy; Errors vs InventoryErrors
 - **Sin correlación WMI↔LHM/SPD**: dos fuentes separadas (Inventario WMI/SMBIOS, RAM SPD LHM); sin matching por slot/part number/serial; sin CPU/GPU usage/temperature estáticos en la UI
 - Tests: FakeHardwareService con contadores y errores por sección; +25 tests netos (743 total)
+
+### Fixed (Integración/pulido final Hardware - Fase B.4.3)
+- **"Monitoreando" ya no se pisa**: ApplyLiveSnapshot deja StatusText en "Monitoreando" mientras IsMonitoring=true; la disponibilidad se refleja en ProviderStatusText/warnings/errors/tablas
+- **Estado al detener derivado de la última muestra**: UpdateIdleLiveStatus → "Sin lectura" (nunca se leyó) / "Lectura no disponible" / "Lectura disponible" / "Sin sensores disponibles"; nunca se inventa disponibilidad
+- **HasLiveReading**: distingue "sin leer" de "leído vacío" y "lectura no disponible"; inicial false; true tras cualquier snapshot (inclusive no disponible)
+- **Hint inicial live** solo antes de la primera lectura (ShowInitialLiveHint); **tarjetas de resumen** ocultas hasta la primera lectura (ShowSummaryCards) — no se muestran "0 sensores" como si ya se hubiera inspeccionado
+- **ApplyLiveFailure**: excepción inesperada de Refresh/stream limpia las 5 familias (sin datos stale), contadores 0, IsAvailable=false, HasLiveData=false, errors reemplazados, ProviderStatusText "No disponible"; StatusText "Lectura no disponible" (Refresh) o "Error de monitoreo" (stream, no sobrescrito por finally)
+- **Cancelación normal**: conserva la última muestra; sin error; estado derivado por UpdateIdleLiveStatus
+- **Hints de pestañas vacías** solo con lectura disponible + colección vacía (ShowEmpty*Hint): un fallo de lectura no afirma "no se detectó" hardware
+- **Flags sincronizados**: helpers ReplaceWarnings/ReplaceErrors/ReplaceInventoryErrors garantizan HasErrors/HasWarnings/HasInventoryErrors coherentes en todos los caminos
+- **Inventario**: catch exterior no acumula errores previos y no falsea InventoryLastUpdatedAt; errores de cada ejecución reemplazan a los anteriores
+- **Proveedor visible en cabecera**: "Proveedor: Sin lectura / Disponible / No disponible" junto a "Modo administrador"
+- **Textos corregidos**: Batería, Métrica, Módulo, Núcleos, Mín., Máx., información, dinámicas, telemetría, "— solo lectura" (UTF-8)
+- **Independencia live/inventario** verificada en 5 casos (A-E) y navegación: salir cancela monitoring, volver reutiliza el mismo HardwareViewModel y permite reiniciar
+- 34 tests netos nuevos/adaptados (777 total)
 - SmartctlAvailability, SmartDiskDevice, SmartctlCommandResult
 - ISmartctlRunner, ISmartDiskService interfaces
 - 32 tests de smartctl + 18 tests de SMART (214 total)

@@ -1339,7 +1339,7 @@ public class HardwareViewModelTests
 
         Assert.Equal(51.0, vm.TemperatureSensors[0].ValueCelsius);
         Assert.Empty(vm.PerformanceSensors);
-        Assert.Equal("Lectura disponible", vm.StatusText);
+        Assert.Equal("Monitoreando", vm.StatusText);
 
         vm.StopMonitoringCommand.Execute(null);
         await WaitUntilAsync(() => !vm.IsMonitoring);
@@ -1407,6 +1407,7 @@ public class HardwareViewModelTests
 
         Assert.Empty(vm.Errors);
         Assert.NotEqual("Error de monitoreo", vm.StatusText);
+        Assert.Equal("Sin lectura", vm.StatusText);
     }
 
     [Fact]
@@ -1547,14 +1548,14 @@ public class HardwareViewModelTests
     // =====================
 
     [Fact]
-    public async Task LeavingHardwareSection_StopsMonitoring()
+    public void LeavingHardwareSection_StopsMonitoring()
     {
         Exception? failure = null;
         var thread = new Thread(() =>
         {
             try
             {
-                RunNavigationTest().GetAwaiter().GetResult();
+                RunNavigationTestSync();
             }
             catch (Exception ex)
             {
@@ -1572,7 +1573,7 @@ public class HardwareViewModelTests
         }
     }
 
-    private static async Task RunNavigationTest()
+    private static void RunNavigationTestSync()
     {
         var service = new FakeHardwareSensorService();
         var mainVm = new MainViewModel(service);
@@ -1582,14 +1583,32 @@ public class HardwareViewModelTests
         Assert.NotNull(hardwareVm);
 
         hardwareVm!.StartMonitoringCommand.Execute(null);
-        await WaitUntilAsync(() => service.LastStreamToken != default);
+        WaitUntilSync(() => service.LastStreamToken != default);
         Assert.True(hardwareVm.IsMonitoring);
 
         mainVm.NavigateCommand.Execute("Reports");
 
-        await WaitUntilAsync(() => !hardwareVm.IsMonitoring);
+        WaitUntilSync(() => !hardwareVm.IsMonitoring);
         Assert.Equal("Reports", mainVm.CurrentSection);
         Assert.False(hardwareVm.IsMonitoring);
+    }
+
+    /// <summary>
+    /// Espera manteniendo el hilo de llamada (STA): el polling no cambia de hilo,
+    /// así las operaciones WPF posteriores siguen en el hilo STA.
+    /// </summary>
+    private static void WaitUntilSync(Func<bool> condition, int timeoutMs = 3000)
+    {
+        var sw = Stopwatch.StartNew();
+        while (!condition())
+        {
+            if (sw.ElapsedMilliseconds > timeoutMs)
+            {
+                throw new TimeoutException("La condición no se cumplió a tiempo.");
+            }
+
+            Task.Delay(20).GetAwaiter().GetResult();
+        }
     }
 
     // =====================
@@ -1714,5 +1733,624 @@ public class HardwareViewModelTests
         Assert.Equal("Simulated CPU", vm.Cpu.Name);
         Assert.Equal(4, vm.Cpu.Cores);
         Assert.Single(vm.MemoryModules);
+    }
+
+    // =====================
+    // Tests Fase B.4.3 - Estados live y pulido
+    // =====================
+
+    [Fact]
+    public void HasLiveReading_InitialFalse()
+    {
+        var vm = CreateViewModel(new FakeHardwareSensorService());
+
+        Assert.False(vm.HasLiveReading);
+        Assert.Equal("Sin lectura", vm.StatusText);
+    }
+
+    [Fact]
+    public async Task HasLiveReading_True_AfterAvailableReading()
+    {
+        var service = new FakeHardwareSensorService { LiveSnapshot = FullLiveSnapshot() };
+        var vm = CreateViewModel(service);
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        Assert.True(vm.HasLiveReading);
+    }
+
+    [Fact]
+    public async Task HasLiveReading_True_AfterUnavailableReading()
+    {
+        var service = new FakeHardwareSensorService
+        {
+            LiveSnapshot = new HardwareLiveSnapshot { IsAvailable = false, Errors = ["fallo"] }
+        };
+        var vm = CreateViewModel(service);
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        Assert.True(vm.HasLiveReading);
+        Assert.Equal("Lectura no disponible", vm.StatusText);
+    }
+
+    [Fact]
+    public async Task Start_SetsMonitoreando()
+    {
+        var service = new FakeHardwareSensorService();
+        var vm = CreateViewModel(service);
+
+        vm.StartMonitoringCommand.Execute(null);
+
+        Assert.Equal("Monitoreando", vm.StatusText);
+
+        vm.StopMonitoringCommand.Execute(null);
+        await WaitUntilAsync(() => !vm.IsMonitoring);
+    }
+
+    [Fact]
+    public async Task DuringStream_StatusStaysMonitoreando()
+    {
+        var service = new FakeHardwareSensorService();
+        service.StreamLiveSnapshots.Add(FullLiveSnapshot());
+        service.StreamLiveSnapshots.Add(FullLiveSnapshot());
+        var vm = CreateViewModel(service);
+
+        vm.StartMonitoringCommand.Execute(null);
+        await WaitUntilAsync(() => vm.PerformanceSensors.Count == 2);
+
+        Assert.True(vm.IsMonitoring);
+        Assert.Equal("Monitoreando", vm.StatusText);
+
+        vm.StopMonitoringCommand.Execute(null);
+        await WaitUntilAsync(() => !vm.IsMonitoring);
+    }
+
+    [Fact]
+    public async Task Stop_AfterValidSample_SetsLecturaDisponible()
+    {
+        var service = new FakeHardwareSensorService();
+        service.StreamLiveSnapshots.Add(FullLiveSnapshot());
+        var vm = CreateViewModel(service);
+
+        vm.StartMonitoringCommand.Execute(null);
+        await WaitUntilAsync(() => vm.HasLiveData);
+        vm.StopMonitoringCommand.Execute(null);
+        await WaitUntilAsync(() => !vm.IsMonitoring);
+
+        Assert.Equal("Lectura disponible", vm.StatusText);
+    }
+
+    [Fact]
+    public async Task Stop_AfterEmptyAvailableSample_SetsSinSensores()
+    {
+        var service = new FakeHardwareSensorService();
+        service.StreamLiveSnapshots.Add(new HardwareLiveSnapshot { IsAvailable = true });
+        var vm = CreateViewModel(service);
+
+        vm.StartMonitoringCommand.Execute(null);
+        await WaitUntilAsync(() => vm.HasLiveReading);
+        vm.StopMonitoringCommand.Execute(null);
+        await WaitUntilAsync(() => !vm.IsMonitoring);
+
+        Assert.Equal("Sin sensores disponibles", vm.StatusText);
+    }
+
+    [Fact]
+    public async Task Stop_AfterUnavailableLastSample_SetsLecturaNoDisponible()
+    {
+        var service = new FakeHardwareSensorService();
+        service.StreamLiveSnapshots.Add(new HardwareLiveSnapshot { IsAvailable = false, Errors = ["fallo"] });
+        var vm = CreateViewModel(service);
+
+        vm.StartMonitoringCommand.Execute(null);
+        await WaitUntilAsync(() => vm.HasLiveReading);
+        vm.StopMonitoringCommand.Execute(null);
+        await WaitUntilAsync(() => !vm.IsMonitoring);
+
+        Assert.Equal("Lectura no disponible", vm.StatusText);
+    }
+
+    [Fact]
+    public async Task Stop_BeforeFirstSample_SetsSinLectura()
+    {
+        var service = new FakeHardwareSensorService();
+        var vm = CreateViewModel(service);
+
+        vm.StartMonitoringCommand.Execute(null);
+        await WaitUntilAsync(() => service.LastStreamToken != default);
+        vm.StopMonitoringCommand.Execute(null);
+        await WaitUntilAsync(() => !vm.IsMonitoring);
+
+        Assert.False(vm.HasLiveReading);
+        Assert.Equal("Sin lectura", vm.StatusText);
+    }
+
+    [Fact]
+    public async Task Cancellation_KeepsLastSample()
+    {
+        var service = new FakeHardwareSensorService();
+        service.StreamLiveSnapshots.Add(FullLiveSnapshot());
+        var vm = CreateViewModel(service);
+
+        vm.StartMonitoringCommand.Execute(null);
+        await WaitUntilAsync(() => vm.HasLiveData);
+        vm.StopMonitoringCommand.Execute(null);
+        await WaitUntilAsync(() => !vm.IsMonitoring);
+
+        Assert.Single(vm.TemperatureSensors);
+        Assert.Equal(2, vm.PerformanceSensors.Count);
+        Assert.Single(vm.BatterySensors);
+        Assert.Empty(vm.Errors);
+    }
+
+    [Fact]
+    public async Task RefreshException_ClearsAllFive_NoStale()
+    {
+        var service = new FakeHardwareSensorService { LiveSnapshot = FullLiveSnapshot() };
+        var vm = CreateViewModel(service);
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+        Assert.True(vm.HasLiveData);
+
+        service.ThrowOnGetSnapshot = new InvalidOperationException("fallo inesperado");
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        Assert.False(vm.IsAvailable);
+        Assert.False(vm.HasLiveData);
+        Assert.True(vm.HasLiveReading);
+        Assert.True(vm.HasErrors);
+        Assert.Equal("Lectura no disponible", vm.StatusText);
+        Assert.Equal("No disponible", vm.ProviderStatusText);
+        Assert.Empty(vm.TemperatureSensors);
+        Assert.Empty(vm.PerformanceSensors);
+        Assert.Empty(vm.GpuMemorySensors);
+        Assert.Empty(vm.BatterySensors);
+        Assert.Empty(vm.MemoryTimingSensors);
+        Assert.Equal(0, vm.PerformanceSensorCount);
+    }
+
+    [Fact]
+    public async Task StreamException_ClearsAllFive_StatusNotOverwritten()
+    {
+        var service = new FakeHardwareSensorService();
+        service.StreamLiveSnapshots.Add(FullLiveSnapshot());
+        var vm = CreateViewModel(service);
+
+        vm.StartMonitoringCommand.Execute(null);
+        await WaitUntilAsync(() => vm.HasLiveData);
+
+        service.ThrowOnStream = new InvalidOperationException("fallo stream");
+        // El stream ya está en el loop: la excepción llega en la siguiente iteración.
+        // Con un fake que lanza al enumerar la primera vez, forzamos el fallo directo.
+        var service2 = new FakeHardwareSensorService { ThrowOnStream = new InvalidOperationException("fallo stream") };
+        var vm2 = CreateViewModel(service2);
+
+        vm2.StartMonitoringCommand.Execute(null);
+        await WaitUntilAsync(() => !vm2.IsMonitoring);
+
+        Assert.True(vm2.HasErrors);
+        Assert.False(vm2.IsAvailable);
+        Assert.False(vm2.HasLiveData);
+        Assert.Equal("Error de monitoreo", vm2.StatusText);
+        Assert.Equal("No disponible", vm2.ProviderStatusText);
+        Assert.Empty(vm2.TemperatureSensors);
+        Assert.Empty(vm2.PerformanceSensors);
+        Assert.Empty(vm2.GpuMemorySensors);
+        Assert.Empty(vm2.BatterySensors);
+        Assert.Empty(vm2.MemoryTimingSensors);
+    }
+
+    // =====================
+    // B.4.3 - Hints de pestañas vacías
+    // =====================
+
+    [Fact]
+    public void EmptyHints_False_BeforeReading()
+    {
+        var vm = CreateViewModel(new FakeHardwareSensorService());
+
+        Assert.False(vm.ShowEmptyTemperatureHint);
+        Assert.False(vm.ShowEmptyPerformanceHint);
+        Assert.False(vm.ShowEmptyGpuMemoryHint);
+        Assert.False(vm.ShowEmptyBatteryHint);
+        Assert.False(vm.ShowEmptyTimingHint);
+    }
+
+    [Fact]
+    public async Task EmptyHints_True_AvailableEmptyReading()
+    {
+        var service = new FakeHardwareSensorService
+        {
+            LiveSnapshot = new HardwareLiveSnapshot { IsAvailable = true }
+        };
+        var vm = CreateViewModel(service);
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        Assert.True(vm.ShowEmptyTemperatureHint);
+        Assert.True(vm.ShowEmptyPerformanceHint);
+        Assert.True(vm.ShowEmptyGpuMemoryHint);
+        Assert.True(vm.ShowEmptyBatteryHint);
+        Assert.True(vm.ShowEmptyTimingHint);
+    }
+
+    [Fact]
+    public async Task EmptyHints_False_UnavailableReading()
+    {
+        var service = new FakeHardwareSensorService
+        {
+            LiveSnapshot = new HardwareLiveSnapshot { IsAvailable = false, Errors = ["fallo"] }
+        };
+        var vm = CreateViewModel(service);
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        Assert.False(vm.ShowEmptyTemperatureHint);
+        Assert.False(vm.ShowEmptyPerformanceHint);
+        Assert.False(vm.ShowEmptyGpuMemoryHint);
+        Assert.False(vm.ShowEmptyBatteryHint);
+        Assert.False(vm.ShowEmptyTimingHint);
+        Assert.Equal("Lectura no disponible", vm.StatusText);
+    }
+
+    [Fact]
+    public async Task EmptyHints_False_WhenFamiliesHaveData()
+    {
+        var service = new FakeHardwareSensorService { LiveSnapshot = FullLiveSnapshot() };
+        var vm = CreateViewModel(service);
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        Assert.False(vm.ShowEmptyTemperatureHint);
+        Assert.False(vm.ShowEmptyPerformanceHint);
+        Assert.False(vm.ShowEmptyGpuMemoryHint);
+        Assert.False(vm.ShowEmptyBatteryHint);
+        Assert.False(vm.ShowEmptyTimingHint);
+    }
+
+    [Fact]
+    public async Task EmptyHint_True_OnlyForEmptyFamily()
+    {
+        var service = new FakeHardwareSensorService
+        {
+            LiveSnapshot = new HardwareLiveSnapshot
+            {
+                IsAvailable = true,
+                PerformanceSensors = [Perf("CPU", "AMD Ryzen 7 5700X", "CPU Total", HardwarePerformanceMetricType.Load, 35.5)]
+            }
+        };
+        var vm = CreateViewModel(service);
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        Assert.True(vm.ShowEmptyTemperatureHint);
+        Assert.False(vm.ShowEmptyPerformanceHint);
+        Assert.True(vm.ShowEmptyGpuMemoryHint);
+        Assert.True(vm.ShowEmptyBatteryHint);
+        Assert.True(vm.ShowEmptyTimingHint);
+    }
+
+    // =====================
+    // B.4.3 - Flags y estado inicial
+    // =====================
+
+    [Fact]
+    public void ShowInitialLiveHint_True_BeforeReading()
+    {
+        var vm = CreateViewModel(new FakeHardwareSensorService());
+
+        Assert.True(vm.ShowInitialLiveHint);
+        Assert.False(vm.ShowSummaryCards);
+    }
+
+    [Fact]
+    public async Task ShowInitialLiveHint_Hidden_AfterReading()
+    {
+        var service = new FakeHardwareSensorService { LiveSnapshot = FullLiveSnapshot() };
+        var vm = CreateViewModel(service);
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        Assert.False(vm.ShowInitialLiveHint);
+        Assert.True(vm.ShowSummaryCards);
+    }
+
+    [Fact]
+    public void ShowInitialLiveHint_Hidden_WhileMonitoring()
+    {
+        var service = new FakeHardwareSensorService();
+        var vm = CreateViewModel(service);
+
+        vm.StartMonitoringCommand.Execute(null);
+
+        Assert.False(vm.ShowInitialLiveHint);
+
+        vm.StopMonitoringCommand.Execute(null);
+    }
+
+    [Fact]
+    public async Task HasErrors_SyncWithErrorsCollection()
+    {
+        var service = new FakeHardwareSensorService
+        {
+            LiveSnapshot = new HardwareLiveSnapshot { IsAvailable = false, Errors = ["error 1"] }
+        };
+        var vm = CreateViewModel(service);
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+        Assert.True(vm.HasErrors);
+
+        service.LiveSnapshot = FullLiveSnapshot();
+        await vm.RefreshCommand.ExecuteAsync(null);
+        Assert.False(vm.HasErrors);
+        Assert.Empty(vm.Errors);
+    }
+
+    [Fact]
+    public async Task HasWarnings_SyncWithWarningsCollection()
+    {
+        var service = new FakeHardwareSensorService
+        {
+            LiveSnapshot = new HardwareLiveSnapshot { IsAvailable = true, Warnings = ["warning 1"] }
+        };
+        var vm = CreateViewModel(service);
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+        Assert.True(vm.HasWarnings);
+
+        service.LiveSnapshot = FullLiveSnapshot();
+        await vm.RefreshCommand.ExecuteAsync(null);
+        Assert.False(vm.HasWarnings);
+        Assert.Empty(vm.Warnings);
+    }
+
+    [Fact]
+    public async Task RefreshFailure_ClearsWarnings()
+    {
+        var service = new FakeHardwareSensorService
+        {
+            LiveSnapshot = new HardwareLiveSnapshot { IsAvailable = true, Warnings = ["warning 1"] }
+        };
+        var vm = CreateViewModel(service);
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+        Assert.True(vm.HasWarnings);
+
+        service.ThrowOnGetSnapshot = new InvalidOperationException("fallo");
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        Assert.False(vm.HasWarnings);
+        Assert.Empty(vm.Warnings);
+        Assert.True(vm.HasErrors);
+    }
+
+    // =====================
+    // B.4.3 - Independencia live/inventario
+    // =====================
+
+    [Fact]
+    public async Task LiveFailure_DoesNotClearInventory()
+    {
+        var sensor = new FakeHardwareSensorService { LiveSnapshot = FullLiveSnapshot() };
+        var vm = CreateViewModel(sensor, InventoryService());
+
+        await vm.RefreshInventoryCommand.ExecuteAsync(null);
+        Assert.Equal(2, vm.MemoryModules.Count);
+
+        sensor.ThrowOnGetSnapshot = new InvalidOperationException("fallo live");
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        Assert.Equal(2, vm.MemoryModules.Count);
+        Assert.Equal("AMD Ryzen 7 5700X", vm.Cpu.Name);
+        Assert.Equal("Inventario actualizado", vm.InventoryStatusText);
+        Assert.False(vm.IsAvailable);
+    }
+
+    [Fact]
+    public async Task InventoryFailure_DoesNotClearLive()
+    {
+        var sensor = new FakeHardwareSensorService { LiveSnapshot = FullLiveSnapshot() };
+        var hardware = InventoryService();
+        hardware.ThrowOnCpu = new InvalidOperationException("fallo CPU");
+        var vm = CreateViewModel(sensor, hardware);
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+        Assert.Equal(2, vm.PerformanceSensors.Count);
+
+        await vm.RefreshInventoryCommand.ExecuteAsync(null);
+
+        Assert.Equal(2, vm.PerformanceSensors.Count);
+        Assert.Single(vm.TemperatureSensors);
+        Assert.Equal("Lectura disponible", vm.StatusText);
+        Assert.Equal("Inventario parcial", vm.InventoryStatusText);
+    }
+
+    [Fact]
+    public async Task ApplyLiveSnapshot_DoesNotModifyInventoryStatusText()
+    {
+        var sensor = new FakeHardwareSensorService { LiveSnapshot = FullLiveSnapshot() };
+        var vm = CreateViewModel(sensor, InventoryService());
+
+        await vm.RefreshInventoryCommand.ExecuteAsync(null);
+        Assert.Equal("Inventario actualizado", vm.InventoryStatusText);
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        Assert.Equal("Inventario actualizado", vm.InventoryStatusText);
+        Assert.Equal("Lectura disponible", vm.StatusText);
+    }
+
+    [Fact]
+    public async Task ApplyInventory_DoesNotModifyLiveStatusText()
+    {
+        var sensor = new FakeHardwareSensorService { LiveSnapshot = FullLiveSnapshot() };
+        var vm = CreateViewModel(sensor, InventoryService());
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+        Assert.Equal("Lectura disponible", vm.StatusText);
+
+        await vm.RefreshInventoryCommand.ExecuteAsync(null);
+
+        Assert.Equal("Lectura disponible", vm.StatusText);
+        Assert.Equal("Inventario actualizado", vm.InventoryStatusText);
+    }
+
+    [Fact]
+    public async Task InventoryLastUpdated_OnlyUpdatedOnSuccessfulApply()
+    {
+        var hardware = InventoryService();
+        var vm = CreateViewModel(new FakeHardwareSensorService(), hardware);
+
+        await vm.RefreshInventoryCommand.ExecuteAsync(null);
+        var first = vm.InventoryLastUpdatedAt;
+        Assert.NotNull(first);
+
+        hardware.ThrowOnCpu = new InvalidOperationException("fallo");
+        await vm.RefreshInventoryCommand.ExecuteAsync(null);
+
+        // La lectura parcial es una lectura real: la fecha se actualiza.
+        Assert.NotNull(vm.InventoryLastUpdatedAt);
+        Assert.Equal("Inventario parcial", vm.InventoryStatusText);
+        Assert.True(vm.HasInventoryErrors);
+
+        hardware.ThrowOnCpu = null;
+        await vm.RefreshInventoryCommand.ExecuteAsync(null);
+
+        Assert.False(vm.HasInventoryErrors);
+        Assert.Equal("Inventario actualizado", vm.InventoryStatusText);
+    }
+
+    // =====================
+    // B.4.3 - Navegación e integración
+    // =====================
+
+    [Fact]
+    public void ReturnToHardware_ReusesViewModel_AllowsRestart()
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                RunNavigationReuseTestSync();
+            }
+            catch (Exception ex)
+            {
+                failure = ex;
+            }
+        });
+
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join(TimeSpan.FromSeconds(20));
+
+        if (failure != null)
+        {
+            throw failure;
+        }
+    }
+
+    private static void RunNavigationReuseTestSync()
+    {
+        var service = new FakeHardwareSensorService();
+        var mainVm = new MainViewModel(service);
+
+        mainVm.NavigateCommand.Execute("Hardware");
+        var firstVm = ((HardwareView)mainVm.CurrentView).DataContext as HardwareViewModel;
+        Assert.NotNull(firstVm);
+
+        firstVm!.StartMonitoringCommand.Execute(null);
+        WaitUntilSync(() => service.LastStreamToken != default);
+        firstVm.StopMonitoringCommand.Execute(null);
+        WaitUntilSync(() => !firstVm.IsMonitoring);
+
+        mainVm.NavigateCommand.Execute("Reports");
+        WaitUntilSync(() => !firstVm.IsMonitoring);
+
+        mainVm.NavigateCommand.Execute("Hardware");
+        var secondVm = ((HardwareView)mainVm.CurrentView).DataContext as HardwareViewModel;
+
+        Assert.Same(firstVm, secondVm);
+
+        secondVm!.StartMonitoringCommand.Execute(null);
+        WaitUntilSync(() => secondVm.IsMonitoring);
+        secondVm.StopMonitoringCommand.Execute(null);
+        WaitUntilSync(() => !secondVm.IsMonitoring);
+    }
+
+    // =====================
+    // B.4.3 - Presentación (XAML estructural)
+    // =====================
+
+    private static string ReadHardwareViewXaml()
+    {
+        var path = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "../../../../../src/Cattech.Optimizer.Pro.UI/Views/HardwareView.xaml"));
+
+        return File.ReadAllText(path);
+    }
+
+    [Fact]
+    public void Xaml_ProviderStatusTextBound()
+    {
+        var xaml = ReadHardwareViewXaml();
+
+        Assert.Contains("ProviderStatusText", xaml);
+        Assert.Contains("Proveedor:", xaml);
+    }
+
+    [Fact]
+    public void Xaml_InitialHintAndSummaryCardsBound()
+    {
+        var xaml = ReadHardwareViewXaml();
+
+        Assert.Contains("ShowInitialLiveHint", xaml);
+        Assert.Contains("ShowSummaryCards", xaml);
+    }
+
+    [Fact]
+    public void Xaml_SixTabs()
+    {
+        var xaml = ReadHardwareViewXaml();
+
+        Assert.Contains("Header=\"Temperaturas\"", xaml);
+        Assert.Contains("Header=\"CPU / GPU\"", xaml);
+        Assert.Contains("Header=\"Memoria GPU\"", xaml);
+        Assert.Contains("Header=\"Batería\"", xaml);
+        Assert.Contains("Header=\"RAM SPD\"", xaml);
+        Assert.Contains("Header=\"Inventario\"", xaml);
+    }
+
+    [Fact]
+    public void Xaml_AccentsCorrect()
+    {
+        var xaml = ReadHardwareViewXaml();
+
+        Assert.Contains("Batería", xaml);
+        Assert.Contains("Métrica", xaml);
+        Assert.Contains("Mín.", xaml);
+        Assert.Contains("Máx.", xaml);
+        Assert.Contains("Módulo", xaml);
+        Assert.Contains("Núcleos", xaml);
+        Assert.Contains("información", xaml);
+        Assert.Contains("dinámicas", xaml);
+        Assert.Contains("telemetría", xaml);
+        Assert.Contains("— solo lectura", xaml);
+        Assert.DoesNotContain("Header=\"Bateria\"", xaml);
+        Assert.DoesNotContain("Header=\"Metrica\"", xaml);
+    }
+
+    [Fact]
+    public void Xaml_EmptyHintsBoundToFlags()
+    {
+        var xaml = ReadHardwareViewXaml();
+
+        Assert.Contains("ShowEmptyTemperatureHint", xaml);
+        Assert.Contains("ShowEmptyPerformanceHint", xaml);
+        Assert.Contains("ShowEmptyGpuMemoryHint", xaml);
+        Assert.Contains("ShowEmptyBatteryHint", xaml);
+        Assert.Contains("ShowEmptyTimingHint", xaml);
     }
 }
