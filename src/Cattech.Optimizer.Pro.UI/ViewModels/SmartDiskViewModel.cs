@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Cattech.Optimizer.Pro.Core.Interfaces;
@@ -24,6 +25,9 @@ public partial class SmartDiskViewModel : ObservableObject
     private bool _canStartTest;
 
     [ObservableProperty]
+    private bool _canStartExtendedTest;
+
+    [ObservableProperty]
     private bool _isTestInProgress;
 
     [ObservableProperty]
@@ -34,6 +38,9 @@ public partial class SmartDiskViewModel : ObservableObject
 
     [ObservableProperty]
     private string _testResultMessage = string.Empty;
+
+    [ObservableProperty]
+    private string _currentTestTypeText = string.Empty;
 
     public SmartDiskViewModel(
         ISmartctlRunner smartctlRunner,
@@ -349,10 +356,11 @@ public partial class SmartDiskViewModel : ObservableObject
     {
         HasSelectedReport = value != null;
 
-        // Gestionar habilitación del test según estado del disco
+        // Gestionar habilitación de tests según estado del disco
         if (value == null)
         {
             CanStartTest = false;
+            CanStartExtendedTest = false;
             return;
         }
 
@@ -360,26 +368,36 @@ public partial class SmartDiskViewModel : ObservableObject
         {
             case SmartHealthStatus.Critical:
                 CanStartTest = false;
+                CanStartExtendedTest = false;
                 TestStatusText = "Test bloqueado: disco en estado crítico. Realice backup antes de continuar.";
                 break;
 
             case SmartHealthStatus.NotAvailable:
             case SmartHealthStatus.Unknown:
                 CanStartTest = true;
+                // Extended: solo si el soporte puede verificarse o es desconocido (el servicio resolverá)
+                CanStartExtendedTest = value.SelfTestSupportKnown
+                    ? value.SupportsExtendedSelfTest == true
+                    : true;
                 TestStatusText = "Estado del disco no determinado. Se verificará soporte de self-test al iniciar.";
                 break;
 
             default:
                 CanStartTest = true;
+                // Good/Warning: permitir extendido; si soporte conocido y false → bloquear
+                CanStartExtendedTest = value.SelfTestSupportKnown
+                    ? value.SupportsExtendedSelfTest != false
+                    : true;
                 TestStatusText = string.Empty;
                 break;
         }
 
-        // Si ya hay un test en progreso para este disco, no permitir otro
+        // Si ya hay un test en progreso para este disco, bloquear ambos
         if (IsTestInProgress && CurrentTestSession?.Device == value.Device)
         {
             CanStartTest = false;
-            TestStatusText = "Test corto en ejecución para este disco.";
+            CanStartExtendedTest = false;
+            TestStatusText = "Test en ejecución para este disco.";
         }
     }
 
@@ -485,6 +503,137 @@ public partial class SmartDiskViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Inicia un test SMART extendido sobre el disco seleccionado.
+    /// Requiere confirmación explícita del técnico.
+    /// </summary>
+    [RelayCommand]
+    private async Task StartExtendedTestAsync()
+    {
+        if (SelectedReport == null)
+        {
+            ShowError("Seleccione un disco para ejecutar el test.");
+            return;
+        }
+
+        // Bloquear si el disco es crítico
+        if (SelectedReport.HealthStatus == SmartHealthStatus.Critical)
+        {
+            ShowError("Este disco presenta indicadores críticos. Realice backup antes de ejecutar pruebas adicionales.");
+            return;
+        }
+
+        // Bloquear si el soporte extendido es conocido y false
+        if (SelectedReport.SelfTestSupportKnown && SelectedReport.SupportsExtendedSelfTest == false)
+        {
+            ShowError("El dispositivo no soporta test SMART extendido.");
+            return;
+        }
+
+        // Bloquear si ya hay un test en progreso para este disco (corto o extendido)
+        if (IsTestInProgress && CurrentTestSession?.Device == SelectedReport.Device)
+        {
+            ShowError("Ya hay un test en ejecución para este disco.");
+            return;
+        }
+
+        // Confirmación fuerte
+        var confirmMessage = "Se iniciará una prueba SMART extendida sobre el disco seleccionado.\n\n" +
+                             "Esta prueba puede tardar desde decenas de minutos hasta varias horas y genera actividad sostenida sobre la unidad.\n\n" +
+                             "No apague ni desconecte el equipo durante la prueba.\n\n" +
+                             "Si el disco contiene información importante, se recomienda realizar una copia de seguridad antes de continuar.";
+
+        if (SelectedReport.HealthStatus == SmartHealthStatus.Warning)
+        {
+            confirmMessage += "\n\nEl disco ya presenta advertencias SMART. Se recomienda realizar backup antes de continuar.";
+        }
+
+        var confirmed = MessageBox.Show(
+            confirmMessage,
+            "Confirmar test SMART extendido",
+            MessageBoxButton.OKCancel,
+            MessageBoxImage.Warning);
+
+        if (confirmed != MessageBoxResult.OK)
+            return;
+
+        ClearMessages();
+        IsRunning = true;
+        TestStatusText = "Iniciando test extendido...";
+
+        try
+        {
+            // Buscar el dispositivo detectado que coincide con el reporte
+            var device = _allDevices.FirstOrDefault(d => d.Name == SelectedReport.Device);
+            if (device == null)
+            {
+                device = new SmartDiskDevice
+                {
+                    Name = SelectedReport.Device,
+                    InfoName = SelectedReport.DeviceName,
+                    ApproximateDiskType = SelectedReport.DeviceType,
+                    Protocol = SelectedReport.Protocol,
+                    ModelName = SelectedReport.ModelName,
+                    SerialNumber = SelectedReport.SerialNumber
+                };
+            }
+
+            var session = await _smartTestService.StartExtendedTestAsync(device);
+
+            CurrentTestSession = session;
+            CurrentTestTypeText = "Extendido";
+
+            switch (session.Status)
+            {
+                case SmartTestStatus.InProgress:
+                    IsTestInProgress = true;
+                    CanStartTest = false;
+                    CanStartExtendedTest = false;
+                    TestStatusText = "Test extendido en ejecución";
+
+                    var durationText = session.EstimatedDurationMinutes.HasValue
+                        ? $"{session.EstimatedDurationMinutes.Value} min"
+                        : "no disponible";
+                    var completionText = session.EstimatedCompletionAt.HasValue
+                        ? session.EstimatedCompletionAt.Value.ToString("HH:mm:ss")
+                        : "no disponible";
+
+                    TestResultMessage = $"Test extendido iniciado a las {session.StartedAt:HH:mm:ss}. " +
+                                        $"Duración estimada: {durationText}. " +
+                                        $"Finalización estimada: {completionText}.";
+                    ShowSuccess("Test SMART extendido iniciado correctamente.");
+                    break;
+
+                case SmartTestStatus.Unsupported:
+                    TestStatusText = "Test no soportado";
+                    TestResultMessage = "El dispositivo no soporta esta prueba.";
+                    ShowError(TestResultMessage);
+                    break;
+
+                case SmartTestStatus.FailedToStart:
+                    TestStatusText = "Error al iniciar test";
+                    TestResultMessage = session.ResultMessage;
+                    ShowError($"No se pudo iniciar la prueba: {session.ResultMessage}");
+                    break;
+
+                default:
+                    TestStatusText = "Estado desconocido";
+                    TestResultMessage = session.ResultMessage;
+                    ShowError(session.ResultMessage);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            TestStatusText = "Error al iniciar test";
+            ShowError($"Error: {ex.Message}");
+        }
+        finally
+        {
+            IsRunning = false;
+        }
+    }
+
+    /// <summary>
     /// Consulta el estado actual del test en ejecución.
     /// </summary>
     [RelayCommand]
@@ -518,6 +667,7 @@ public partial class SmartDiskViewModel : ObservableObject
                 case SmartTestStatus.CompletedWithoutError:
                     IsTestInProgress = false;
                     CanStartTest = true;
+                    CanStartExtendedTest = true;
                     TestStatusText = "Test completado";
                     ShowSuccess("Prueba completada sin errores reportados.");
                     break;
@@ -525,6 +675,7 @@ public partial class SmartDiskViewModel : ObservableObject
                 case SmartTestStatus.CompletedWithError:
                     IsTestInProgress = false;
                     CanStartTest = true;
+                    CanStartExtendedTest = true;
                     TestStatusText = "Test completado con errores";
                     ShowError("La prueba detectó errores. Revisar SMART y realizar backup.");
                     break;
@@ -532,13 +683,15 @@ public partial class SmartDiskViewModel : ObservableObject
                 case SmartTestStatus.InProgress:
                     IsTestInProgress = true;
                     CanStartTest = false;
-                    TestStatusText = "Test corto en ejecución";
+                    CanStartExtendedTest = false;
+                    TestStatusText = "Test en ejecución";
                     ShowSuccess("Test aún en ejecución.");
                     break;
 
                 default:
                     IsTestInProgress = false;
                     CanStartTest = true;
+                    CanStartExtendedTest = true;
                     TestStatusText = "Test finalizado";
                     ShowSuccess(TestResultMessage);
                     break;

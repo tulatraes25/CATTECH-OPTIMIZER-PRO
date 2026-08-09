@@ -358,8 +358,20 @@
 
                     <!-- Estado del test -->
                     <StackPanel Grid.Column="0">
-                        <TextBlock Text="{Binding TestStatusText}" FontSize="11" FontWeight="SemiBold"
-                                   Foreground="#333" TextWrapping="Wrap" Margin="0,0,0,4" />
+                        <Grid Margin="0,0,0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Tipo:" FontSize="10" FontWeight="SemiBold" Foreground="#555" />
+                            <TextBlock Text="{Binding CurrentTestTypeText}" FontSize="10" Foreground="#333"
+                                       Margin="4,0,15,0" />
+                            <TextBlock Text="Estado:" FontSize="10" FontWeight="SemiBold" Foreground="#555" />
+                            <TextBlock Text="{Binding TestStatusText}" FontSize="10" Foreground="#333"
+                                       Margin="4,0,0,0" />
+                        </Grid>
                         <TextBlock Text="{Binding TestResultMessage}" FontSize="10" Foreground="#666"
                                    TextWrapping="Wrap" Margin="0,0,0,4" />
                         <TextBlock Text="El test es ejecutado internamente por el dispositivo. La prueba normalmente no modifica datos."
@@ -372,6 +384,10 @@
                                 Command="{Binding StartShortTestCommand}" Padding="14,8" FontSize="12"
                                 Background="#1976D2" Foreground="White" BorderThickness="0" Margin="0,0,0,6"
                                 IsEnabled="{Binding CanStartTest}" />
+                        <Button Content="⏱️ Ejecutar test extendido"
+                                Command="{Binding StartExtendedTestCommand}" Padding="14,8" FontSize="12"
+                                Background="#E65100" Foreground="White" BorderThickness="0" Margin="0,0,0,6"
+                                IsEnabled="{Binding CanStartExtendedTest}" />
                         <Button Content="🔄 Consultar estado"
                                 Command="{Binding CheckTestStatusCommand}" Padding="14,8" FontSize="12"
                                 Background="#F3F3F3" Foreground="#333" BorderBrush="#CCC" BorderThickness="1"

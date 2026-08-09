@@ -16,6 +16,12 @@ public interface ISmartTestService
     Task<SmartTestSession> StartShortTestAsync(SmartDiskDevice device);
 
     /// <summary>
+    /// Inicia un test SMART extendido sobre un disco.
+    /// Puede tardar mucho tiempo; no espera a que termine.
+    /// </summary>
+    Task<SmartTestSession> StartExtendedTestAsync(SmartDiskDevice device);
+
+    /// <summary>
     /// Consulta el estado actual de una sesión de test.
     /// </summary>
     Task<SmartTestSession> CheckStatusAsync(SmartTestSession session);

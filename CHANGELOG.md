@@ -117,6 +117,16 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - **Errores temporales de consulta**: LastCheckSucceeded/LastCheckError; timeout NO finaliza el test
 - **Conservación de datos**: StartedAt, EstimatedCompletionAt y warnings se preservan tras errores temporales
 - 13 tests nuevos (287 total)
+
+### Added (SMART Extended Self-Test - Fase A.6)
+- **StartExtendedTestAsync**: inicia self-test extendido via `smartctl -t long -j`
+- **Refactor StartTestAsync común**: Short y Extended reutilizan la misma lógica interna
+- **Seguridad extendida**: Critical bloqueado, soporte verificado, un test a la vez
+- **Confirmación fuerte en UI**: advertencia de duración prolongada y backup
+- **Tipo de test preservado**: sesiones Extended no se convierten en Short
+- **GetLatestResultAsync**: detecta tipo desde el log (Extended offline)
+- **Bloqueo mutuo**: Short bloquea Extended y viceversa mientras hay test activo
+- 17 tests nuevos (304 total)
 - SmartctlAvailability, SmartDiskDevice, SmartctlCommandResult
 - ISmartctlRunner, ISmartDiskService interfaces
 - 32 tests de smartctl + 18 tests de SMART (214 total)

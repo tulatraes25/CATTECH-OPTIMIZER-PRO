@@ -31,20 +31,39 @@ public class SmartTestService : ISmartTestService
     }
 
     /// <inheritdoc/>
-    public async Task<SmartTestSession> StartShortTestAsync(SmartDiskDevice device)
+    public Task<SmartTestSession> StartShortTestAsync(SmartDiskDevice device)
+        => StartTestAsync(device, SmartTestType.Short);
+
+    /// <inheritdoc/>
+    public Task<SmartTestSession> StartExtendedTestAsync(SmartDiskDevice device)
+        => StartTestAsync(device, SmartTestType.Extended);
+
+    /// <summary>
+    /// Lógica común para iniciar un self-test SMART.
+    /// El test ocurre internamente en el firmware del disco.
+    /// </summary>
+    private async Task<SmartTestSession> StartTestAsync(SmartDiskDevice device, SmartTestType testType)
     {
         var session = new SmartTestSession
         {
             Device = device.Name,
             ModelName = device.ModelName,
             SerialNumber = device.SerialNumber,
-            TestType = SmartTestType.Short,
+            TestType = testType,
             Status = SmartTestStatus.Starting,
             RequestedAt = DateTime.Now
         };
 
-        // Ejecutar smartctl -t short -j <device>
-        var result = await _smartctlRunner.RunAsync($"-t short -j {device.Name}", TestStartTimeout);
+        // Mapear comando según tipo de test
+        var testCommand = testType switch
+        {
+            SmartTestType.Short => "-t short -j",
+            SmartTestType.Extended => "-t long -j",
+            _ => throw new ArgumentOutOfRangeException(nameof(testType))
+        };
+
+        // Ejecutar smartctl -t short|long -j <device>
+        var result = await _smartctlRunner.RunAsync($"{testCommand} {device.Name}", TestStartTimeout);
 
         if (result.TimedOut)
         {
@@ -163,17 +182,43 @@ public class SmartTestService : ISmartTestService
 
             var latest = table.EnumerateArray().First();
 
+            // Determinar tipo de test desde el log si es posible
+            var testType = SmartTestType.Short;
+            if (latest.TryGetProperty("type", out var typeEl))
+            {
+                string typeText;
+                if (typeEl.ValueKind == JsonValueKind.String)
+                    typeText = typeEl.GetString() ?? string.Empty;
+                else if (typeEl.ValueKind == JsonValueKind.Object &&
+                         typeEl.TryGetProperty("string", out var typeString))
+                    typeText = typeString.GetString() ?? string.Empty;
+                else
+                    typeText = string.Empty;
+
+                if (typeText.Contains("Extended", StringComparison.OrdinalIgnoreCase))
+                    testType = SmartTestType.Extended;
+            }
+
+            // Extraer status de forma robusta (string directo u objeto { string: ... })
+            string rawStatus = string.Empty;
+            if (latest.TryGetProperty("status", out var statusEl))
+            {
+                if (statusEl.ValueKind == JsonValueKind.String)
+                    rawStatus = statusEl.GetString() ?? string.Empty;
+                else if (statusEl.ValueKind == JsonValueKind.Object &&
+                         statusEl.TryGetProperty("string", out var statusString))
+                    rawStatus = statusString.GetString() ?? string.Empty;
+            }
+
             var testResult = new SmartTestResult
             {
                 Device = device.Name,
-                TestType = SmartTestType.Short,
-                RawStatus = latest.TryGetProperty("status", out var status)
-                    ? status.GetString() ?? string.Empty
-                    : string.Empty
+                TestType = testType,
+                RawStatus = rawStatus
             };
 
             testResult.Status = SmartctlParser.MapStatusText(testResult.RawStatus);
-            testResult.ResultMessage = SmartctlParser.StatusToMessage(testResult.Status);
+            testResult.ResultMessage = testResult.Status.ToDisplayMessage();
 
             if (latest.TryGetProperty("lifetime_hours", out var lifetime))
             {

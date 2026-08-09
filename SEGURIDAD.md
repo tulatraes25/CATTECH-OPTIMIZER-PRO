@@ -660,6 +660,17 @@ Formato estándar: `CATTECH Optimizer Pro - Antes de mantenimiento - yyyy-MM-dd 
 4. Iniciar test (no bloquea UI)
 5. Consultar estado posteriormente
 
+### Test Extendido (A.6)
+
+1. **Critical bloqueado**: No se permite test extendido en disco crítico
+2. **Warning**: Permitido con confirmación fuerte adicional
+3. **Soporte verificado**: Si `SupportsExtendedSelfTest == false`, NO se ejecuta smartctl
+4. **Soporte desconocido**: No se asume; el servicio resuelve con parseo estructurado
+5. **Un test a la vez**: Short y Extended se bloquean mutuamente
+6. **Duración real**: Solo se usa la duración que informa smartctl, nunca valores fijos
+7. **Confirmación obligatoria**: Advertencia de duración prolongada antes de iniciar
+8. **Sin cancelación**: `smartctl -X` no implementado (futura función)
+
 ---
 
 *Documento de seguridad - CATTECH OPTIMIZER PRO*  
