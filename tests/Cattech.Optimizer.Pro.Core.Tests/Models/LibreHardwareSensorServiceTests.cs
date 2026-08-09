@@ -3506,4 +3506,707 @@ public class LibreHardwareSensorServiceTests
         Assert.True(live.IsAvailable);
         Assert.Equal(3, live.BatterySensors.Count);
     }
+
+    // =====================
+    // Tests Fase B.3.2 - Timings SPD (SensorType.Timing)
+    // =====================
+
+    private static FakeSensor Timing(string name, string identifier, float? value = null,
+        float? min = null, float? max = null) =>
+        new(name, identifier, InternalSensorType.Timing, value, min, max);
+
+    private static FakeHardware CreateDimmHardware(string name = "DDR4-3200 DIMM",
+        string identifier = "/mem/dimm/0", IReadOnlyList<ISensorNode>? sensors = null)
+    {
+        return new FakeHardware
+        {
+            Name = name,
+            Identifier = identifier,
+            HardwareType = InternalHardwareType.Memory,
+            Sensors = sensors ?? new List<ISensorNode>()
+        };
+    }
+
+    private static FakeSession CreateDimmSession(out FakeSensor taa, out FakeSensor trcd)
+    {
+        taa = Timing("tAA (CAS Latency Time)", "/mem/dimm/0/timing/0", 14.0f);
+        trcd = Timing("tRCD (RAS to CAS Delay Time)", "/mem/dimm/0/timing/1", 16.0f);
+
+        return new FakeSession
+        {
+            Hardware = [CreateDimmHardware(sensors: [taa, trcd])]
+        };
+    }
+
+    [Fact]
+    public async Task Timing_OfMemoryHardware_Captured()
+    {
+        var factory = new FakeFactory { Session = CreateDimmSession(out _, out _) };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Equal(2, live.MemoryTimingSensors.Count);
+        Assert.True(live.HasMemoryTimingSensors);
+        Assert.Equal(2, live.ValidMemoryTimingSensorCount);
+    }
+
+    [Fact]
+    public async Task CpuTiming_Ignored()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "Intel Core i7-13700K",
+                        Identifier = "/intelcpu/0",
+                        HardwareType = InternalHardwareType.Cpu,
+                        Sensors = [Timing("tAA (CAS Latency Time)", "/intelcpu/0/timing/0", 14.0f)]
+                    }
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Empty(live.MemoryTimingSensors);
+    }
+
+    [Fact]
+    public async Task GpuTiming_Ignored()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "NVIDIA GeForce RTX 4070",
+                        Identifier = "/gpu-nvidia/0",
+                        HardwareType = InternalHardwareType.Gpu,
+                        Sensors = [Timing("tAA (CAS Latency Time)", "/gpu-nvidia/0/timing/0", 14.0f)]
+                    }
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Empty(live.MemoryTimingSensors);
+    }
+
+    [Fact]
+    public async Task BatteryTiming_Ignored()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "Standard Battery",
+                        Identifier = "/battery/0",
+                        HardwareType = InternalHardwareType.Battery,
+                        Sensors = [Timing("tAA (CAS Latency Time)", "/battery/0/timing/0", 14.0f)]
+                    }
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Empty(live.MemoryTimingSensors);
+    }
+
+    [Fact]
+    public async Task Timing_UnitIsNs()
+    {
+        var factory = new FakeFactory { Session = CreateDimmSession(out _, out _) };
+
+        var live = await CaptureLive(factory);
+
+        Assert.All(live.MemoryTimingSensors, s => Assert.Equal("ns", s.Unit));
+    }
+
+    [Fact]
+    public async Task ValueNanoseconds_Preserved()
+    {
+        var factory = new FakeFactory { Session = CreateDimmSession(out _, out _) };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Equal(14.0, live.MemoryTimingSensors[0].ValueNanoseconds);
+        Assert.Equal(16.0, live.MemoryTimingSensors[1].ValueNanoseconds);
+    }
+
+    [Fact]
+    public async Task MinNanoseconds_Preserved()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware = [CreateDimmHardware(sensors:
+                [
+                    Timing("tAA (CAS Latency Time)", "/mem/dimm/0/timing/0", 14.0f, 13.5f, 15.0f)
+                ])]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Equal(13.5, live.MemoryTimingSensors[0].MinNanoseconds);
+    }
+
+    [Fact]
+    public async Task MaxNanoseconds_Preserved()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware = [CreateDimmHardware(sensors:
+                [
+                    Timing("tAA (CAS Latency Time)", "/mem/dimm/0/timing/0", 14.0f, 13.5f, 15.0f)
+                ])]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Equal(15.0, live.MemoryTimingSensors[0].MaxNanoseconds);
+    }
+
+    [Fact]
+    public async Task TimingNull_StaysNull()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware = [CreateDimmHardware(sensors:
+                [
+                    Timing("tAA (CAS Latency Time)", "/mem/dimm/0/timing/0", null)
+                ])]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Null(Assert.Single(live.MemoryTimingSensors).ValueNanoseconds);
+        Assert.Equal(0, live.ValidMemoryTimingSensorCount);
+    }
+
+    [Fact]
+    public async Task TimingNaN_NormalizedToNull()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware = [CreateDimmHardware(sensors:
+                [
+                    Timing("tAA (CAS Latency Time)", "/mem/dimm/0/timing/0", float.NaN)
+                ])]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Null(Assert.Single(live.MemoryTimingSensors).ValueNanoseconds);
+    }
+
+    [Fact]
+    public async Task TimingInfinity_NormalizedToNull()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware = [CreateDimmHardware(sensors:
+                [
+                    Timing("tAA (CAS Latency Time)", "/mem/dimm/0/timing/0", float.PositiveInfinity)
+                ])]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Null(Assert.Single(live.MemoryTimingSensors).ValueNanoseconds);
+    }
+
+    [Fact]
+    public async Task SensorName_PreservedLiterally()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware = [CreateDimmHardware(sensors:
+                [
+                    Timing("tAA (CAS Latency Time)", "/mem/dimm/0/timing/0", 14.0f),
+                    Timing("tCKAVGmin (Minimum Cycle Time)", "/mem/dimm/0/timing/2", 0.625f)
+                ])]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Equal("tAA (CAS Latency Time)", live.MemoryTimingSensors[0].SensorName);
+        Assert.Equal("tCKAVGmin (Minimum Cycle Time)", live.MemoryTimingSensors[1].SensorName);
+    }
+
+    [Fact]
+    public void TimingModel_NoCasLatencyCycles()
+    {
+        var propertyNames = typeof(HardwareMemoryTimingSensor).GetProperties().Select(p => p.Name).ToList();
+
+        Assert.DoesNotContain(propertyNames, n => n is "CASLatency" or "CasLatencyCycles" or "CL" or
+            "TRCD" or "TRP" or "TRAS" or "TRC" or "TRFC" or "TimingProfile" or "XmpProfile" or "ExpoProfile");
+    }
+
+    [Fact]
+    public void TRcdName_NoSpecificProperty()
+    {
+        var sensor = new HardwareMemoryTimingSensor { SensorName = "tRCD (RAS to CAS Delay Time)", ValueNanoseconds = 16.0 };
+        var propertyNames = typeof(HardwareMemoryTimingSensor).GetProperties().Select(p => p.Name).ToList();
+
+        Assert.Equal("tRCD (RAS to CAS Delay Time)", sensor.SensorName);
+        Assert.Equal(16.0, sensor.ValueNanoseconds);
+        Assert.DoesNotContain(propertyNames, n => n == "TRCD");
+    }
+
+    [Fact]
+    public void NoClCalculated_FromNanoseconds()
+    {
+        // tAA = 14.0 ns se conserva como 14.0 ns; nunca se convierte a CL14/ciclos.
+        var sensor = new HardwareMemoryTimingSensor
+        {
+            SensorName = "tAA (CAS Latency Time)",
+            ValueNanoseconds = 14.0
+        };
+
+        Assert.Equal(14.0, sensor.ValueNanoseconds);
+        Assert.Equal("ns", sensor.Unit);
+    }
+
+    [Fact]
+    public void NoNsToCyclesConversion()
+    {
+        // El valor se conserva tal cual: sin dividir por tCK ni multiplicar por frecuencia.
+        var sensor = new HardwareMemoryTimingSensor
+        {
+            SensorName = "tAA (CAS Latency Time)",
+            ValueNanoseconds = 14.0
+        };
+
+        Assert.Equal(14.0, sensor.ValueNanoseconds);
+    }
+
+    [Fact]
+    public async Task TwoDimms_SameTimingName_DifferentIdentifier_Preserved()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    CreateDimmHardware("DDR4-3200 DIMM", "/mem/dimm/0",
+                        [Timing("tAA (CAS Latency Time)", "/mem/dimm/0/timing/0", 14.0f)]),
+                    CreateDimmHardware("DDR4-3200 DIMM", "/mem/dimm/1",
+                        [Timing("tAA (CAS Latency Time)", "/mem/dimm/1/timing/0", 15.0f)])
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Equal(2, live.MemoryTimingSensors.Count);
+        Assert.Contains(live.MemoryTimingSensors, s => s.HardwareIdentifier == "/mem/dimm/0");
+        Assert.Contains(live.MemoryTimingSensors, s => s.HardwareIdentifier == "/mem/dimm/1");
+    }
+
+    [Fact]
+    public async Task DuplicateIdentifier_TimingDeduped()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware = [CreateDimmHardware(sensors:
+                [
+                    Timing("tAA (CAS Latency Time)", "/mem/dimm/0/timing/0", 14.0f),
+                    Timing("tAA (CAS Latency Time)", "/mem/dimm/0/timing/0", 15.0f)
+                ])]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Equal(14.0, Assert.Single(live.MemoryTimingSensors).ValueNanoseconds);
+    }
+
+    [Fact]
+    public async Task HardwareIdentifier_Preserved()
+    {
+        var factory = new FakeFactory { Session = CreateDimmSession(out _, out _) };
+
+        var live = await CaptureLive(factory);
+
+        Assert.All(live.MemoryTimingSensors, s => Assert.Equal("/mem/dimm/0", s.HardwareIdentifier));
+        Assert.All(live.MemoryTimingSensors, s => Assert.Equal("Memoria", s.HardwareType));
+    }
+
+    [Fact]
+    public async Task SensorTypeData_NotInMemoryTimingSensors()
+    {
+        // SensorType.Data NO se incorpora en B.3.2: queda como Other.
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware = [CreateDimmHardware(sensors:
+                [
+                    new FakeSensor("Memory Used", "/mem/dimm/0/data/0", InternalSensorType.Other, 8192f)
+                ])]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Empty(live.MemoryTimingSensors);
+    }
+
+    [Fact]
+    public async Task DimmTemperature_InTemperatureSensors()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware = [CreateDimmHardware(sensors:
+                [
+                    Temp("Temperature", "/mem/dimm/0/temperature/0", 45.0f)
+                ])]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        var sensor = Assert.Single(live.TemperatureSensors);
+        Assert.Equal("Memoria", sensor.HardwareType);
+        Assert.Equal(45.0, sensor.ValueCelsius);
+    }
+
+    [Fact]
+    public async Task DimmTemperature_NotInMemoryTimingSensors()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware = [CreateDimmHardware(sensors:
+                [
+                    Temp("Temperature", "/mem/dimm/0/temperature/0", 45.0f)
+                ])]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Empty(live.MemoryTimingSensors);
+    }
+
+    // =====================
+    // B.3.2 - Un solo Refresh con timings
+    // =====================
+
+    private static FakeSession CreateFullDimmSession()
+    {
+        var session = CreateFullSession(out _, out _, out _);
+        session.Hardware = session.Hardware.Append(CreateDimmHardware(sensors:
+        [
+            Timing("tAA (CAS Latency Time)", "/mem/dimm/0/timing/0", 14.0f),
+            Timing("tRCD (RAS to CAS Delay Time)", "/mem/dimm/0/timing/1", 16.0f)
+        ])).ToList();
+
+        return session;
+    }
+
+    [Fact]
+    public async Task CombinedWithTimings_CreateOnce()
+    {
+        var factory = new FakeFactory { Session = CreateFullDimmSession() };
+        var service = CreateService(factory, new FakeDelay());
+
+        await service.GetLiveSnapshotAsync();
+
+        Assert.Equal(1, factory.CreateCount);
+    }
+
+    [Fact]
+    public async Task CombinedWithTimings_RefreshOnce()
+    {
+        var factory = new FakeFactory { Session = CreateFullDimmSession() };
+        var service = CreateService(factory, new FakeDelay());
+
+        await service.GetLiveSnapshotAsync();
+
+        Assert.Equal(1, factory.Session!.RefreshCount);
+    }
+
+    [Fact]
+    public async Task CombinedWithTimings_DisposeOnce()
+    {
+        var factory = new FakeFactory { Session = CreateFullDimmSession() };
+        var service = CreateService(factory, new FakeDelay());
+
+        await service.GetLiveSnapshotAsync();
+
+        Assert.Equal(1, factory.Session!.DisposeCount);
+    }
+
+    [Fact]
+    public async Task CombinedWithTimings_SingleRefresh_AllFamilies()
+    {
+        var factory = new FakeFactory { Session = CreateFullDimmSession() };
+        var service = CreateService(factory, new FakeDelay());
+
+        var live = await service.GetLiveSnapshotAsync();
+
+        Assert.Equal(1, factory.CreateCount);
+        Assert.Equal(1, factory.Session!.RefreshCount);
+        Assert.Equal(1, factory.Session.DisposeCount);
+
+        Assert.Equal(3, live.TemperatureSensors.Count);
+        Assert.Equal(4, live.PerformanceSensors.Count);
+        Assert.Single(live.GpuMemorySensors);
+        Assert.Equal(3, live.BatterySensors.Count);
+        Assert.Equal(2, live.MemoryTimingSensors.Count);
+    }
+
+    // =====================
+    // B.3.2 - Watch live y detección tardía de SPD
+    // =====================
+
+    [Fact]
+    public async Task WatchLiveTiming_ReusesSession()
+    {
+        var factory = new FakeFactory { Session = CreateFullDimmSession() };
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = await TakeLiveWatchSamplesAsync(service, 3);
+
+        Assert.Equal(3, samples.Count);
+        Assert.Equal(1, factory.CreateCount);
+        Assert.Equal(3, factory.Session!.RefreshCount);
+        Assert.All(samples, s => Assert.Equal(2, s.MemoryTimingSensors.Count));
+    }
+
+    [Fact]
+    public async Task WatchLive_IncludesMemoryTimingSensors()
+    {
+        var factory = new FakeFactory { Session = CreateDimmSession(out _, out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = await TakeLiveWatchSamplesAsync(service, 2);
+
+        Assert.All(samples, s => Assert.Equal(2, s.MemoryTimingSensors.Count));
+        Assert.True(samples[0].HasMemoryTimingSensors);
+    }
+
+    [Fact]
+    public async Task TimingLists_IndependentBetweenSamples()
+    {
+        var factory = new FakeFactory { Session = CreateDimmSession(out _, out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = await TakeLiveWatchSamplesAsync(service, 3);
+
+        Assert.NotSame(samples[0].MemoryTimingSensors, samples[1].MemoryTimingSensors);
+        Assert.NotSame(samples[1].MemoryTimingSensors, samples[2].MemoryTimingSensors);
+    }
+
+    [Fact]
+    public async Task NoSpd_NoSpecificError()
+    {
+        var factory = new FakeFactory { Session = CreateCpuSession(out _) };
+
+        var live = await CaptureLive(factory);
+
+        Assert.True(live.IsAvailable);
+        Assert.Empty(live.MemoryTimingSensors);
+        Assert.False(live.HasMemoryTimingSensors);
+        Assert.Empty(live.Errors);
+    }
+
+    [Fact]
+    public async Task NoSpd_IsAvailableTrue()
+    {
+        var factory = new FakeFactory { Session = CreateCpuSession(out _) };
+
+        var live = await CaptureLive(factory);
+
+        Assert.True(live.IsAvailable);
+    }
+
+    [Fact]
+    public async Task LateTimingAppears_InLaterSnapshot_WithoutNewSession()
+    {
+        // Simula la detección tardía interna de LHM (MemoryGroup agrega el DIMM después de Open):
+        // el servicio vuelve a consultar session.Hardware en cada snapshot.
+        var session = new FakeSession
+        {
+            Hardware =
+            [
+                new FakeHardware
+                {
+                    Name = "Intel Core i7-13700K",
+                    Identifier = "/intelcpu/0",
+                    HardwareType = InternalHardwareType.Cpu,
+                    Sensors = [Temp("Package", "/intelcpu/0/temperature/0", 60.0f)]
+                }
+            ]
+        };
+        var factory = new FakeFactory { Session = session };
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = new List<HardwareLiveSnapshot>();
+        await using var enumerator = service.WatchLiveSnapshotsAsync(WatchInterval).GetAsyncEnumerator();
+
+        Assert.True(await enumerator.MoveNextAsync());
+        samples.Add(enumerator.Current);
+        Assert.Empty(samples[0].MemoryTimingSensors);
+
+        // Después del delay fake, LHM "agrega" el DIMM con timings.
+        session.Hardware = session.Hardware.Append(CreateDimmHardware(sensors:
+        [
+            Timing("tAA (CAS Latency Time)", "/mem/dimm/0/timing/0", 14.0f)
+        ])).ToList();
+
+        Assert.True(await enumerator.MoveNextAsync());
+        samples.Add(enumerator.Current);
+
+        Assert.Equal(1, factory.CreateCount);
+        Assert.Equal(2, samples.Count);
+        Assert.Empty(samples[0].MemoryTimingSensors);
+        var timing = Assert.Single(samples[1].MemoryTimingSensors);
+        Assert.Equal("tAA (CAS Latency Time)", timing.SensorName);
+        Assert.Equal(14.0, timing.ValueNanoseconds);
+    }
+
+    [Fact]
+    public async Task RefreshFailure_EmptiesTimingSensors()
+    {
+        var factory = new FakeFactory { Session = CreateDimmSession(out _, out _) };
+        factory.Session!.ThrowOnRefresh = true;
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = await TakeLiveWatchSamplesAsync(service, 1);
+
+        Assert.False(samples[0].IsAvailable);
+        Assert.Empty(samples[0].MemoryTimingSensors);
+    }
+
+    [Fact]
+    public async Task RefreshFailure_ThenSuccess_RecoversTiming()
+    {
+        var factory = new FakeFactory { Session = CreateDimmSession(out _, out _) };
+        factory.Session!.ThrowOnFirstRefresh = true;
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = await TakeLiveWatchSamplesAsync(service, 2);
+
+        Assert.False(samples[0].IsAvailable);
+        Assert.True(samples[1].IsAvailable);
+        Assert.Equal(2, samples[1].MemoryTimingSensors.Count);
+    }
+
+    [Fact]
+    public async Task PartialDimmError_PreservesOtherFamilies()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "DDR4-3200 DIMM",
+                        Identifier = "/mem/dimm/0",
+                        HardwareType = InternalHardwareType.Memory,
+                        ThrowOnSensorsRead = true
+                    },
+                    new FakeHardware
+                    {
+                        Name = "Intel Core i7-13700K",
+                        Identifier = "/intelcpu/0",
+                        HardwareType = InternalHardwareType.Cpu,
+                        Sensors =
+                        [
+                            Temp("Package", "/intelcpu/0/temperature/0", 60.0f),
+                            Load("CPU Total", "/intelcpu/0/load/0", 35.0f)
+                        ]
+                    }
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.True(live.IsAvailable);
+        Assert.NotEmpty(live.Errors);
+        Assert.Single(live.TemperatureSensors);
+        Assert.Single(live.PerformanceSensors);
+        Assert.Empty(live.MemoryTimingSensors);
+    }
+
+    [Fact]
+    public async Task OldTemperatureApis_StillWork_WithTimings()
+    {
+        var factory = new FakeFactory { Session = CreateFullDimmSession() };
+        var service = CreateService(factory, new FakeDelay());
+
+        var snapshot = await service.GetTemperatureSnapshotAsync();
+
+        Assert.True(snapshot.IsAvailable);
+        Assert.Equal(3, snapshot.Sensors.Count);
+        Assert.Equal(1, factory.CreateCount);
+        Assert.Equal(1, factory.Session!.RefreshCount);
+    }
+
+    [Fact]
+    public void LiveSnapshot_NoClXmpExpoHealth()
+    {
+        var snapshotProperties = typeof(HardwareLiveSnapshot).GetProperties().Select(p => p.Name).ToList();
+        var timingProperties = typeof(HardwareMemoryTimingSensor).GetProperties().Select(p => p.Name).ToList();
+
+        Assert.DoesNotContain(snapshotProperties, n => n is "CL" or "XMP" or "EXPO" or "XmpProfile" or
+            "ExpoProfile" or "HealthStatus" or "Severity" or "Recommendation" or "MemoryHealth");
+        Assert.DoesNotContain(timingProperties, n => n is "CL" or "XMP" or "EXPO" or "XmpProfile" or
+            "ExpoProfile" or "HealthStatus" or "Severity" or "Recommendation");
+    }
+
+    [Fact]
+    public async Task Timing_UsesInjectedFactory_NoRealHardwareOrSmbusOrDriver()
+    {
+        // Si el servicio usara la fábrica real, no sería posible simular
+        // timings sin acceso a SMBus/drivers reales.
+        var factory = new FakeFactory { Session = CreateDimmSession(out _, out _) };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Equal(1, factory.CreateCount);
+        Assert.True(live.IsAvailable);
+        Assert.Equal(2, live.MemoryTimingSensors.Count);
+    }
 }

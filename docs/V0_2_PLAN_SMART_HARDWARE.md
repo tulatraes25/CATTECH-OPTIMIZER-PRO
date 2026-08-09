@@ -97,8 +97,8 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 | B.2.3: Telemetría de batería LHM | — | B.2.2 | ✅ Implementado |
 | Fase B.2: CPU/GPU/Batería — backend | 1 semana | LibreHardwareMonitorLib | ✅ Completada |
 | B.3.1: Inventario RAM / módulos / slots WMI-SMBIOS | — | WMI | ✅ Implementado |
-| B.3.2: SPD + timings mediante LibreHardwareMonitor | — | B.3.1 | ⏳ Pendiente |
-| Fase B.3: RAM avanzada | 0.5 semana | LibreHardwareMonitorLib | En curso |
+| B.3.2: SPD + timings mediante LibreHardwareMonitor | — | B.3.1 | ✅ Implementado |
+| Fase B.3: RAM avanzada | 0.5 semana | LibreHardwareMonitorLib | ✅ Completada |
 | Fase B.4: UI Hardware avanzado | 1 semana | Modelos |
 | **Total Fase B** | **3 semanas** | |
 | **Total v0.2** | **7 semanas** | |
@@ -124,7 +124,7 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 - [x] Métricas memoria GPU (B.2.2): SmallData en MB, sin interpretar Used/Free/Total por nombre, sin usage calculado, mismo Refresh
 - [x] Telemetría de batería (B.2.3): Level/Energy/Voltage/Current/Power/TimeSpan con IsBatteryEnabled, mismo Computer/sesión/Refresh; Battery Temperature en TemperatureSensors; cero/una/varias baterías; sin heurísticas ni salud calculada
 - [x] Inventario RAM avanzado (B.3.1): módulos WMI/SMBIOS con slot, fabricante, part number, serial, capacidad, velocidad configurada, tipo DDR/LPDDR verificado contra spec DMTF, data/total width, rank; slots usados/totales
-- [ ] Timings SPD (B.3.2) via LibreHardwareMonitor
+- [x] Timings SPD (B.3.2) via LibreHardwareMonitor: SensorType.Timing de hardware Memory en ns, nombres preservados sin parser, sin CL/ciclos, sin XMP/EXPO, sesión con vista dinámica de hardware (SPD tardío observable), sin correlación WMI↔SPD
 - [ ] Mostrar CPU detallada
 - [ ] Mostrar GPU detallada
 - [ ] Mostrar batería (si aplica)

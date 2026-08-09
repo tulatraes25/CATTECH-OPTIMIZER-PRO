@@ -169,6 +169,13 @@ computer.Accept(new HardwareUpdateVisitor()); // UpdateVisitor no es público en
 - Se consumen `SensorType.Temperature`, `SensorType.Load` y `SensorType.Clock` (B.2.1); Load/Clock solo de hardware CPU/GPU; tipo determinado exclusivamente por `SensorType`, nunca por nombre del sensor
 - Se consume `SensorType.SmallData` (B.2.2) solo de hardware GPU, conservado en MB sin interpretar Used/Free/Total por nombre; sin usage calculado
 - B.2.3 habilita `Computer.IsBatteryEnabled` y consume `SensorType.Level/Energy/Voltage/Current/Power/TimeSpan` solo de hardware Battery (misma Computer/sesión/Refresh); `SensorType.Temperature` de batería entra en la lista de temperaturas con tipo "Batería"; cero/una/varias baterías soportadas; sin heurísticas por nombre ni salud calculada por CATTECH
+- B.3.2 consume `SensorType.Timing` (B.3.2) solo de hardware Memory: valores en nanosegundos conservados tal cual (sin convertir a ciclos ni calcular CL), nombres preservados literalmente, sin parser por nombre, sin XMP/EXPO, sin correlación automática con WMI/SMBIOS. La sesión real expone la vista ACTUAL de `Computer.Hardware` (sin congelar la colección en Create) para permitir observar DIMM que MemoryGroup de LHM agregue tardíamente; esto no es un subsistema de hot-plug de CATTECH
+
+### Auditoría de dependencia SPD (B.3.2)
+- **Verificado en `librehardwaremonitorlib.nuspec` 0.9.6** (grupo net8.0): el acceso SPD/SMBus de LHM usa la dependencia transitiva **RAMSPDToolkit-NDD 1.4.2**, junto con DiskInfoToolkit 1.1.2, HidSharp 2.6.4, Mono.Posix.NETStandard 1.0.0, System.IO.Ports 10.0.3, System.Management 10.0.2 y System.Threading.AccessControl 10.0.3
+- **Confirmado en `project.assets.json`**: RAMSPDToolkit-NDD/1.4.2 ya forma parte del grafo restaurado (dependencia transitiva del paquete ya instalado)
+- CATTECH **no instala ni administra drivers ni componentes adicionales**: solo usa lo que entrega el paquete NuGet; sin UAC automático; si LHM no puede acceder al SPD, degrada a "timings no disponibles"
+- MPL 2.0 del paquete: se respeta la atribución; CATTECH no copia ni modifica código fuente de la librería
 
 ---
 

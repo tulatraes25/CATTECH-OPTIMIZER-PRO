@@ -35,11 +35,7 @@ internal sealed class LibreHardwareMonitorFactory : IHardwareMonitorFactory
         {
             computer.Open();
 
-            var hardware = computer.Hardware
-                .Select(h => (IHardwareNode)new HardwareNodeAdapter(h))
-                .ToList();
-
-            return new LibreHardwareMonitorSession(computer, hardware, Visitor);
+            return new LibreHardwareMonitorSession(computer, Visitor);
         }
         catch
         {
@@ -60,18 +56,22 @@ internal sealed class LibreHardwareMonitorFactory : IHardwareMonitorFactory
 
 /// <summary>
 /// Sesión real sobre Computer de LibreHardwareMonitor. Libera el recurso al cerrarse.
+/// La propiedad Hardware es una VISTA ACTUAL de la colección que mantiene el proveedor:
+/// LHM puede incorporar hardware (ej: DIMM SPD detectado tardíamente por MemoryGroup)
+/// después de Open(); no se congela una lista tomada durante la creación.
+/// Esto no constituye un subsistema de hot-plug general de CATTECH.
 /// </summary>
 internal sealed class LibreHardwareMonitorSession : IHardwareMonitorSession
 {
     private readonly Computer _computer;
     private readonly HardwareUpdateVisitor _visitor;
 
-    public IReadOnlyList<IHardwareNode> Hardware { get; }
+    public IReadOnlyList<IHardwareNode> Hardware =>
+        _computer.Hardware.Select(h => (IHardwareNode)new HardwareNodeAdapter(h)).ToList();
 
-    public LibreHardwareMonitorSession(Computer computer, IReadOnlyList<IHardwareNode> hardware, HardwareUpdateVisitor visitor)
+    public LibreHardwareMonitorSession(Computer computer, HardwareUpdateVisitor visitor)
     {
         _computer = computer;
-        Hardware = hardware;
         _visitor = visitor;
     }
 
@@ -168,6 +168,7 @@ internal sealed class SensorNodeAdapter : ISensorNode
         LibreHardwareMonitor.Hardware.SensorType.Current => InternalSensorType.Current,
         LibreHardwareMonitor.Hardware.SensorType.Power => InternalSensorType.Power,
         LibreHardwareMonitor.Hardware.SensorType.TimeSpan => InternalSensorType.TimeSpan,
+        LibreHardwareMonitor.Hardware.SensorType.Timing => InternalSensorType.Timing,
         _ => InternalSensorType.Other
     };
 

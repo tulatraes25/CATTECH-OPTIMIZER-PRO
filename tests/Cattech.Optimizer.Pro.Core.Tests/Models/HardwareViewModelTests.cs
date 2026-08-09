@@ -617,6 +617,18 @@ public class HardwareViewModelTests
     }
 
     [Fact]
+    public void ViewModel_NoMemoryTimingExposure()
+    {
+        // B.3.2 no agrega timings a la UI: el ViewModel no los expone.
+        var propertyNames = typeof(HardwareViewModel)
+            .GetProperties()
+            .Select(p => p.Name)
+            .ToList();
+
+        Assert.DoesNotContain(propertyNames, n => n == "MemoryTimingSensors");
+    }
+
+    [Fact]
     public async Task UsesInjectedService_NoRealHardware()
     {
         // Si el ViewModel usara LibreHardwareSensorService real, estos datos simulados

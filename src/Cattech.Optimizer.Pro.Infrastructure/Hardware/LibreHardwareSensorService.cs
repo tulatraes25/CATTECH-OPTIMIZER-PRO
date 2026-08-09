@@ -304,6 +304,25 @@ public class LibreHardwareSensorService : IHardwareSensorService
                         }
 
                         break;
+                    case InternalSensorType.Timing:
+                        // Timings SPD: solo hardware Memory. Valores en ns, sin conversión a ciclos.
+                        if (node.HardwareType == InternalHardwareType.Memory)
+                        {
+                            snapshot.MemoryTimingSensors.Add(new HardwareMemoryTimingSensor
+                            {
+                                HardwareName = node.Name,
+                                HardwareIdentifier = node.Identifier,
+                                HardwareType = MapHardwareType(node.HardwareType),
+                                SensorName = sensor.Name,
+                                SensorIdentifier = identifier,
+                                ValueNanoseconds = Normalize(sensor.Value),
+                                MinNanoseconds = Normalize(sensor.Min),
+                                MaxNanoseconds = Normalize(sensor.Max),
+                                Unit = "ns"
+                            });
+                        }
+
+                        break;
                 }
             }
 

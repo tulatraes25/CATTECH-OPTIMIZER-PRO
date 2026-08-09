@@ -284,6 +284,20 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - **Testabilidad**: IWmiMemoryReader + WmiMemorySnapshot + constructores internal en WmiHardwareService; tests con fake reader, sin WMI real
 - **Tolerancia**: módulos parciales conservados; reader fallido → MemoryInfo vacío sin propagar excepción
 - 40 tests nuevos (660 total)
+
+### Added (Timings SPD - Fase B.3.2)
+- **HardwareMemoryTimingSensor** (Core): HardwareName, HardwareIdentifier, HardwareType, SensorName, SensorIdentifier, ValueNanoseconds/MinNanoseconds/MaxNanoseconds nullable, Unit = "ns"
+- **Sin semántica inventada**: no hay CASLatency/CasLatencyCycles/CL/TRCD/TRP/TRAS/TRC/TRFC/TimingProfile/XmpProfile/ExpoProfile; los nombres se conservan literalmente ("tAA (CAS Latency Time)", "tRCD...", etc.)
+- **HardwareLiveSnapshot**: + MemoryTimingSensors, HasMemoryTimingSensors, ValidMemoryTimingSensorCount
+- **InternalSensorType**: + Timing mapeado exclusivamente por SensorType (sin heurística por nombre); SensorType.Data NO se incorpora (queda Other — el inventario RAM ya lo cubre WMI/SMBIOS)
+- **Filtro Memory**: timings solo de hardware Memory; CPU/GPU/Battery Timing se ignoran; Temperature de DIMM sigue en TemperatureSensors (no duplicada)
+- **Valores en ns preservados**: sin conversión a ciclos, sin calcular CL (tAA=14.0 significa 14.0 ns, no CL14), sin redondeo, sin clamps
+- **Vista dinámica de sesión real**: LibreHardwareMonitorSession.Hardware ahora proyecta `_computer.Hardware` en cada consulta (antes: lista congelada en Create) — permite observar DIMM que MemoryGroup agrega tras Open(); no es hot-plug general de CATTECH, sin rescan ni eventos propios
+- **SPD tardío**: sin sleeps/reintentos propios; WatchLive puede incorporar timings en snapshots futuros con CreateCount=1
+- **SPD ausente**: lista vacía sin error específico (RAM defectuosa no se asume); sin UAC, sin instalar drivers — solo el comportamiento de LHM 0.9.6; auditoría de dependencia: RAMSPDToolkit-NDD 1.4.2 ya es transitiva del paquete instalado (verificado en nuspec y project.assets.json)
+- **Mismo Refresh**: CPU/GPU/Battery/MemoryTiming con Create=1, Refresh=1, Dispose=1; fallos vacían las cinco listas y se recuperan; error parcial de DIMM conserva las demás familias
+- **Sin correlación WMI ↔ SPD**: HardwareIdentifier preservado sin matching por slot/part number/serial
+- 39 tests nuevos (699 total)
 - SmartctlAvailability, SmartDiskDevice, SmartctlCommandResult
 - ISmartctlRunner, ISmartDiskService interfaces
 - 32 tests de smartctl + 18 tests de SMART (214 total)

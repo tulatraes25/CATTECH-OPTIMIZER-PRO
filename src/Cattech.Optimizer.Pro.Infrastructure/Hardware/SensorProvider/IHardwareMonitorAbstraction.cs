@@ -30,6 +30,7 @@ internal enum InternalSensorType
     Current,
     Power,
     TimeSpan,
+    Timing,
     Other
 }
 

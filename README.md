@@ -326,7 +326,7 @@ El inventario de memoria RAM se obtiene mediante WMI/SMBIOS (B.3.1):
 - **Topología de slots**: usados (módulos con capacidad válida) y totales (suma de arrays de memoria de sistema)
 - Resúmenes: SpeedMHz solo si todos los módulos válidos coinciden; Type uniforme, "Mixta" o "Desconocida"
 
-Los timings SPD (CAS, TRCD, etc.) se incorporarán en B.3.2 mediante LibreHardwareMonitor.
+**Timings SPD (B.3.2):** los timings que LibreHardwareMonitor expone como `SensorType.Timing` para hardware Memory se capturan en el snapshot live con su unidad real en **nanosegundos** (ej: tAA = 14.0 ns, no CL14): sin conversión a ciclos, sin calcular CL, nombres preservados literalmente, sin XMP/EXPO, sin correlación automática con el inventario WMI. La sesión expone la vista actual del hardware, por lo que un DIMM detectado tardíamente por LHM puede aparecer en snapshots posteriores. Si el equipo o los permisos no permiten leer SPD, los timings simplemente quedan vacíos (no se asume RAM defectuosa). El acceso SPD usa la dependencia transitiva RAMSPDToolkit-NDD del paquete; CATTECH no instala drivers.
 
 ## Informe técnico HTML
 

@@ -185,9 +185,65 @@ public class HardwareBatterySensor
 }
 
 /// <summary>
+/// Timing SPD de memoria (SensorType.Timing) capturado del hardware.
+/// El valor es en nanosegundos tal como lo informa el proveedor: CATTECH
+/// no lo convierte a ciclos ni calcula CL.
+/// </summary>
+public class HardwareMemoryTimingSensor
+{
+    /// <summary>
+    /// Nombre del hardware padre (ej: "DDR4-3200 DIMM").
+    /// </summary>
+    public string HardwareName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Identificador estable del hardware padre (ej: "/mem/dimm/0").
+    /// Se preserva sin correlacionar con WMI.
+    /// </summary>
+    public string HardwareIdentifier { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Tipo del hardware padre (siempre "Memoria" en esta fase).
+    /// </summary>
+    public string HardwareType { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Nombre del timing tal como lo informa el proveedor (ej: "tAA (CAS Latency Time)").
+    /// No se parsea ni interpreta por nombre.
+    /// </summary>
+    public string SensorName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Identificador estable del sensor.
+    /// </summary>
+    public string SensorIdentifier { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Valor en nanosegundos. Null si no informado. Nunca se convierte null en 0.
+    /// </summary>
+    public double? ValueNanoseconds { get; set; }
+
+    /// <summary>
+    /// Valor mínimo en nanosegundos. Null si no disponible.
+    /// </summary>
+    public double? MinNanoseconds { get; set; }
+
+    /// <summary>
+    /// Valor máximo en nanosegundos. Null si no disponible.
+    /// </summary>
+    public double? MaxNanoseconds { get; set; }
+
+    /// <summary>
+    /// Unidad de la métrica (siempre "ns").
+    /// </summary>
+    public string Unit { get; set; } = "ns";
+}
+
+/// <summary>
 /// Captura única de la sesión de hardware: temperaturas + métricas de rendimiento
-/// + memoria GPU + telemetría de batería de un MISMO Refresh (coherentes temporalmente).
-/// Recolecta datos: no interpreta rendimiento, memoria, batería ni salud térmica.
+/// + memoria GPU + telemetría de batería + timings SPD de un MISMO Refresh
+/// (coherentes temporalmente).
+/// Recolecta datos: no interpreta rendimiento, memoria, batería, timings ni salud térmica.
 /// </summary>
 public class HardwareLiveSnapshot
 {
@@ -227,6 +283,11 @@ public class HardwareLiveSnapshot
     public List<HardwareBatterySensor> BatterySensors { get; set; } = new();
 
     /// <summary>
+    /// Timings SPD de memoria (SensorType.Timing) capturados.
+    /// </summary>
+    public List<HardwareMemoryTimingSensor> MemoryTimingSensors { get; set; } = new();
+
+    /// <summary>
     /// Advertencias controladas.
     /// </summary>
     public List<string> Warnings { get; set; } = new();
@@ -257,6 +318,11 @@ public class HardwareLiveSnapshot
     public bool HasBatterySensors => BatterySensors.Count > 0;
 
     /// <summary>
+    /// Si se capturó al menos un timing SPD de memoria.
+    /// </summary>
+    public bool HasMemoryTimingSensors => MemoryTimingSensors.Count > 0;
+
+    /// <summary>
     /// Sensores de temperatura con valor válido (no null).
     /// </summary>
     public int ValidTemperatureSensorCount => TemperatureSensors.Count(s => s.ValueCelsius.HasValue);
@@ -275,4 +341,9 @@ public class HardwareLiveSnapshot
     /// Sensores de batería con valor válido (no null).
     /// </summary>
     public int ValidBatterySensorCount => BatterySensors.Count(s => s.Value.HasValue);
+
+    /// <summary>
+    /// Timings SPD con valor válido (no null).
+    /// </summary>
+    public int ValidMemoryTimingSensorCount => MemoryTimingSensors.Count(s => s.ValueNanoseconds.HasValue);
 }
