@@ -333,6 +333,10 @@ También puede incluir sesiones de self-test Short/Extended persistidas, selecci
 - Espacio libre < 15%: recomendar liberar
 - Muchos programas al inicio: recomendar reducir
 - Temporales > 2 GB: recomendar mantenimiento
+- Estado SMART: crítico → backup prioritario y evaluación de reemplazo; backup recomendado → priorizar respaldo; advertencia → revisar indicadores; no disponible/no determinado → estado no concluyente (no asume salud)
+- Self-tests seleccionados: completado con errores → backup y evaluación; en ejecución → esperar resultado final; no soportado → no determina salud; no iniciado → verificar soporte; abortado/interrumpido/desconocido → resultado no concluyente; última consulta fallida → estado posiblemente desactualizado
+
+Las recomendaciones SMART solo se generan si la sección correspondiente fue incluida, y confían en los estados ya calculados por el análisis (no reinterpretan atributos raw).
 
 Los informes se guardan en `reports/html/Informe_Tecnico_CATTECH_Cliente_YYYYMMDD-HHMMSS.html`.
 

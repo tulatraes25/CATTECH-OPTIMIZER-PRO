@@ -168,6 +168,16 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - **Última consulta fallida**: LastCheckSucceeded=false genera advertencia
 - **Orden**: más reciente → más antigua en el HTML
 - 29 tests nuevos (383 total)
+
+### Added (Recomendaciones SMART/self-test - Fase A.7.2b)
+- **ReportRecommendationEngine extendido**: genera recomendaciones automáticas desde el análisis SMART persistido y los self-tests seleccionados
+- **SMART por estado**: Critical → backup prioritario y evaluación de reemplazo; RequiresBackupRecommendation → backup sin duplicar; Warning → revisar indicadores; NotAvailable/Unknown → estado no concluyente (no asume salud); Good → sin recomendación
+- **Self-test por estado**: CompletedWithError → Critical (backup/evaluación); InProgress/Starting → Info (esperar resultado final); Unsupported → Info (no determina salud); FailedToStart → Warning (sin afirmar falla física); Aborted/Interrupted/Unknown/NotStarted → Info no concluyente; CompletedWithoutError → sin recomendación
+- **Última consulta fallida**: LastCheckSucceeded=false genera Warning de estado posiblemente desactualizado (sin filtrar el error técnico interno)
+- **Fuentes respetadas**: recomendaciones SMART solo si IncludeSmart+SmartAnalysis; self-tests solo si IncludeSmartTests+sesiones seleccionadas
+- **Sin thresholds nuevos**: el engine confía en HealthStatus/RequiresBackupRecommendation/Status; no reinterpreta atributos raw
+- **Etiquetas legibles**: ModelName → DeviceName → Device
+- 35 tests nuevos (418 total)
 - SmartctlAvailability, SmartDiskDevice, SmartctlCommandResult
 - ISmartctlRunner, ISmartDiskService interfaces
 - 32 tests de smartctl + 18 tests de SMART (214 total)

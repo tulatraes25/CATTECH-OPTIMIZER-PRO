@@ -7,6 +7,7 @@ using Cattech.Optimizer.Pro.Core.Models.Startup;
 using Cattech.Optimizer.Pro.Core.Models.Cleanup;
 using Cattech.Optimizer.Pro.Core.Models.RestorePoint;
 using Cattech.Optimizer.Pro.Core.Models.Smart;
+using Cattech.Optimizer.Pro.Infrastructure.Reports;
 
 namespace Cattech.Optimizer.Pro.Core.Tests.Models;
 
@@ -1044,5 +1045,549 @@ public class ReportGenerationTests
     {
         // Tras LoadData, IncludeSmartTests queda false (selección manual intencional)
         Assert.False(new ReportGenerationOptions().IncludeSmartTests);
+    }
+
+    // =====================
+    // Tests Fase A.7.2b - Recomendaciones SMART
+    // =====================
+
+    private static SmartDiskReport CreateDiskReport(string modelName, SmartHealthStatus health,
+        bool requiresBackup = false, long reallocated = 0, int? nvmePercentageUsed = null)
+    {
+        var report = new SmartDiskReport
+        {
+            ModelName = modelName,
+            Device = "/dev/sda",
+            DeviceName = "Disk 0",
+            HealthStatus = health,
+            RequiresBackupRecommendation = requiresBackup,
+            NvmePercentageUsed = nvmePercentageUsed
+        };
+
+        if (reallocated > 0)
+        {
+            report.ImportantAttributes.Add(new SmartAttribute { Id = 5, RawValue = reallocated });
+        }
+
+        return report;
+    }
+
+    private static List<ReportRecommendation> GenerateSmartRecommendations(SmartDiskReport disk)
+    {
+        var options = new ReportGenerationOptions
+        {
+            IncludeSmart = true,
+            SmartAnalysis = new SmartAnalysisResult { Reports = [disk] }
+        };
+        return ReportRecommendationEngine.GenerateRecommendations(options)
+            .Where(r => r.Category.StartsWith("SMART -")).ToList();
+    }
+
+    private static List<ReportRecommendation> GenerateTestRecommendations(params SmartTestSession[] sessions)
+    {
+        var options = new ReportGenerationOptions
+        {
+            IncludeSmartTests = true,
+            SmartTestSessions = sessions.ToList()
+        };
+        return ReportRecommendationEngine.GenerateRecommendations(options)
+            .Where(r => r.Category.StartsWith("Self-Test SMART -")).ToList();
+    }
+
+    [Fact]
+    public void SmartCritical_GeneratesCriticalRecommendation()
+    {
+        var recs = GenerateSmartRecommendations(CreateDiskReport("WD Blue 1TB", SmartHealthStatus.Critical));
+
+        Assert.Single(recs);
+        Assert.Equal("Critical", recs[0].Severity);
+        Assert.Equal("❌", recs[0].Icon);
+        Assert.Contains("WD Blue 1TB", recs[0].Category);
+    }
+
+    [Fact]
+    public void SmartCritical_MessagePrioritizesBackup()
+    {
+        var recs = GenerateSmartRecommendations(CreateDiskReport("WD Blue 1TB", SmartHealthStatus.Critical));
+
+        Assert.Contains("backup", recs[0].Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("reemplazo", recs[0].Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("va a fallar", recs[0].Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RequiresBackupRecommendation_DoesNotDuplicateBackup()
+    {
+        // Critical + RequiresBackupRecommendation => una sola recomendación de backup
+        var recs = GenerateSmartRecommendations(CreateDiskReport("WD Blue 1TB", SmartHealthStatus.Critical, requiresBackup: true));
+
+        Assert.Single(recs);
+    }
+
+    [Fact]
+    public void SmartWarning_GeneratesWarning()
+    {
+        var recs = GenerateSmartRecommendations(CreateDiskReport("Seagate 2TB", SmartHealthStatus.Warning));
+
+        Assert.Single(recs);
+        Assert.Equal("Warning", recs[0].Severity);
+        Assert.Equal("⚠️", recs[0].Icon);
+    }
+
+    [Fact]
+    public void SmartGood_NoRecommendation()
+    {
+        var recs = GenerateSmartRecommendations(CreateDiskReport("Samsung 870 EVO", SmartHealthStatus.Good));
+
+        Assert.Empty(recs);
+    }
+
+    [Fact]
+    public void SmartNotAvailable_GeneratesWarning()
+    {
+        var recs = GenerateSmartRecommendations(CreateDiskReport("Kingston USB", SmartHealthStatus.NotAvailable));
+
+        Assert.Single(recs);
+        Assert.Equal("Warning", recs[0].Severity);
+    }
+
+    [Fact]
+    public void SmartNotAvailable_DoesNotClaimHealthy()
+    {
+        var recs = GenerateSmartRecommendations(CreateDiskReport("Kingston USB", SmartHealthStatus.NotAvailable));
+
+        Assert.Contains("No fue posible obtener un estado SMART concluyente", recs[0].Message);
+        Assert.Contains("no confirma", recs[0].Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void SmartUnknown_GeneratesWarning()
+    {
+        var recs = GenerateSmartRecommendations(CreateDiskReport("Disco 1", SmartHealthStatus.Unknown));
+
+        Assert.Single(recs);
+        Assert.Equal("Warning", recs[0].Severity);
+        Assert.Contains("no pudo determinarse", recs[0].Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void IncludeSmartFalse_NoSmartRecommendations()
+    {
+        var options = new ReportGenerationOptions
+        {
+            IncludeSmart = false,
+            SmartAnalysis = new SmartAnalysisResult
+            {
+                Reports = [CreateDiskReport("WD Blue 1TB", SmartHealthStatus.Critical, requiresBackup: true)]
+            }
+        };
+
+        var recs = ReportRecommendationEngine.GenerateRecommendations(options);
+
+        Assert.DoesNotContain(recs, r => r.Category.StartsWith("SMART -"));
+    }
+
+    [Fact]
+    public void SmartAnalysisNull_NoErrors()
+    {
+        var options = new ReportGenerationOptions
+        {
+            IncludeSmart = true,
+            SmartAnalysis = null
+        };
+
+        var recs = ReportRecommendationEngine.GenerateRecommendations(options);
+
+        Assert.DoesNotContain(recs, r => r.Category.StartsWith("SMART -"));
+    }
+
+    [Fact]
+    public void Good_WithRawAttributes_NotReclassified()
+    {
+        // Sectores reasignados altos pero HealthStatus=Good: el engine confía en HealthStatus
+        var recs = GenerateSmartRecommendations(CreateDiskReport("WD Blue 1TB", SmartHealthStatus.Good, reallocated: 5000));
+
+        Assert.Empty(recs);
+    }
+
+    [Fact]
+    public void NvmeHighPercentageUsed_Good_NotRecomputed()
+    {
+        // PercentageUsed=99 pero HealthStatus=Good: no se recalcula en el engine
+        var recs = GenerateSmartRecommendations(CreateDiskReport("Samsung 980 PRO", SmartHealthStatus.Good, nvmePercentageUsed: 99));
+
+        Assert.Empty(recs);
+    }
+
+    // =====================
+    // Tests Fase A.7.2b - Recomendaciones Self-Test
+    // =====================
+
+    [Fact]
+    public void CompletedWithError_GeneratesCritical()
+    {
+        var recs = GenerateTestRecommendations(
+            CreateTestSession("ERR00001", SmartTestType.Short, SmartTestStatus.CompletedWithError, DateTime.Now));
+
+        Assert.Single(recs);
+        Assert.Equal("Critical", recs[0].Severity);
+        Assert.Equal("❌", recs[0].Icon);
+        Assert.Contains("Samsung SSD 860 EVO", recs[0].Category);
+    }
+
+    [Fact]
+    public void CompletedWithError_MessageRecommendsBackup()
+    {
+        var recs = GenerateTestRecommendations(
+            CreateTestSession("ERR00002", SmartTestType.Short, SmartTestStatus.CompletedWithError, DateTime.Now));
+
+        Assert.Contains("backup", recs[0].Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("evaluar la unidad", recs[0].Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void CompletedWithoutError_NoRecommendation()
+    {
+        var recs = GenerateTestRecommendations(
+            CreateTestSession("OK000001", SmartTestType.Short, SmartTestStatus.CompletedWithoutError, DateTime.Now));
+
+        Assert.Empty(recs);
+    }
+
+    [Fact]
+    public void InProgress_GeneratesInfo()
+    {
+        var recs = GenerateTestRecommendations(
+            CreateTestSession("RUN00001", SmartTestType.Extended, SmartTestStatus.InProgress, DateTime.Now));
+
+        Assert.Single(recs);
+        Assert.Equal("Info", recs[0].Severity);
+        Assert.Contains("Consultar el resultado final", recs[0].Message);
+        Assert.DoesNotContain("backup", recs[0].Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Starting_GeneratesInfo()
+    {
+        var recs = GenerateTestRecommendations(
+            CreateTestSession("STR00001", SmartTestType.Short, SmartTestStatus.Starting, DateTime.Now));
+
+        Assert.Single(recs);
+        Assert.Equal("Info", recs[0].Severity);
+    }
+
+    [Fact]
+    public void Unsupported_GeneratesInfo()
+    {
+        var recs = GenerateTestRecommendations(
+            CreateTestSession("UNS00001", SmartTestType.Short, SmartTestStatus.Unsupported, DateTime.Now));
+
+        Assert.Single(recs);
+        Assert.Equal("Info", recs[0].Severity);
+    }
+
+    [Fact]
+    public void Unsupported_DoesNotClaimHealthy()
+    {
+        var recs = GenerateTestRecommendations(
+            CreateTestSession("UNS00002", SmartTestType.Short, SmartTestStatus.Unsupported, DateTime.Now));
+
+        Assert.Contains("no permite determinar", recs[0].Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("sano", recs[0].Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void FailedToStart_GeneratesWarning()
+    {
+        var recs = GenerateTestRecommendations(
+            CreateTestSession("FAIL0001", SmartTestType.Short, SmartTestStatus.FailedToStart, DateTime.Now));
+
+        Assert.Single(recs);
+        Assert.Equal("Warning", recs[0].Severity);
+        Assert.Equal("⚠️", recs[0].Icon);
+    }
+
+    [Fact]
+    public void FailedToStart_DoesNotClaimPhysicalFailure()
+    {
+        var recs = GenerateTestRecommendations(
+            CreateTestSession("FAIL0002", SmartTestType.Short, SmartTestStatus.FailedToStart, DateTime.Now));
+
+        Assert.Contains("no implica por sí solo", recs[0].Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Aborted_GeneratesInconclusive()
+    {
+        var recs = GenerateTestRecommendations(
+            CreateTestSession("ABR00001", SmartTestType.Short, SmartTestStatus.Aborted, DateTime.Now));
+
+        Assert.Single(recs);
+        Assert.Equal("Info", recs[0].Severity);
+        Assert.Contains("no produjo un resultado concluyente", recs[0].Message);
+        Assert.Contains("Repetir únicamente", recs[0].Message);
+    }
+
+    [Fact]
+    public void Interrupted_GeneratesInconclusive()
+    {
+        var recs = GenerateTestRecommendations(
+            CreateTestSession("INT00001", SmartTestType.Short, SmartTestStatus.Interrupted, DateTime.Now));
+
+        Assert.Single(recs);
+        Assert.Equal("Info", recs[0].Severity);
+        Assert.Contains("no produjo un resultado concluyente", recs[0].Message);
+    }
+
+    [Fact]
+    public void UnknownTest_GeneratesInconclusive()
+    {
+        var recs = GenerateTestRecommendations(
+            CreateTestSession("UNK00001", SmartTestType.Short, SmartTestStatus.Unknown, DateTime.Now));
+
+        Assert.Single(recs);
+        Assert.Equal("Info", recs[0].Severity);
+        Assert.Contains("no produjo un resultado concluyente", recs[0].Message);
+    }
+
+    [Fact]
+    public void NotStarted_GeneratesInconclusive()
+    {
+        var recs = GenerateTestRecommendations(
+            CreateTestSession("NST00001", SmartTestType.Short, SmartTestStatus.NotStarted, DateTime.Now));
+
+        Assert.Single(recs);
+        Assert.Equal("Info", recs[0].Severity);
+        Assert.Contains("no produjo un resultado concluyente", recs[0].Message);
+    }
+
+    [Fact]
+    public void LastCheckFailed_GeneratesCheckWarning()
+    {
+        var recs = GenerateTestRecommendations(
+            new SmartTestSession
+            {
+                Id = "CHK00001",
+                Device = "/dev/sda",
+                ModelName = "Samsung SSD 860 EVO",
+                TestType = SmartTestType.Short,
+                Status = SmartTestStatus.CompletedWithoutError,
+                RequestedAt = DateTime.Now,
+                LastCheckSucceeded = false,
+                LastCheckError = "timeout",
+                LastCheckedAt = DateTime.Now
+            });
+
+        var warning = Assert.Single(recs);
+        Assert.Equal("Warning", warning.Severity);
+        Assert.Contains("no pudo completarse", warning.Message);
+        Assert.DoesNotContain("timeout", warning.Message);
+    }
+
+    [Fact]
+    public void LastCheckSucceeded_NoCheckWarning()
+    {
+        var recs = GenerateTestRecommendations(
+            new SmartTestSession
+            {
+                Id = "CHK00002",
+                Device = "/dev/sda",
+                ModelName = "Samsung SSD 860 EVO",
+                TestType = SmartTestType.Short,
+                Status = SmartTestStatus.CompletedWithoutError,
+                RequestedAt = DateTime.Now,
+                LastCheckSucceeded = true,
+                LastCheckedAt = DateTime.Now
+            });
+
+        Assert.Empty(recs);
+    }
+
+    [Fact]
+    public void IncludeSmartTestsFalse_NoSelfTestRecommendations()
+    {
+        var options = new ReportGenerationOptions
+        {
+            IncludeSmartTests = false,
+            SmartTestSessions =
+            [
+                CreateTestSession("NOINC001", SmartTestType.Short, SmartTestStatus.CompletedWithError, DateTime.Now)
+            ]
+        };
+
+        var recs = ReportRecommendationEngine.GenerateRecommendations(options);
+
+        Assert.DoesNotContain(recs, r => r.Category.StartsWith("Self-Test SMART -"));
+    }
+
+    [Fact]
+    public void EmptySessions_NoRecommendations()
+    {
+        var options = new ReportGenerationOptions
+        {
+            IncludeSmartTests = true,
+            SmartTestSessions = []
+        };
+
+        var recs = ReportRecommendationEngine.GenerateRecommendations(options);
+
+        Assert.DoesNotContain(recs, r => r.Category.StartsWith("Self-Test SMART -"));
+    }
+
+    [Fact]
+    public void ErrorsCount_NotCritical_WhenCompletedWithoutError()
+    {
+        // Errores operativos (timeout) no convierten el resultado en crítico
+        var recs = GenerateTestRecommendations(
+            new SmartTestSession
+            {
+                Id = "OP001001",
+                Device = "/dev/sda",
+                ModelName = "Samsung SSD 860 EVO",
+                TestType = SmartTestType.Short,
+                Status = SmartTestStatus.CompletedWithoutError,
+                RequestedAt = DateTime.Now,
+                Errors = ["timeout", "access denied"]
+            });
+
+        Assert.Empty(recs);
+    }
+
+    [Fact]
+    public void WarningsCount_DoesNotChangeSeverity()
+    {
+        var recs = GenerateTestRecommendations(
+            new SmartTestSession
+            {
+                Id = "OP002001",
+                Device = "/dev/sda",
+                ModelName = "Samsung SSD 860 EVO",
+                TestType = SmartTestType.Short,
+                Status = SmartTestStatus.FailedToStart,
+                RequestedAt = DateTime.Now,
+                Warnings = ["fallo de lectura de log"]
+            });
+
+        Assert.Single(recs);
+        Assert.Equal("Warning", recs[0].Severity);
+    }
+
+    [Fact]
+    public void ShortAndExtended_WithError_Handled()
+    {
+        var recs = GenerateTestRecommendations(
+            CreateTestSession("SHO00001", SmartTestType.Short, SmartTestStatus.CompletedWithError, DateTime.Now),
+            CreateTestSession("EXT00001", SmartTestType.Extended, SmartTestStatus.CompletedWithError, DateTime.Now));
+
+        Assert.Equal(2, recs.Count);
+        Assert.All(recs, r => Assert.Equal("Critical", r.Severity));
+        Assert.Contains(recs, r => r.Message.Contains("self-test corto", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(recs, r => r.Message.Contains("self-test extendido", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task HtmlEscapesMaliciousModelName()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "cattech-tests-" + Guid.NewGuid().ToString("N"));
+
+        try
+        {
+            var service = new HtmlReportService(tempDir);
+            var options = new ReportGenerationOptions
+            {
+                IncludeClient = false,
+                IncludeDiagnostic = false,
+                IncludeStartup = false,
+                IncludeCleanup = false,
+                IncludeVisualOptimization = false,
+                IncludeRestorePoint = false,
+                IncludeSmart = true,
+                IncludeSmartTests = true,
+                SmartAnalysis = new SmartAnalysisResult
+                {
+                    Reports =
+                    [
+                        CreateDiskReport("<script>alert(1)</script>", SmartHealthStatus.Critical, requiresBackup: true)
+                    ]
+                },
+                SmartTestSessions =
+                [
+                    new SmartTestSession
+                    {
+                        Id = "XSS00001",
+                        Device = "/dev/sda",
+                        ModelName = "<script>alert(2)</script>",
+                        TestType = SmartTestType.Short,
+                        Status = SmartTestStatus.CompletedWithError,
+                        RequestedAt = DateTime.Now
+                    }
+                ]
+            };
+
+            var path = await service.GenerateHtmlReportAsync(options);
+            var html = await File.ReadAllTextAsync(path);
+
+            Assert.DoesNotContain("<script>alert", html);
+            Assert.Contains("&lt;script&gt;", html);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, true);
+            }
+        }
+    }
+
+    [Fact]
+    public void ExistingRecommendations_StillWork()
+    {
+        var options = new ReportGenerationOptions
+        {
+            DiagnosticReport = new DiagnosticReport
+            {
+                RamTotalGB = 4,
+                DiskType = "SSD",
+                DiskFreePercent = 50,
+                OsName = "Windows 11",
+                Startup = new StartupInfo { TotalCount = 3 },
+                TempFiles = new TempFilesInfo { TotalSizeBytes = 500_000_000 }
+            },
+            IncludeSmart = true,
+            SmartAnalysis = new SmartAnalysisResult
+            {
+                Reports = [CreateDiskReport("WD Blue 1TB", SmartHealthStatus.Critical, requiresBackup: true)]
+            }
+        };
+
+        var recs = ReportRecommendationEngine.GenerateRecommendations(options);
+
+        Assert.Contains(recs, r => r.Category == "Memoria RAM" && r.Severity == "Warning");
+        Assert.Contains(recs, r => r.Category.StartsWith("SMART -") && r.Severity == "Critical");
+    }
+
+    [Fact]
+    public void GenerateRecommendations_WithPersistedData_DoesNotRequireSmartctl()
+    {
+        // El engine solo procesa modelos persistidos: funciona aunque smartctl no esté disponible
+        var options = new ReportGenerationOptions
+        {
+            IncludeSmart = true,
+            IncludeSmartTests = true,
+            SmartAnalysis = new SmartAnalysisResult
+            {
+                SmartctlAvailable = false,
+                Reports = [CreateDiskReport("WD Blue 1TB", SmartHealthStatus.Warning)]
+            },
+            SmartTestSessions =
+            [
+                CreateTestSession("NOCLK001", SmartTestType.Short, SmartTestStatus.CompletedWithError, DateTime.Now)
+            ]
+        };
+
+        var recs = ReportRecommendationEngine.GenerateRecommendations(options);
+
+        Assert.Contains(recs, r => r.Category.StartsWith("SMART -"));
+        Assert.Contains(recs, r => r.Category.StartsWith("Self-Test SMART -"));
     }
 }
