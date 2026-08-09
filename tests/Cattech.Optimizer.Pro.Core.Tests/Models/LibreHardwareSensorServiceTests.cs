@@ -2555,4 +2555,955 @@ public class LibreHardwareSensorServiceTests
         Assert.True(live.IsAvailable);
         Assert.Equal(2, live.GpuMemorySensors.Count);
     }
+
+    // =====================
+    // Tests Fase B.2.3 - Telemetría de batería
+    // =====================
+
+    private static FakeSensor Level(string name, string identifier, float? value = null,
+        float? min = null, float? max = null) =>
+        new(name, identifier, InternalSensorType.Level, value, min, max);
+
+    private static FakeSensor Energy(string name, string identifier, float? value = null,
+        float? min = null, float? max = null) =>
+        new(name, identifier, InternalSensorType.Energy, value, min, max);
+
+    private static FakeSensor Voltage(string name, string identifier, float? value = null,
+        float? min = null, float? max = null) =>
+        new(name, identifier, InternalSensorType.Voltage, value, min, max);
+
+    private static FakeSensor Current(string name, string identifier, float? value = null,
+        float? min = null, float? max = null) =>
+        new(name, identifier, InternalSensorType.Current, value, min, max);
+
+    private static FakeSensor Power(string name, string identifier, float? value = null,
+        float? min = null, float? max = null) =>
+        new(name, identifier, InternalSensorType.Power, value, min, max);
+
+    private static FakeSensor BatteryTime(string name, string identifier, float? value = null,
+        float? min = null, float? max = null) =>
+        new(name, identifier, InternalSensorType.TimeSpan, value, min, max);
+
+    private static FakeHardware CreateBatteryHardware(string name = "Standard Battery",
+        string identifier = "/battery/0", IReadOnlyList<ISensorNode>? sensors = null)
+    {
+        return new FakeHardware
+        {
+            Name = name,
+            Identifier = identifier,
+            HardwareType = InternalHardwareType.Battery,
+            Sensors = sensors ?? new List<ISensorNode>()
+        };
+    }
+
+    private static FakeSession CreateFullSession(out FakeSensor batteryLevel, out FakeSensor batteryEnergy,
+        out FakeSensor batteryPower)
+    {
+        batteryLevel = Level("Charge Level", "/battery/0/level/0", 85f);
+        batteryEnergy = Energy("Remaining Capacity", "/battery/0/energy/0", 45000f);
+        batteryPower = Power("Discharge Rate", "/battery/0/power/0", 12.5f);
+
+        return new FakeSession
+        {
+            Hardware =
+            [
+                new FakeHardware
+                {
+                    Name = "Intel Core i7-13700K",
+                    Identifier = "/intelcpu/0",
+                    HardwareType = InternalHardwareType.Cpu,
+                    Sensors =
+                    [
+                        Temp("Package", "/intelcpu/0/temperature/0", 60.0f),
+                        Load("CPU Total", "/intelcpu/0/load/0", 35.0f),
+                        Clock("CPU Clock", "/intelcpu/0/clock/0", 3700f)
+                    ]
+                },
+                new FakeHardware
+                {
+                    Name = "NVIDIA GeForce RTX 4070",
+                    Identifier = "/gpu-nvidia/0",
+                    HardwareType = InternalHardwareType.Gpu,
+                    Sensors =
+                    [
+                        Temp("GPU Core", "/gpu-nvidia/0/temperature/0", 55.0f),
+                        Load("GPU Core", "/gpu-nvidia/0/load/0", 42.0f),
+                        Clock("GPU Clock", "/gpu-nvidia/0/clock/0", 1905f),
+                        SmallData("GPU Memory Used", "/gpu-nvidia/0/small-data/0", 6144f)
+                    ]
+                },
+                new FakeHardware
+                {
+                    Name = "Standard Battery",
+                    Identifier = "/battery/0",
+                    HardwareType = InternalHardwareType.Battery,
+                    Sensors =
+                    [
+                        Temp("Battery Temperature", "/battery/0/temperature/0", 32.0f),
+                        batteryLevel,
+                        batteryEnergy,
+                        batteryPower
+                    ]
+                }
+            ]
+        };
+    }
+
+    [Fact]
+    public async Task BatteryHardwareType_MapsToBateria()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware = [CreateBatteryHardware(sensors: [Level("Charge Level", "/battery/0/level/0", 85f)])]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        var sensor = Assert.Single(live.BatterySensors);
+        Assert.Equal("Batería", sensor.HardwareType);
+        Assert.Equal("Standard Battery", sensor.HardwareName);
+    }
+
+    [Fact]
+    public void IsBatteryEnabled_Activated()
+    {
+        Assert.True(LibreHardwareMonitorFactory.EnabledHardwareConfiguration.Battery);
+        Assert.True(LibreHardwareMonitorFactory.EnabledHardwareConfiguration.Cpu);
+        Assert.True(LibreHardwareMonitorFactory.EnabledHardwareConfiguration.Gpu);
+        Assert.True(LibreHardwareMonitorFactory.EnabledHardwareConfiguration.Memory);
+        Assert.True(LibreHardwareMonitorFactory.EnabledHardwareConfiguration.Motherboard);
+        Assert.True(LibreHardwareMonitorFactory.EnabledHardwareConfiguration.Storage);
+        Assert.True(LibreHardwareMonitorFactory.EnabledHardwareConfiguration.Controller);
+    }
+
+    [Fact]
+    public async Task BatteryLevel_Captured()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware = [CreateBatteryHardware(sensors: [Level("Charge Level", "/battery/0/level/0", 85f)])]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        var sensor = Assert.Single(live.BatterySensors);
+        Assert.Equal(HardwareBatteryMetricType.Level, sensor.MetricType);
+        Assert.Equal(85.0, sensor.Value);
+        Assert.True(live.HasBatterySensors);
+        Assert.Equal(1, live.ValidBatterySensorCount);
+    }
+
+    [Fact]
+    public async Task BatteryEnergy_Captured()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware = [CreateBatteryHardware(sensors: [Energy("Remaining Capacity", "/battery/0/energy/0", 45000f)])]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        var sensor = Assert.Single(live.BatterySensors);
+        Assert.Equal(HardwareBatteryMetricType.Energy, sensor.MetricType);
+        Assert.Equal(45000.0, sensor.Value);
+    }
+
+    [Fact]
+    public async Task BatteryVoltage_Captured()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware = [CreateBatteryHardware(sensors: [Voltage("Voltage", "/battery/0/voltage/0", 11.4f)])]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        var sensor = Assert.Single(live.BatterySensors);
+        Assert.Equal(HardwareBatteryMetricType.Voltage, sensor.MetricType);
+        Assert.Equal(11.4, (double)sensor.Value!, 2);
+    }
+
+    [Fact]
+    public async Task BatteryCurrent_Captured()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware = [CreateBatteryHardware(sensors: [Current("Current", "/battery/0/current/0", 1.8f)])]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        var sensor = Assert.Single(live.BatterySensors);
+        Assert.Equal(HardwareBatteryMetricType.Current, sensor.MetricType);
+        Assert.Equal(1.8, (double)sensor.Value!, 2);
+    }
+
+    [Fact]
+    public async Task BatteryPower_Captured()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware = [CreateBatteryHardware(sensors: [Power("Charge Rate", "/battery/0/power/0", 25.0f)])]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        var sensor = Assert.Single(live.BatterySensors);
+        Assert.Equal(HardwareBatteryMetricType.Power, sensor.MetricType);
+        Assert.Equal(25.0, sensor.Value);
+    }
+
+    [Fact]
+    public async Task BatteryTimeSpan_Captured()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware = [CreateBatteryHardware(sensors: [BatteryTime("Remaining Time (Estimated)", "/battery/0/timespan/0", 7200f)])]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        var sensor = Assert.Single(live.BatterySensors);
+        Assert.Equal(HardwareBatteryMetricType.TimeSpan, sensor.MetricType);
+        Assert.Equal(7200.0, sensor.Value);
+    }
+
+    [Fact]
+    public async Task BatteryTemperature_InTemperatureSensors()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware = [CreateBatteryHardware(sensors: [Temp("Battery Temperature", "/battery/0/temperature/0", 32.0f)])]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        var sensor = Assert.Single(live.TemperatureSensors);
+        Assert.Equal("Batería", sensor.HardwareType);
+        Assert.Equal(32.0, sensor.ValueCelsius);
+    }
+
+    [Fact]
+    public async Task BatteryTemperature_NotInBatterySensors()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware = [CreateBatteryHardware(sensors: [Temp("Battery Temperature", "/battery/0/temperature/0", 32.0f)])]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Empty(live.BatterySensors);
+    }
+
+    [Fact]
+    public async Task BatteryLevel_UnitPercent()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware = [CreateBatteryHardware(sensors: [Level("Charge Level", "/battery/0/level/0", 85f)])]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Equal("%", Assert.Single(live.BatterySensors).Unit);
+    }
+
+    [Fact]
+    public async Task BatteryEnergy_UnitMWh()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware = [CreateBatteryHardware(sensors: [Energy("Remaining Capacity", "/battery/0/energy/0", 45000f)])]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Equal("mWh", Assert.Single(live.BatterySensors).Unit);
+    }
+
+    [Fact]
+    public async Task BatteryVoltage_UnitV()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware = [CreateBatteryHardware(sensors: [Voltage("Voltage", "/battery/0/voltage/0", 11.4f)])]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Equal("V", Assert.Single(live.BatterySensors).Unit);
+    }
+
+    [Fact]
+    public async Task BatteryCurrent_UnitA()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware = [CreateBatteryHardware(sensors: [Current("Current", "/battery/0/current/0", 1.8f)])]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Equal("A", Assert.Single(live.BatterySensors).Unit);
+    }
+
+    [Fact]
+    public async Task BatteryPower_UnitW()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware = [CreateBatteryHardware(sensors: [Power("Charge Rate", "/battery/0/power/0", 25.0f)])]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Equal("W", Assert.Single(live.BatterySensors).Unit);
+    }
+
+    [Fact]
+    public async Task BatteryTimeSpan_UnitSeconds()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware = [CreateBatteryHardware(sensors: [BatteryTime("Remaining Time (Estimated)", "/battery/0/timespan/0", 7200f)])]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Equal("s", Assert.Single(live.BatterySensors).Unit);
+    }
+
+    [Fact]
+    public async Task BatteryValues_PreservedNoConversion()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware = [CreateBatteryHardware(sensors:
+                [
+                    Energy("Remaining Capacity", "/battery/0/energy/0", 45000f),
+                    BatteryTime("Remaining Time (Estimated)", "/battery/0/timespan/0", 7200f)
+                ])]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Equal(45000.0, live.BatterySensors.Single(s => s.MetricType == HardwareBatteryMetricType.Energy).Value);
+        Assert.Equal(7200.0, live.BatterySensors.Single(s => s.MetricType == HardwareBatteryMetricType.TimeSpan).Value);
+    }
+
+    [Fact]
+    public async Task BatteryValueNull_StaysNull()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware = [CreateBatteryHardware(sensors: [Level("Charge Level", "/battery/0/level/0", null)])]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Null(Assert.Single(live.BatterySensors).Value);
+        Assert.Equal(0, live.ValidBatterySensorCount);
+    }
+
+    [Fact]
+    public async Task BatteryNaN_NormalizedToNull()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware = [CreateBatteryHardware(sensors: [Level("Charge Level", "/battery/0/level/0", float.NaN)])]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Null(Assert.Single(live.BatterySensors).Value);
+    }
+
+    [Fact]
+    public async Task BatteryInfinity_NormalizedToNull()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware = [CreateBatteryHardware(sensors: [Power("Charge Rate", "/battery/0/power/0", float.PositiveInfinity)])]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Null(Assert.Single(live.BatterySensors).Value);
+    }
+
+    [Fact]
+    public async Task CpuPower_NotInBatterySensors()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "Intel Core i7-13700K",
+                        Identifier = "/intelcpu/0",
+                        HardwareType = InternalHardwareType.Cpu,
+                        Sensors = [Power("CPU Package Power", "/intelcpu/0/power/0", 45.0f)]
+                    }
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Empty(live.BatterySensors);
+    }
+
+    [Fact]
+    public async Task MotherboardVoltage_NotInBatterySensors()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "ASUS ROG STRIX Z790",
+                        Identifier = "/mb/0",
+                        HardwareType = InternalHardwareType.Motherboard,
+                        Sensors = [Voltage("CPU VCore", "/mb/0/voltage/0", 1.2f)]
+                    }
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Empty(live.BatterySensors);
+    }
+
+    [Fact]
+    public async Task GpuLevel_NotInBatterySensors()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "NVIDIA GeForce RTX 4070",
+                        Identifier = "/gpu-nvidia/0",
+                        HardwareType = InternalHardwareType.Gpu,
+                        Sensors = [Level("GPU Level", "/gpu-nvidia/0/level/0", 50.0f)]
+                    }
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Empty(live.BatterySensors);
+    }
+
+    [Fact]
+    public async Task MultipleMetrics_SingleBattery_Preserved()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware = [CreateBatteryHardware(sensors:
+                [
+                    Level("Charge Level", "/battery/0/level/0", 85f),
+                    Energy("Remaining Capacity", "/battery/0/energy/0", 45000f),
+                    Voltage("Voltage", "/battery/0/voltage/0", 11.4f),
+                    Current("Current", "/battery/0/current/0", 1.8f),
+                    Power("Discharge Rate", "/battery/0/power/0", 12.5f),
+                    BatteryTime("Remaining Time (Estimated)", "/battery/0/timespan/0", 7200f)
+                ])]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Equal(6, live.BatterySensors.Count);
+        Assert.Equal(6, live.ValidBatterySensorCount);
+        Assert.Contains(live.BatterySensors, s => s.MetricType == HardwareBatteryMetricType.Level);
+        Assert.Contains(live.BatterySensors, s => s.MetricType == HardwareBatteryMetricType.Energy);
+        Assert.Contains(live.BatterySensors, s => s.MetricType == HardwareBatteryMetricType.Voltage);
+        Assert.Contains(live.BatterySensors, s => s.MetricType == HardwareBatteryMetricType.Current);
+        Assert.Contains(live.BatterySensors, s => s.MetricType == HardwareBatteryMetricType.Power);
+        Assert.Contains(live.BatterySensors, s => s.MetricType == HardwareBatteryMetricType.TimeSpan);
+    }
+
+    [Fact]
+    public async Task TwoBatteries_Coexist()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    CreateBatteryHardware("Battery A", "/battery/0",
+                        [Level("Charge Level", "/battery/0/level/0", 80f)]),
+                    CreateBatteryHardware("Battery B", "/battery/1",
+                        [Level("Charge Level", "/battery/1/level/0", 60f)])
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Equal(2, live.BatterySensors.Count);
+        Assert.Contains(live.BatterySensors, s => s.HardwareName == "Battery A" && s.Value == 80.0);
+        Assert.Contains(live.BatterySensors, s => s.HardwareName == "Battery B" && s.Value == 60.0);
+    }
+
+    [Fact]
+    public async Task SameSensorName_DifferentIdentifier_BatteryPreserved()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    CreateBatteryHardware("Battery A", "/battery/0",
+                        [Level("Charge Level", "/battery/0/level/0", 80f)]),
+                    CreateBatteryHardware("Battery B", "/battery/1",
+                        [Level("Charge Level", "/battery/1/level/0", 60f)])
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Equal(2, live.BatterySensors.Count);
+        Assert.All(live.BatterySensors, s => Assert.Equal("Charge Level", s.SensorName));
+    }
+
+    [Fact]
+    public async Task DuplicateIdentifier_BatteryDeduped()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware = [CreateBatteryHardware(sensors:
+                [
+                    Level("Charge Level", "/battery/0/level/0", 80f),
+                    Level("Charge Level", "/battery/0/level/0", 90f)
+                ])]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Equal(80.0, Assert.Single(live.BatterySensors).Value);
+    }
+
+    [Fact]
+    public void ChargeLevelName_NoChargePercentSemantics()
+    {
+        var sensor = new HardwareBatterySensor { SensorName = "Charge Level", Value = 85 };
+        var properties = typeof(HardwareBatterySensor).GetProperties().Select(p => p.Name).ToList();
+
+        Assert.Equal("Charge Level", sensor.SensorName);
+        Assert.Equal(85.0, sensor.Value);
+        Assert.DoesNotContain(properties, n => n is "ChargePercent" or "IsCharging");
+    }
+
+    [Fact]
+    public void DegradationLevelName_NoHealthSemantics()
+    {
+        var sensor = new HardwareBatterySensor { SensorName = "Degradation Level", Value = 20 };
+        var properties = typeof(HardwareBatterySensor).GetProperties().Select(p => p.Name).ToList();
+
+        Assert.Equal("Degradation Level", sensor.SensorName);
+        Assert.Equal(20.0, sensor.Value);
+        Assert.DoesNotContain(properties, n => n is "HealthStatus" or "HealthPercent" or "NeedsReplacement" or "IsHealthy");
+    }
+
+    [Fact]
+    public void DischargeRateName_NoIsDischarging()
+    {
+        var sensor = new HardwareBatterySensor { SensorName = "Discharge Rate", Value = 12.5 };
+
+        Assert.Equal("Discharge Rate", sensor.SensorName);
+        Assert.Equal(12.5, sensor.Value);
+    }
+
+    [Fact]
+    public void ChargeRateName_NoIsCharging()
+    {
+        var sensor = new HardwareBatterySensor { SensorName = "Charge Rate", Value = 25.0 };
+
+        Assert.Equal("Charge Rate", sensor.SensorName);
+        Assert.Equal(25.0, sensor.Value);
+    }
+
+    [Fact]
+    public void BatteryModel_NoHealthPercentCalculated()
+    {
+        var batteryProperties = typeof(HardwareBatterySensor).GetProperties().Select(p => p.Name).ToList();
+        var snapshotProperties = typeof(HardwareLiveSnapshot).GetProperties().Select(p => p.Name).ToList();
+
+        Assert.DoesNotContain(batteryProperties, n => n is "HealthPercent" or "DegradationPercent" or
+            "DesignedCapacity" or "FullChargedCapacity" or "RemainingCapacity");
+        Assert.DoesNotContain(snapshotProperties, n => n is "IsCharging" or "IsDischarging" or
+            "HealthStatus" or "Severity" or "Recommendation");
+    }
+
+    // =====================
+    // B.2.3 - Un solo Refresh con batería
+    // =====================
+
+    [Fact]
+    public async Task FullCombinedCapture_CreateOnce()
+    {
+        var factory = new FakeFactory { Session = CreateFullSession(out _, out _, out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        await service.GetLiveSnapshotAsync();
+
+        Assert.Equal(1, factory.CreateCount);
+    }
+
+    [Fact]
+    public async Task FullCombinedCapture_RefreshOnce()
+    {
+        var factory = new FakeFactory { Session = CreateFullSession(out _, out _, out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        await service.GetLiveSnapshotAsync();
+
+        Assert.Equal(1, factory.Session!.RefreshCount);
+    }
+
+    [Fact]
+    public async Task FullCombinedCapture_DisposeOnce()
+    {
+        var factory = new FakeFactory { Session = CreateFullSession(out _, out _, out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        await service.GetLiveSnapshotAsync();
+
+        Assert.Equal(1, factory.Session!.DisposeCount);
+    }
+
+    [Fact]
+    public async Task FullCombinedCapture_SingleRefresh_AllMetricFamilies()
+    {
+        var factory = new FakeFactory { Session = CreateFullSession(out _, out _, out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        var live = await service.GetLiveSnapshotAsync();
+
+        Assert.Equal(1, factory.CreateCount);
+        Assert.Equal(1, factory.Session!.RefreshCount);
+        Assert.Equal(1, factory.Session.DisposeCount);
+
+        // CPU temp + load + clock; GPU temp + load + clock + smalldata; battery temp + level + energy + power
+        Assert.Equal(3, live.TemperatureSensors.Count);
+        Assert.Equal(4, live.PerformanceSensors.Count);
+        Assert.Single(live.GpuMemorySensors);
+        Assert.Equal(3, live.BatterySensors.Count);
+        Assert.Contains(live.TemperatureSensors, s => s.HardwareType == "Batería");
+    }
+
+    // =====================
+    // B.2.3 - Watch live con batería
+    // =====================
+
+    [Fact]
+    public async Task WatchLiveBattery_ReusesSession()
+    {
+        var factory = new FakeFactory { Session = CreateFullSession(out _, out _, out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = await TakeLiveWatchSamplesAsync(service, 3);
+
+        Assert.Equal(3, samples.Count);
+        Assert.Equal(1, factory.CreateCount);
+        Assert.Equal(3, factory.Session!.RefreshCount);
+        Assert.All(samples, s => Assert.Equal(3, s.BatterySensors.Count));
+    }
+
+    [Fact]
+    public async Task BatteryValues_ChangeAcrossSamples()
+    {
+        var factory = new FakeFactory { Session = CreateFullSession(out var level, out _, out _) };
+        var current = 85f;
+        factory.Session!.OnRefresh = () => { current -= 2; level.Value = current; };
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = await TakeLiveWatchSamplesAsync(service, 2);
+
+        Assert.Equal(83.0, samples[0].BatterySensors.Single(s => s.MetricType == HardwareBatteryMetricType.Level).Value);
+        Assert.Equal(81.0, samples[1].BatterySensors.Single(s => s.MetricType == HardwareBatteryMetricType.Level).Value);
+    }
+
+    [Fact]
+    public async Task BatteryLists_IndependentBetweenSamples()
+    {
+        var factory = new FakeFactory { Session = CreateFullSession(out _, out _, out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = await TakeLiveWatchSamplesAsync(service, 3);
+
+        Assert.NotSame(samples[0].BatterySensors, samples[1].BatterySensors);
+        Assert.NotSame(samples[1].BatterySensors, samples[2].BatterySensors);
+    }
+
+    [Fact]
+    public async Task RefreshFailure_EmptiesAllFourLists()
+    {
+        var factory = new FakeFactory { Session = CreateFullSession(out _, out _, out _) };
+        factory.Session!.ThrowOnRefresh = true;
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = await TakeLiveWatchSamplesAsync(service, 1);
+
+        Assert.False(samples[0].IsAvailable);
+        Assert.Empty(samples[0].TemperatureSensors);
+        Assert.Empty(samples[0].PerformanceSensors);
+        Assert.Empty(samples[0].GpuMemorySensors);
+        Assert.Empty(samples[0].BatterySensors);
+    }
+
+    [Fact]
+    public async Task RefreshFailure_ThenSuccess_RecoversAllFour()
+    {
+        var factory = new FakeFactory { Session = CreateFullSession(out _, out _, out _) };
+        factory.Session!.ThrowOnFirstRefresh = true;
+        var service = CreateService(factory, new FakeDelay());
+
+        var samples = await TakeLiveWatchSamplesAsync(service, 2);
+
+        Assert.False(samples[0].IsAvailable);
+        Assert.True(samples[1].IsAvailable);
+        Assert.Equal(3, samples[1].TemperatureSensors.Count);
+        Assert.Equal(4, samples[1].PerformanceSensors.Count);
+        Assert.Single(samples[1].GpuMemorySensors);
+        Assert.Equal(3, samples[1].BatterySensors.Count);
+    }
+
+    [Fact]
+    public async Task BatteryNodeError_PreservesCpuGpu()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "Standard Battery",
+                        Identifier = "/battery/0",
+                        HardwareType = InternalHardwareType.Battery,
+                        ThrowOnSensorsRead = true
+                    },
+                    new FakeHardware
+                    {
+                        Name = "Intel Core i7-13700K",
+                        Identifier = "/intelcpu/0",
+                        HardwareType = InternalHardwareType.Cpu,
+                        Sensors =
+                        [
+                            Temp("Package", "/intelcpu/0/temperature/0", 60.0f),
+                            Load("CPU Total", "/intelcpu/0/load/0", 35.0f)
+                        ]
+                    }
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.True(live.IsAvailable);
+        Assert.NotEmpty(live.Errors);
+        Assert.Single(live.TemperatureSensors);
+        Assert.Single(live.PerformanceSensors);
+        Assert.Empty(live.BatterySensors);
+    }
+
+    [Fact]
+    public async Task CpuNodeError_PreservesBattery()
+    {
+        var factory = new FakeFactory
+        {
+            Session = new FakeSession
+            {
+                Hardware =
+                [
+                    new FakeHardware
+                    {
+                        Name = "Intel Core i7-13700K",
+                        Identifier = "/intelcpu/0",
+                        HardwareType = InternalHardwareType.Cpu,
+                        ThrowOnSensorsRead = true
+                    },
+                    CreateBatteryHardware(sensors: [Level("Charge Level", "/battery/0/level/0", 85f)])
+                ]
+            }
+        };
+
+        var live = await CaptureLive(factory);
+
+        Assert.True(live.IsAvailable);
+        Assert.NotEmpty(live.Errors);
+        Assert.Empty(live.TemperatureSensors);
+        var sensor = Assert.Single(live.BatterySensors);
+        Assert.Equal("Batería", sensor.HardwareType);
+    }
+
+    // =====================
+    // B.2.3 - PC sin batería
+    // =====================
+
+    [Fact]
+    public async Task NoBattery_IsAvailableTrue()
+    {
+        var factory = new FakeFactory { Session = CreateCpuSession(out _) };
+
+        var live = await CaptureLive(factory);
+
+        Assert.True(live.IsAvailable);
+    }
+
+    [Fact]
+    public async Task NoBattery_EmptyBatterySensors()
+    {
+        var factory = new FakeFactory { Session = CreateCpuSession(out _) };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Empty(live.BatterySensors);
+        Assert.False(live.HasBatterySensors);
+    }
+
+    [Fact]
+    public async Task NoBattery_NoSpecificError()
+    {
+        var factory = new FakeFactory { Session = CreateCpuSession(out _) };
+
+        var live = await CaptureLive(factory);
+
+        Assert.DoesNotContain(live.Errors, e => e.Contains("bater", StringComparison.OrdinalIgnoreCase));
+        Assert.Empty(live.Errors);
+    }
+
+    // =====================
+    // B.2.3 - Compatibilidad con API de temperatura
+    // =====================
+
+    [Fact]
+    public async Task OldTemperatureApis_StillWork_WithBattery()
+    {
+        var factory = new FakeFactory { Session = CreateFullSession(out _, out _, out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        var snapshot = await service.GetTemperatureSnapshotAsync();
+
+        Assert.True(snapshot.IsAvailable);
+        Assert.Equal(3, snapshot.Sensors.Count);
+        Assert.Equal(1, factory.CreateCount);
+        Assert.Equal(1, factory.Session!.RefreshCount);
+    }
+
+    [Fact]
+    public async Task BatteryTemperature_InTemperatureApi()
+    {
+        var factory = new FakeFactory { Session = CreateFullSession(out _, out _, out _) };
+        var service = CreateService(factory, new FakeDelay());
+
+        var snapshot = await service.GetTemperatureSnapshotAsync();
+
+        Assert.Contains(snapshot.Sensors, s => s.SensorName == "Battery Temperature");
+    }
+
+    [Fact]
+    public void LiveSnapshot_NoBatteryHealthProperties()
+    {
+        var snapshotProperties = typeof(HardwareLiveSnapshot).GetProperties().Select(p => p.Name).ToList();
+        var batteryProperties = typeof(HardwareBatterySensor).GetProperties().Select(p => p.Name).ToList();
+
+        Assert.DoesNotContain(snapshotProperties, n => n is "IsCharging" or "IsDischarging" or
+            "HealthStatus" or "Severity" or "Recommendation");
+        Assert.DoesNotContain(batteryProperties, n => n is "IsCharging" or "IsDischarging" or
+            "HealthStatus" or "Severity" or "Recommendation" or "NeedsReplacement");
+    }
+
+    [Fact]
+    public async Task Battery_UsesInjectedFactory_NoRealHardware()
+    {
+        var factory = new FakeFactory { Session = CreateFullSession(out _, out _, out _) };
+
+        var live = await CaptureLive(factory);
+
+        Assert.Equal(1, factory.CreateCount);
+        Assert.True(live.IsAvailable);
+        Assert.Equal(3, live.BatterySensors.Count);
+    }
 }

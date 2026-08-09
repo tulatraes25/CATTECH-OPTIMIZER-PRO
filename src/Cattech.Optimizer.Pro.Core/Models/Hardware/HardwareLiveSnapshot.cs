@@ -112,9 +112,82 @@ public class HardwareGpuMemorySensor
 }
 
 /// <summary>
+/// Tipo de métrica de batería CATTECH (no expone enums de LibreHardwareMonitor).
+/// </summary>
+public enum HardwareBatteryMetricType
+{
+    /// <summary>Nivel (porcentaje).</summary>
+    Level,
+    /// <summary>Energía (mWh).</summary>
+    Energy,
+    /// <summary>Voltaje (V).</summary>
+    Voltage,
+    /// <summary>Corriente (A).</summary>
+    Current,
+    /// <summary>Potencia (W).</summary>
+    Power,
+    /// <summary>Tiempo (segundos).</summary>
+    TimeSpan
+}
+
+/// <summary>
+/// Sensor de telemetría de batería capturado del hardware.
+/// CATTECH conserva lo que informa el proveedor: no interpreta carga/descarga,
+/// salud ni degradación.
+/// </summary>
+public class HardwareBatterySensor
+{
+    /// <summary>
+    /// Nombre del hardware padre (ej: "Standard Battery").
+    /// </summary>
+    public string HardwareName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Tipo del hardware padre (siempre "Batería" en esta fase).
+    /// </summary>
+    public string HardwareType { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Nombre del sensor tal como lo informa el proveedor (ej: "Charge Level").
+    /// No se interpreta por nombre.
+    /// </summary>
+    public string SensorName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Identificador estable del sensor.
+    /// </summary>
+    public string SensorIdentifier { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Tipo de métrica (Level, Energy, Voltage, Current, Power, TimeSpan).
+    /// </summary>
+    public HardwareBatteryMetricType MetricType { get; set; }
+
+    /// <summary>
+    /// Valor actual. Null si el sensor no informó valor. Nunca se convierte null en 0.
+    /// </summary>
+    public double? Value { get; set; }
+
+    /// <summary>
+    /// Valor mínimo observado. Null si no está disponible.
+    /// </summary>
+    public double? Min { get; set; }
+
+    /// <summary>
+    /// Valor máximo observado. Null si no está disponible.
+    /// </summary>
+    public double? Max { get; set; }
+
+    /// <summary>
+    /// Unidad de la métrica ("%", "mWh", "V", "A", "W" o "s").
+    /// </summary>
+    public string Unit { get; set; } = string.Empty;
+}
+
+/// <summary>
 /// Captura única de la sesión de hardware: temperaturas + métricas de rendimiento
-/// + memoria GPU de un MISMO Refresh (coherentes temporalmente).
-/// Recolecta datos: no interpreta rendimiento, memoria ni salud térmica.
+/// + memoria GPU + telemetría de batería de un MISMO Refresh (coherentes temporalmente).
+/// Recolecta datos: no interpreta rendimiento, memoria, batería ni salud térmica.
 /// </summary>
 public class HardwareLiveSnapshot
 {
@@ -149,6 +222,11 @@ public class HardwareLiveSnapshot
     public List<HardwareGpuMemorySensor> GpuMemorySensors { get; set; } = new();
 
     /// <summary>
+    /// Sensores de telemetría de batería (no térmicos) capturados.
+    /// </summary>
+    public List<HardwareBatterySensor> BatterySensors { get; set; } = new();
+
+    /// <summary>
     /// Advertencias controladas.
     /// </summary>
     public List<string> Warnings { get; set; } = new();
@@ -174,6 +252,11 @@ public class HardwareLiveSnapshot
     public bool HasGpuMemorySensors => GpuMemorySensors.Count > 0;
 
     /// <summary>
+    /// Si se capturó al menos un sensor de batería.
+    /// </summary>
+    public bool HasBatterySensors => BatterySensors.Count > 0;
+
+    /// <summary>
     /// Sensores de temperatura con valor válido (no null).
     /// </summary>
     public int ValidTemperatureSensorCount => TemperatureSensors.Count(s => s.ValueCelsius.HasValue);
@@ -187,4 +270,9 @@ public class HardwareLiveSnapshot
     /// Sensores de memoria de GPU con valor válido (no null).
     /// </summary>
     public int ValidGpuMemorySensorCount => GpuMemorySensors.Count(s => s.ValueMB.HasValue);
+
+    /// <summary>
+    /// Sensores de batería con valor válido (no null).
+    /// </summary>
+    public int ValidBatterySensorCount => BatterySensors.Count(s => s.Value.HasValue);
 }

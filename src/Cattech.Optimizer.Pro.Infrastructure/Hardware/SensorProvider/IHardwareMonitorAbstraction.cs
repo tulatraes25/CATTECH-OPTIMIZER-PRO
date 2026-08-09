@@ -11,6 +11,7 @@ internal enum InternalHardwareType
     Motherboard,
     Storage,
     Controller,
+    Battery,
     Other
 }
 
@@ -23,6 +24,12 @@ internal enum InternalSensorType
     Load,
     Clock,
     SmallData,
+    Level,
+    Energy,
+    Voltage,
+    Current,
+    Power,
+    TimeSpan,
     Other
 }
 

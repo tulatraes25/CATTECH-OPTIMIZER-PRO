@@ -253,6 +253,23 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - **Nombres preservados literalmente**: "GPU Memory Used/Free/Total", "D3D Dedicated/Shared Memory Used" se capturan sin lógica especial
 - **Stream**: WatchLiveSnapshotsAsync incluye GpuMemorySensors por muestra; fallos vacían las tres listas y se recuperan
 - 37 tests nuevos (569 total)
+
+### Added (Telemetría de batería - Fase B.2.3)
+- **Batería habilitada en LHM**: IsBatteryEnabled=true en la MISMA instancia Computer (configuración testeable: EnabledHardwareConfiguration)
+- **HardwareBatteryMetricType** (Core): Level, Energy, Voltage, Current, Power, TimeSpan
+- **HardwareBatterySensor** (Core): HardwareName, HardwareType, SensorName, SensorIdentifier, MetricType, Value/Min/Max nullable, Unit
+- **Unidades**: Level → "%", Energy → "mWh", Voltage → "V", Current → "A", Power → "W", TimeSpan → "s" (sin conversiones mWh→Wh ni s→min)
+- **HardwareLiveSnapshot**: + BatterySensors, HasBatterySensors, ValidBatterySensorCount
+- **InternalSensorType**: + Level/Energy/Voltage/Current/Power/TimeSpan (mapeo exclusivo por SensorType)
+- **Filtro Battery**: telemetría no térmica solo de hardware Battery; CPU Power, GPU Power, Motherboard Voltage se ignoran
+- **Battery Temperature**: entra en TemperatureSensors con HardwareType "Batería" (no se duplica en BatterySensors)
+- **Mismo Refresh**: CPU temp/load/clock + GPU temp/load/clock/smalldata + battery temp/level/energy/power con Create=1, Refresh=1, Dispose=1
+- **Sin heurísticas por nombre**: "Charge Level", "Degradation Level", "Charge/Discharge Rate", "Remaining Time" preservados literalmente; sin IsCharging/IsDischarging/salud/degradación calculada
+- **Multibatería**: dos baterías coexisten (dedup por SensorIdentifier, nunca por SensorName)
+- **PC sin batería**: IsAvailable=true, BatterySensors vacío, sin error (caso normal desktop)
+- **Stream**: WatchLiveSnapshotsAsync incluye BatterySensors por muestra; fallos vacían las CUATRO listas y se recuperan
+- **Backend B.2 completado**: adquisición de datos de CPU/GPU/Batería cerrada; presentación avanzada en B.4
+- 51 tests nuevos (620 total)
 - SmartctlAvailability, SmartDiskDevice, SmartctlCommandResult
 - ISmartctlRunner, ISmartDiskService interfaces
 - 32 tests de smartctl + 18 tests de SMART (214 total)

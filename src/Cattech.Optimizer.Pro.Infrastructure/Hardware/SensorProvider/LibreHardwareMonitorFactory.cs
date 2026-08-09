@@ -10,16 +10,25 @@ internal sealed class LibreHardwareMonitorFactory : IHardwareMonitorFactory
 {
     private static readonly HardwareUpdateVisitor Visitor = new();
 
+    /// <summary>
+    /// Hardware habilitado en la instancia Computer (testeable sin abrir hardware real).
+    /// </summary>
+    internal static readonly (bool Cpu, bool Gpu, bool Memory, bool Motherboard, bool Storage,
+        bool Controller, bool Battery) EnabledHardwareConfiguration =
+        (Cpu: true, Gpu: true, Memory: true, Motherboard: true, Storage: true, Controller: true, Battery: true);
+
     public IHardwareMonitorSession Create()
     {
+        var enabled = EnabledHardwareConfiguration;
         var computer = new Computer
         {
-            IsCpuEnabled = true,
-            IsGpuEnabled = true,
-            IsMemoryEnabled = true,
-            IsMotherboardEnabled = true,
-            IsStorageEnabled = true,
-            IsControllerEnabled = true
+            IsCpuEnabled = enabled.Cpu,
+            IsGpuEnabled = enabled.Gpu,
+            IsMemoryEnabled = enabled.Memory,
+            IsMotherboardEnabled = enabled.Motherboard,
+            IsStorageEnabled = enabled.Storage,
+            IsControllerEnabled = enabled.Controller,
+            IsBatteryEnabled = enabled.Battery
         };
 
         try
@@ -104,6 +113,7 @@ internal sealed class HardwareNodeAdapter : IHardwareNode
         LibreHardwareMonitor.Hardware.HardwareType.Memory => InternalHardwareType.Memory,
         LibreHardwareMonitor.Hardware.HardwareType.Motherboard => InternalHardwareType.Motherboard,
         LibreHardwareMonitor.Hardware.HardwareType.Storage => InternalHardwareType.Storage,
+        LibreHardwareMonitor.Hardware.HardwareType.Battery => InternalHardwareType.Battery,
         _ => InternalHardwareType.Other
     };
 }
@@ -152,6 +162,12 @@ internal sealed class SensorNodeAdapter : ISensorNode
         LibreHardwareMonitor.Hardware.SensorType.Load => InternalSensorType.Load,
         LibreHardwareMonitor.Hardware.SensorType.Clock => InternalSensorType.Clock,
         LibreHardwareMonitor.Hardware.SensorType.SmallData => InternalSensorType.SmallData,
+        LibreHardwareMonitor.Hardware.SensorType.Level => InternalSensorType.Level,
+        LibreHardwareMonitor.Hardware.SensorType.Energy => InternalSensorType.Energy,
+        LibreHardwareMonitor.Hardware.SensorType.Voltage => InternalSensorType.Voltage,
+        LibreHardwareMonitor.Hardware.SensorType.Current => InternalSensorType.Current,
+        LibreHardwareMonitor.Hardware.SensorType.Power => InternalSensorType.Power,
+        LibreHardwareMonitor.Hardware.SensorType.TimeSpan => InternalSensorType.TimeSpan,
         _ => InternalSensorType.Other
     };
 

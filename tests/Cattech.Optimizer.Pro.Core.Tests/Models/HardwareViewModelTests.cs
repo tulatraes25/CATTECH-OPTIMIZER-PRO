@@ -605,6 +605,18 @@ public class HardwareViewModelTests
     }
 
     [Fact]
+    public void ViewModel_NoBatteryExposure()
+    {
+        // B.2.3 no agrega batería a la UI: el ViewModel no la expone.
+        var propertyNames = typeof(HardwareViewModel)
+            .GetProperties()
+            .Select(p => p.Name)
+            .ToList();
+
+        Assert.DoesNotContain(propertyNames, n => n == "BatterySensors");
+    }
+
+    [Fact]
     public async Task UsesInjectedService_NoRealHardware()
     {
         // Si el ViewModel usara LibreHardwareSensorService real, estos datos simulados

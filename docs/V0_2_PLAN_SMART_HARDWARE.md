@@ -44,6 +44,8 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 8. RAM avanzada (velocidad, timings, slots)
 
 > B.1.3 creó la UI inicial exclusiva de temperaturas; B.4 ampliará esa misma pantalla con todo el hardware avanzado (CPU/GPU/batería/RAM/placa).
+>
+> La adquisición de datos de B.2 (CPU/GPU/Batería) está completa. Su presentación avanzada se implementará en B.4.
 
 ---
 
@@ -92,7 +94,8 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 | Fase B.1: Sensores temperatura | 1 semana | LibreHardwareMonitorLib | ✅ Completada |
 | B.2.1: Fundación métricas dinámicas CPU/GPU (Load + Clock) | — | B.1.2 | ✅ Implementado |
 | B.2.2: Métricas memoria GPU (SmallData) | — | B.2.1 | ✅ Implementado |
-| Fase B.2: CPU/GPU/Batería | 1 semana | LibreHardwareMonitorLib | En curso |
+| B.2.3: Telemetría de batería LHM | — | B.2.2 | ✅ Implementado |
+| Fase B.2: CPU/GPU/Batería — backend | 1 semana | LibreHardwareMonitorLib | ✅ Completada |
 | Fase B.3: RAM avanzada | 0.5 semana | LibreHardwareMonitorLib |
 | Fase B.4: UI Hardware avanzado | 1 semana | Modelos |
 | **Total Fase B** | **3 semanas** | |
@@ -117,6 +120,7 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 - [x] UI inicial de temperaturas en tiempo real (B.1.3): Actualizar una vez, Iniciar/Detener monitoreo, N/D, sin thresholds
 - [x] Fundación métricas dinámicas CPU/GPU (B.2.1): Load + Clock con un solo Refresh, sin UI
 - [x] Métricas memoria GPU (B.2.2): SmallData en MB, sin interpretar Used/Free/Total por nombre, sin usage calculado, mismo Refresh
+- [x] Telemetría de batería (B.2.3): Level/Energy/Voltage/Current/Power/TimeSpan con IsBatteryEnabled, mismo Computer/sesión/Refresh; Battery Temperature en TemperatureSensors; cero/una/varias baterías; sin heurísticas ni salud calculada
 - [ ] Mostrar CPU detallada
 - [ ] Mostrar GPU detallada
 - [ ] Mostrar batería (si aplica)

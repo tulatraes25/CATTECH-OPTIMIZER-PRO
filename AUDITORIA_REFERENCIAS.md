@@ -168,6 +168,7 @@ computer.Accept(new HardwareUpdateVisitor()); // UpdateVisitor no es público en
 - El enum `HardwareType` de 0.9.6 no incluye `Controller`; `IsControllerEnabled` sigue disponible en `Computer`
 - Se consumen `SensorType.Temperature`, `SensorType.Load` y `SensorType.Clock` (B.2.1); Load/Clock solo de hardware CPU/GPU; tipo determinado exclusivamente por `SensorType`, nunca por nombre del sensor
 - Se consume `SensorType.SmallData` (B.2.2) solo de hardware GPU, conservado en MB sin interpretar Used/Free/Total por nombre; sin usage calculado
+- B.2.3 habilita `Computer.IsBatteryEnabled` y consume `SensorType.Level/Energy/Voltage/Current/Power/TimeSpan` solo de hardware Battery (misma Computer/sesión/Refresh); `SensorType.Temperature` de batería entra en la lista de temperaturas con tipo "Batería"; cero/una/varias baterías soportadas; sin heurísticas por nombre ni salud calculada por CATTECH
 
 ---
 

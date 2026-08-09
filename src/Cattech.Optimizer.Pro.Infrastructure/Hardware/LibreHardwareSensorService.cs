@@ -278,6 +278,32 @@ public class LibreHardwareSensorService : IHardwareSensorService
                         }
 
                         break;
+
+                    case InternalSensorType.Level:
+                    case InternalSensorType.Energy:
+                    case InternalSensorType.Voltage:
+                    case InternalSensorType.Current:
+                    case InternalSensorType.Power:
+                    case InternalSensorType.TimeSpan:
+                        // Telemetría de batería no térmica: solo hardware Battery.
+                        if (node.HardwareType == InternalHardwareType.Battery)
+                        {
+                            var metricType = MapBatteryMetricType(sensor.SensorType);
+                            snapshot.BatterySensors.Add(new HardwareBatterySensor
+                            {
+                                HardwareName = node.Name,
+                                HardwareType = MapHardwareType(node.HardwareType),
+                                SensorName = sensor.Name,
+                                SensorIdentifier = identifier,
+                                MetricType = metricType,
+                                Value = Normalize(sensor.Value),
+                                Min = Normalize(sensor.Min),
+                                Max = Normalize(sensor.Max),
+                                Unit = MapBatteryUnit(metricType)
+                            });
+                        }
+
+                        break;
                 }
             }
 
@@ -341,7 +367,30 @@ public class LibreHardwareSensorService : IHardwareSensorService
         InternalHardwareType.Motherboard => "Placa Madre",
         InternalHardwareType.Storage => "Almacenamiento",
         InternalHardwareType.Controller => "Controlador",
+        InternalHardwareType.Battery => "Batería",
         _ => "Otro"
+    };
+
+    private static HardwareBatteryMetricType MapBatteryMetricType(InternalSensorType type) => type switch
+    {
+        InternalSensorType.Level => HardwareBatteryMetricType.Level,
+        InternalSensorType.Energy => HardwareBatteryMetricType.Energy,
+        InternalSensorType.Voltage => HardwareBatteryMetricType.Voltage,
+        InternalSensorType.Current => HardwareBatteryMetricType.Current,
+        InternalSensorType.Power => HardwareBatteryMetricType.Power,
+        InternalSensorType.TimeSpan => HardwareBatteryMetricType.TimeSpan,
+        _ => throw new ArgumentOutOfRangeException(nameof(type))
+    };
+
+    private static string MapBatteryUnit(HardwareBatteryMetricType type) => type switch
+    {
+        HardwareBatteryMetricType.Level => "%",
+        HardwareBatteryMetricType.Energy => "mWh",
+        HardwareBatteryMetricType.Voltage => "V",
+        HardwareBatteryMetricType.Current => "A",
+        HardwareBatteryMetricType.Power => "W",
+        HardwareBatteryMetricType.TimeSpan => "s",
+        _ => string.Empty
     };
 
     private static double? Normalize(float? value)
