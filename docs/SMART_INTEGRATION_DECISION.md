@@ -273,3 +273,37 @@ smartctl -l selftest -j -d sat /dev/sda    # consulta de estado
 ```
 
 `ApproximateDiskType` (HDD/SSD/NVMe/USB) es clasificación visual CATTECH y NUNCA se usa como argumento -d. `SmartctlDeviceType` se persiste en SmartDiskReport y SmartTestSession; reportes/sesiones legacy sin tipo usan autodetección.
+
+---
+
+## Estabilización v0.2 - S.2: Semántica de salud SMART
+
+### Dos categorías de señales
+
+**SEÑALES DEL ESTÁNDAR/PROVEEDOR (fuente principal):**
+
+- `smart_status.passed` (Good solo con passed=true; passed=false → Critical; ausente → Unknown, nunca Good)
+- VALUE/THRESH normalizados (THRESH aplica al valor NORMALIZADO, nunca a RawValue)
+- `when_failed` ("now"/"past") y `flags.prefailure` estructurado
+- NVMe `critical_warning` (numérico; != 0 → Critical)
+- NVMe `available_spare_threshold`
+- smartctl exit bits 3-7 (bit3/4 → Critical; bit5/6/7 → Warning)
+
+**POLÍTICAS CATTECH (conservadoras, NO umbrales universales del estándar):**
+
+- ID 5 reallocated: >10 Critical, >0 Warning
+- ID 197 pending: >5 Critical, >0 Warning
+- ID 198 offline uncorrectable: >5 Critical, >0 Warning
+- Temperatura: >65 °C Critical, >55 °C Warning (solo diagnóstico SMART de discos)
+- NVMe percentage_used >= 80 → Warning temprana de endurance (100% NO es Critical por sí solo)
+
+### Reglas clave
+
+- **Good requiere evidencia positiva**: nunca por default; sin smart_status → Unknown
+- **RawValue nunca se compara con THRESH**; fallback correcto: VALUE <= THRESH (prefailure → Critical, usage → Warning); Worst <= THRESH histórico → Warning como máximo
+- **CRC ID 199 → warning de interfaz**: revisar cableado/conexión; nunca Critical solo por contador raw; no activa backup
+- **Atributos SSD vendor-specific (173/175/176/177/231/233)**: sin thresholds raw universales; Info salvo when_failed/threshold normalizado
+- **Temperatura**: `temperature.current` (protocolo); el raw del ID 194 puede ser empaquetado y no se usa
+- **NVMe**: objeto principal `nvme_smart_health_information_log`; critical_warning numérico; media_errors >0 → Critical con backup; unsafe_shutdowns solo informativo
+- **RequiresBackupRecommendation** solo por señales críticas reales (no por CRC, logs bits 6/7, percentage, spare, unsafe shutdowns)
+- **Errores técnicos** (JSON parcial, parsing) no convierten la salud física en Critical; HealthStatus=Unknown en análisis no concluyente

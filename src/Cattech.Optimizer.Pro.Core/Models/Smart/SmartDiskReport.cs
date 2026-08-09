@@ -48,14 +48,20 @@ public class SmartAttribute
     /// <summary>Peor valor registrado.</summary>
     public int Worst { get; set; }
 
-    /// <summary>Umbral de fallo.</summary>
+    /// <summary>Umbral de fallo (aplica al valor NORMALIZADO, no al raw).</summary>
     public int Threshold { get; set; }
 
-    /// <summary>Cuándo falló (si aplica).</summary>
+    /// <summary>Cuándo falló (ej: "now", "past"). Vacío si no falló.</summary>
     public string WhenFailed { get; set; } = string.Empty;
 
     /// <summary>Flags del atributo.</summary>
     public string Flags { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Si el atributo es de tipo pre-fail (flags.prefailure, estructurado).
+    /// NO se deduce del string de flags.
+    /// </summary>
+    public bool IsPrefailure { get; set; }
 
     /// <summary>Severidad calculada.</summary>
     public SmartSeverity Severity { get; set; }
@@ -115,11 +121,18 @@ public class SmartDiskReport
     /// <summary>Ciclos de encendido/apagado.</summary>
     public long PowerCycleCount { get; set; }
 
-    /// <summary>Si el self-assessment de salud pasó.</summary>
-    public bool OverallHealthPassed { get; set; }
+    /// <summary>
+    /// Si el self-assessment de salud pasó.
+    /// true → smartctl informó PASSED explícitamente.
+    /// false → smartctl informó FAILED explícitamente.
+    /// null → no disponible/no pudo determinarse (NO equivale a false).
+    /// </summary>
+    public bool? OverallHealthPassed { get; set; }
 
-    /// <summary>Estado de salud general.</summary>
-    public SmartHealthStatus HealthStatus { get; set; }
+    /// <summary>
+    /// Estado de salud general. Default Unknown: nunca se asume Good sin análisis.
+    /// </summary>
+    public SmartHealthStatus HealthStatus { get; set; } = SmartHealthStatus.Unknown;
 
     /// <summary>Resumen de estado en texto legible.</summary>
     public string HealthSummary { get; set; } = string.Empty;
@@ -160,6 +173,12 @@ public class SmartDiskReport
 
     /// <summary>NVMe: espacio de repuesto disponible.</summary>
     public int? NvmeAvailableSpare { get; set; }
+
+    /// <summary>NVMe: umbral de espacio de repuesto.</summary>
+    public int? NvmeAvailableSpareThreshold { get; set; }
+
+    /// <summary>NVMe: critical_warning numérico (bitmask).</summary>
+    public int? NvmeCriticalWarning { get; set; }
 
     /// <summary>NVMe: errores de medios.</summary>
     public long? NvmeMediaErrors { get; set; }

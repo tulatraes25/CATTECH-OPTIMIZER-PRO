@@ -225,11 +225,11 @@ public class SmartDiskService : ISmartDiskService
             };
         }
 
-        // Parsear JSON. Los bits 3-7 (hallazgos de salud/log) NO descartan la salida.
-        // Si el bit 2 está activo pero hay JSON parcial, el parser lo marca
-        // como análisis parcial/no concluyente.
+        // Parsear JSON. Los bits 3-7 (hallazgos de salud/log) NO descartan la salida
+        // y se entregan SIEMPRE al parser (ExitCode >= 0) para la política de salud.
+        // El bit 2 activo con JSON parcial lo marca el parser como análisis no concluyente.
         return SmartctlParser.ParseSmartJson(result.StandardOutput, device, smartctlVersion,
-            result.HasSmartCommandFailure ? result.ExitFlags : (SmartctlExitFlags?)null);
+            result.ExitCode >= 0 ? result.ExitFlags : (SmartctlExitFlags?)null);
     }
 
     private void EnsureDirectoryExists()

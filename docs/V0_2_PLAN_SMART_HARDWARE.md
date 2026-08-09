@@ -105,7 +105,7 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 | Fase B.4: UI Hardware avanzado | 1 semana | Modelos | ✅ Completada |
 | **Fase B: Hardware avanzado** | **3 semanas** | | ✅ Completada |
 | S.1: Exit status + transporte smartctl | — | — | ✅ Implementado |
-| S.2: Semántica de salud SMART / atributos | — | — | ⏳ Pendiente |
+| S.2: Semántica de salud SMART / atributos | — | — | ✅ Implementado |
 | S.3: Release gate / criterios de aceptación | — | — | ⏳ Pendiente |
 | **Total Fase B** | **3 semanas** | |
 | **Total v0.2** | **7 semanas** | |
@@ -155,5 +155,5 @@ Pendiente: estabilización final v0.2 y revisión de release.
 
 ### Estabilización v0.2
 - [x] S.1 Exit status + transporte smartctl: bitmask de 8 bits (SmartctlExitFlags), bits 0-2 operativos vs 3-7 hallazgos; JSON exit_status numérico; -d TYPE preservado en análisis/self-tests/consulta; SmartctlDeviceType persistido en reportes/sesiones; ApproximateDiskType nunca se usa como transporte; legacy sin tipo → autodetección
-- [ ] S.2 Semántica de salud SMART / atributos (thresholds, reglas Good/Warning/Critical, heurísticas NVMe)
+- [x] S.2 Semántica de salud SMART / atributos: HealthStatus default Unknown; OverallHealthPassed nullable (Good solo con evidencia positiva); eliminada RawValue vs THRESH; when_failed/prefailure/VALUE-THRESH como señales del estándar; política ATA por ID con crítico primero (5/197/198); CRC 199 → warning de interfaz sin backup; SSD vendor-specific sin thresholds raw; temperatura vía temperature.current; NVMe _log + critical_warning numérico + spare threshold + percentage_used (100% no es Critical) + media_errors Critical + unsafe_shutdowns informativo; exit bits 3-7 como evidencia; backup solo por señales críticas reales
 - [ ] S.3 Release gate / criterios de aceptación

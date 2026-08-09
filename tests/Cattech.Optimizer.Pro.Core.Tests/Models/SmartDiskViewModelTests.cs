@@ -261,10 +261,10 @@ public class SmartDiskViewModelTests
             IsAnalysisSuccessful = false
         };
 
-        // No disponible no es igual a sano
+        // No disponible no es igual a sano: la evaluación nunca se realizó (null)
         Assert.Equal(SmartHealthStatus.NotAvailable, report.HealthStatus);
         Assert.False(report.IsAnalysisSuccessful);
-        Assert.False(report.OverallHealthPassed);
+        Assert.Null(report.OverallHealthPassed);
     }
 
     [Fact]

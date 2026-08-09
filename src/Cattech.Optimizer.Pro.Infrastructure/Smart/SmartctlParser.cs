@@ -248,7 +248,7 @@ public static class SmartctlParser
             // Extraer información del dispositivo
             ExtractDeviceInfo(root, report);
 
-            // Extraer estado de salud
+            // Extraer estado de salud (OverallHealthPassed nullable; la política decide el estado)
             ExtractHealthStatus(root, report);
 
             // Extraer atributos importantes
@@ -260,15 +260,14 @@ public static class SmartctlParser
             // Extraer contadores
             ExtractCounters(root, report);
 
-            // Calcular estado general
-            CalculateOverallHealth(report);
-
             report.IsAnalysisSuccessful = true;
 
-            // Bit 2 (SmartCommandOrChecksumError) con JSON parcial utilizable:
-            // se preservan los datos parseables pero el análisis NO es plenamente confiable.
-            // No se marca Critical por este bit y no se agrega a report.Errors
-            // (evita que CalculateOverallHealth lo convierta artificialmente).
+            // Evaluar salud con la política CATTECH (precedencia completa)
+            SmartHealthPolicy.EvaluateOverallHealth(report, exitFlags);
+
+            // Precedencia operativa S.1: bit 2 (SmartCommandOrChecksumError) con JSON
+            // parcial utilizable: se preservan los datos pero el análisis NO es
+            // plenamente confiable. Nunca Good/Warning/Critical con bit 2 activo.
             if (exitFlags.HasValue &&
                 exitFlags.Value.HasFlag(SmartctlExitFlags.SmartCommandOrChecksumError))
             {
@@ -281,10 +280,14 @@ public static class SmartctlParser
         catch (JsonException ex)
         {
             report.Errors.Add($"Error al parsear JSON: {ex.Message}");
+            report.HealthStatus = SmartHealthStatus.Unknown;
+            report.HealthSummary = "Análisis SMART no concluyente";
         }
         catch (Exception ex)
         {
             report.Errors.Add($"Error inesperado: {ex.Message}");
+            report.HealthStatus = SmartHealthStatus.Unknown;
+            report.HealthSummary = "Análisis SMART no concluyente";
         }
 
         return report;
@@ -306,27 +309,14 @@ public static class SmartctlParser
     }
 
     /// <summary>
-    /// Extrae el estado de salud general.
+    /// Extrae el estado de salud general (nullable; la política decide el estado final).
     /// </summary>
     private static void ExtractHealthStatus(JsonElement root, SmartDiskReport report)
     {
-        if (root.TryGetProperty("smart_status", out var status))
+        if (root.TryGetProperty("smart_status", out var status) &&
+            status.TryGetProperty("passed", out var passed))
         {
-            if (status.TryGetProperty("passed", out var passed))
-            {
-                report.OverallHealthPassed = passed.GetBoolean();
-            }
-        }
-
-        // Verificar si SMART está habilitado
-        if (root.TryGetProperty("smart_status", out var smartStatus))
-        {
-            if (smartStatus.TryGetProperty("passed", out var passed) && !passed.GetBoolean())
-            {
-                report.HealthStatus = SmartHealthStatus.Critical;
-                report.HealthSummary = "Self-assessment de salud FAILED";
-                report.RequiresBackupRecommendation = true;
-            }
+            report.OverallHealthPassed = passed.GetBoolean();
         }
     }
 
@@ -383,7 +373,8 @@ public static class SmartctlParser
                 Worst = attr.TryGetProperty("worst", out var worst) ? worst.GetInt32() : 0,
                 Threshold = attr.TryGetProperty("thresh", out var thresh) ? thresh.GetInt32() : 0,
                 WhenFailed = GetStringProperty(attr, "when_failed"),
-                Flags = GetFlagsString(attr)
+                Flags = GetFlagsString(attr),
+                IsPrefailure = GetPrefailureFlag(attr)
             };
 
             // Extraer raw value
@@ -392,55 +383,56 @@ public static class SmartctlParser
                 attribute.RawValue = rawVal.GetInt64();
             }
 
-            // Descripción y severidad
+            // Descripción y severidad (política CATTECH)
             attribute.Description = GetAttributeDescription(attrId);
-            attribute.Severity = CalculateAttributeSeverity(attribute);
+            attribute.Severity = SmartHealthPolicy.EvaluateAttributeSeverity(attribute);
 
             report.ImportantAttributes.Add(attribute);
         }
-
-        // Extraer temperatura si no se obtuvo antes
-        if (report.TemperatureCelsius == 0)
-        {
-            ExtractTemperatureFromAttributes(table, report);
-        }
     }
 
     /// <summary>
-    /// Extrae la temperatura del JSON.
+    /// Lee flags.prefailure de forma estructurada (bool JSON).
+    /// NO se deduce del string de flags.
+    /// </summary>
+    private static bool GetPrefailureFlag(JsonElement attr)
+    {
+        try
+        {
+            if (attr.TryGetProperty("flags", out var flags) &&
+                flags.TryGetProperty("prefailure", out var prefailure) &&
+                prefailure.ValueKind == JsonValueKind.True)
+            {
+                return true;
+            }
+        }
+        catch (Exception)
+        {
+            // flags ausente o malformado → false
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Extrae la temperatura del JSON: usa temperature.current (normalizada por protocolo).
+    /// NO se usa raw.value del ID 194 (puede ser empaquetado/vendor-specific).
     /// </summary>
     private static void ExtractTemperature(JsonElement root, SmartDiskReport report)
     {
-        if (root.TryGetProperty("temperature", out var temp))
+        if (root.TryGetProperty("temperature", out var temp) &&
+            temp.TryGetProperty("current", out var current) &&
+            current.ValueKind == JsonValueKind.Number)
         {
-            if (temp.TryGetProperty("current", out var current))
-            {
-                report.TemperatureCelsius = current.GetInt32();
-            }
+            report.TemperatureCelsius = current.GetInt32();
         }
     }
 
     /// <summary>
-    /// Extrae temperatura desde atributos ATA.
-    /// </summary>
-    private static void ExtractTemperatureFromAttributes(JsonElement table, SmartDiskReport report)
-    {
-        foreach (var attr in table.EnumerateArray())
-        {
-            var id = attr.TryGetProperty("id", out var idProp) ? idProp.GetInt32() : 0;
-            if (id == 194) // Temperature_Celsius
-            {
-                if (attr.TryGetProperty("raw", out var raw) && raw.TryGetProperty("value", out var val))
-                {
-                    report.TemperatureCelsius = val.GetInt32();
-                }
-                break;
-            }
-        }
-    }
-
-    /// <summary>
-    /// Extrae contadores (horas, ciclos).
+    /// Extrae contadores (horas, ciclos) y datos NVMe estructurados.
+    /// NVMe: objeto principal nvme_smart_health_information_log (smartctl actual);
+    /// se tolera el legacy nvme_smart_health_information como fallback.
+    /// critical_warning es NUMÉRICO (string legacy tolerado). La política decide la salud.
     /// </summary>
     private static void ExtractCounters(JsonElement root, SmartDiskReport report)
     {
@@ -454,170 +446,92 @@ public static class SmartctlParser
             report.PowerCycleCount = val.GetInt64();
         }
 
-        // Para NVMe: percentage_used
-        if (root.TryGetProperty("nvme_smart_health_information", out var nvme))
+        // NVMe: principal _log, fallback legacy
+        JsonElement nvme;
+        var hasNvme = root.TryGetProperty("nvme_smart_health_information_log", out nvme);
+        if (!hasNvme)
         {
-            if (nvme.TryGetProperty("percentage_used", out var percentUsed))
-            {
-                report.NvmePercentageUsed = percentUsed.GetInt32();
+            hasNvme = root.TryGetProperty("nvme_smart_health_information", out nvme);
+        }
 
-                // Guardar como advertencia si es alto
-                if (report.NvmePercentageUsed >= 80)
-                {
-                    report.Warnings.Add($"NVMe vida útil usada: {report.NvmePercentageUsed}%");
-                }
-            }
+        if (!hasNvme)
+        {
+            return;
+        }
 
-            if (nvme.TryGetProperty("available_spare", out var spare))
-            {
-                report.NvmeAvailableSpare = spare.GetInt32();
-            }
+        if (nvme.TryGetProperty("percentage_used", out var percentUsed) &&
+            percentUsed.ValueKind == JsonValueKind.Number)
+        {
+            report.NvmePercentageUsed = percentUsed.GetInt32();
+        }
 
-            if (nvme.TryGetProperty("available_spare_threshold", out var spareThreshold))
-            {
-                var spareVal = report.NvmeAvailableSpare ?? -1;
-                var threshVal = spareThreshold.GetInt32();
-                if (threshVal > 0 && spareVal >= 0 && spareVal <= threshVal)
-                {
-                    report.Warnings.Add($"NVMe espacio de repuesto bajo: {spareVal}% (umbral: {threshVal}%)");
-                }
-            }
+        if (nvme.TryGetProperty("available_spare", out var spare) &&
+            spare.ValueKind == JsonValueKind.Number)
+        {
+            report.NvmeAvailableSpare = spare.GetInt32();
+        }
 
-            if (nvme.TryGetProperty("critical_warning", out var critical))
-            {
-                var warning = critical.GetString();
-                if (!string.IsNullOrEmpty(warning) && warning != "0")
-                {
-                    report.Errors.Add($"NVMe critical_warning: {warning}");
-                    report.RequiresBackupRecommendation = true;
-                }
-            }
+        if (nvme.TryGetProperty("available_spare_threshold", out var spareThreshold) &&
+            spareThreshold.ValueKind == JsonValueKind.Number)
+        {
+            report.NvmeAvailableSpareThreshold = spareThreshold.GetInt32();
+        }
 
-            if (nvme.TryGetProperty("media_errors", out var mediaErrors))
-            {
-                report.NvmeMediaErrors = mediaErrors.GetInt64();
-                if (report.NvmeMediaErrors > 0)
-                {
-                    report.Errors.Add($"NVMe media errors: {report.NvmeMediaErrors}");
-                    report.RequiresBackupRecommendation = true;
-                }
-            }
+        if (nvme.TryGetProperty("critical_warning", out var critical))
+        {
+            report.NvmeCriticalWarning = ReadNvmeInt(critical);
+        }
 
-            if (nvme.TryGetProperty("unsafe_shutdowns", out var unsafeShutdowns))
-            {
-                report.NvmeUnsafeShutdowns = unsafeShutdowns.GetInt64();
-            }
+        if (nvme.TryGetProperty("media_errors", out var mediaErrors) &&
+            mediaErrors.ValueKind == JsonValueKind.Number)
+        {
+            report.NvmeMediaErrors = mediaErrors.GetInt64();
+        }
+
+        if (nvme.TryGetProperty("unsafe_shutdowns", out var unsafeShutdowns) &&
+            unsafeShutdowns.ValueKind == JsonValueKind.Number)
+        {
+            report.NvmeUnsafeShutdowns = unsafeShutdowns.GetInt64();
         }
     }
 
     /// <summary>
-    /// Calcula el estado de salud general basado en atributos y advertencias.
+    /// Lee un entero NVMe: número JSON principal; string decimal/hex legacy tolerado.
+    /// Devuelve null si no se puede interpretar.
     /// </summary>
-    private static void CalculateOverallHealth(SmartDiskReport report)
+    private static int? ReadNvmeInt(JsonElement element)
     {
-        // Si ya se marcó como crítico, mantener
-        if (report.HealthStatus == SmartHealthStatus.Critical)
+        try
         {
-            report.HealthSummary = "CRÍTICO: Backup inmediato recomendado";
-            return;
-        }
-
-        // Si overall-health failed
-        if (!report.OverallHealthPassed)
-        {
-            report.HealthStatus = SmartHealthStatus.Critical;
-            report.HealthSummary = "Self-assessment de salud FAILED. Backup inmediato recomendado.";
-            report.RequiresBackupRecommendation = true;
-            return;
-        }
-
-        // Verificar atributos críticos
-        foreach (var attr in report.ImportantAttributes)
-        {
-            if (attr.Severity == SmartSeverity.Critical)
+            if (element.ValueKind == JsonValueKind.Number && element.TryGetInt32(out var numeric))
             {
-                report.HealthStatus = SmartHealthStatus.Critical;
-                report.HealthSummary = $"Atributo crítico: {attr.Name} (ID {attr.Id})";
-                report.RequiresBackupRecommendation = true;
-                return;
+                return numeric;
             }
-        }
 
-        // Verificar errores
-        if (report.Errors.Count > 0)
-        {
-            report.HealthStatus = SmartHealthStatus.Critical;
-            report.HealthSummary = $"Errores detectados: {string.Join(", ", report.Errors)}";
-            report.RequiresBackupRecommendation = true;
-            return;
-        }
-
-        // Verificar advertencias
-        if (report.Warnings.Count > 0)
-        {
-            report.HealthStatus = SmartHealthStatus.Warning;
-            report.HealthSummary = $"Advertencias: {string.Join(", ", report.Warnings)}";
-            return;
-        }
-
-        // Verificar atributos con warning
-        foreach (var attr in report.ImportantAttributes)
-        {
-            if (attr.Severity == SmartSeverity.Warning)
+            if (element.ValueKind == JsonValueKind.String)
             {
-                report.HealthStatus = SmartHealthStatus.Warning;
-                report.HealthSummary = $"Atributo a revisar: {attr.Name} (ID {attr.Id})";
-                return;
+                var text = element.GetString();
+                if (int.TryParse(text, out var parsed))
+                {
+                    return parsed;
+                }
+
+                if (!string.IsNullOrWhiteSpace(text) && int.TryParse(
+                        text.TrimStart('0').Length > 0 ? text.TrimStart('0') : "0",
+                        System.Globalization.NumberStyles.HexNumber,
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        out var hexParsed))
+                {
+                    return hexParsed;
+                }
             }
+
+            return null;
         }
-
-        // Todo bien
-        report.HealthStatus = SmartHealthStatus.Good;
-        report.HealthSummary = "Salud general: Buena. Sin atributos críticos ni advertencias.";
-    }
-
-    /// <summary>
-    /// Calcula la severidad de un atributo SMART.
-    /// </summary>
-    private static SmartSeverity CalculateAttributeSeverity(SmartAttribute attribute)
-    {
-        // Si el valor crudo supera el umbral, es crítico
-        if (attribute.Threshold > 0 && attribute.RawValue > attribute.Threshold)
-            return SmartSeverity.Critical;
-
-        // Reglas específicas por ID
-        return attribute.Id switch
+        catch (Exception)
         {
-            // Sectores reasignados
-            5 when attribute.RawValue > 0 => SmartSeverity.Warning,
-            5 when attribute.RawValue > 10 => SmartSeverity.Critical,
-
-            // Sectores pendientes
-            197 when attribute.RawValue > 0 => SmartSeverity.Warning,
-            197 when attribute.RawValue > 5 => SmartSeverity.Critical,
-
-            // Offline uncorrectable
-            198 when attribute.RawValue > 0 => SmartSeverity.Warning,
-            198 when attribute.RawValue > 5 => SmartSeverity.Critical,
-
-            // UDMA CRC errors
-            199 when attribute.RawValue > 0 => SmartSeverity.Warning,
-            199 when attribute.RawValue > 100 => SmartSeverity.Critical,
-
-            // Temperatura (ID 194)
-            194 when attribute.RawValue > 55 => SmartSeverity.Warning,
-            194 when attribute.RawValue > 65 => SmartSeverity.Critical,
-
-            // Wear leveling / SSD life
-            231 when attribute.RawValue <= 10 => SmartSeverity.Warning,
-            231 when attribute.RawValue <= 5 => SmartSeverity.Critical,
-
-            // Media wearout
-            233 when attribute.RawValue >= 90 => SmartSeverity.Warning,
-            233 when attribute.RawValue >= 98 => SmartSeverity.Critical,
-
-            _ => SmartSeverity.Info
-        };
+            return null;
+        }
     }
 
     /// <summary>

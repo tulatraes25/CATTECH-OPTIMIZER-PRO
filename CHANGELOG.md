@@ -356,6 +356,23 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - **Fallback ViewModel**: reconstruye el dispositivo con SelectedReport.SmartctlDeviceType (no DeviceType)
 - **ListDevicesAsync**: salida parcial parseable no se descarta por exit status no cero; CheckAvailabilityAsync sin dependencia de exit 0/1
 - 54 tests nuevos (831 total)
+
+### Fixed (Estabilización v0.2 - S.2: semántica de salud SMART)
+- **HealthStatus default = Unknown**: `new SmartDiskReport()` ya no es Good sin análisis
+- **OverallHealthPassed → bool?**: true/false/null (null NO equivale a false); reportes legacy siguen deserializando
+- **Good requiere evidencia positiva**: solo con smart_status.passed=true y sin hallazgos; passed=null sin evidencia → Unknown ("no se informó self-assessment general"); passed=false → Critical real con backup
+- **SmartHealthPolicy** (Infrastructure/Smart): separa extracción (parser) de interpretación (política); constantes CATTECH documentadas como política conservadora, NO umbrales del estándar
+- **Eliminada comparación RawValue > Threshold** (THRESH aplica al valor normalizado); fallback correcto: VALUE <= THRESH (+prefailure → Critical, usage → Warning); when_failed=now/past; Worst <= THRESH histórico → Warning como máximo
+- **SmartAttribute.IsPrefailure** parseado desde flags.prefailure (bool JSON), no del string de flags
+- **Política ATA corregida (crítico primero)**: ID5 >10 Critical / >0 Warning; ID197 >5 / >0; ID198 >5 / >0; ID199 CRC → Warning siempre (interfaz, nunca Critical por contador, sin backup); ID187/188 >0 Warning; ID1/3/9/12 informativos
+- **SSD vendor-specific (173/175/176/177/231/233)**: sin thresholds raw universales → Info salvo reglas oficiales (when_failed/threshold normalizado)
+- **Temperatura**: usa temperature.current (protocolo); eliminado el fallback ID194 raw (empaquetado/vendor); política CATTECH >65 Critical / >55 Warning (solo diagnóstico SMART de discos)
+- **NVMe**: objeto principal `nvme_smart_health_information_log` + legacy tolerado; critical_warning NUMÉRICO (string legacy tolerado) → NvmeCriticalWarning; NvmeAvailableSpareThreshold preservado; spare <= umbral → Warning; percentage_used >=80 → Warning (100% NO es Critical por sí solo, sin clamp); media_errors >0 → Critical con backup; unsafe_shutdowns solo informativo; passed=true + critical_warning activo → Critical conservador con aviso de discrepancia
+- **Exit bits 3-7 como evidencia**: bit3/bit4 → Critical con backup; bit5/bit6/bit7 → Warning (sin backup solo por logs); bit2 mantiene precedencia S.1 (Unknown + unsuccessful)
+- **RequiresBackupRecommendation** solo por señales críticas reales; no por CRC/logs/percentage/spare/unsafe shutdowns
+- **SmartDiskService entrega ExitFlags siempre** (ExitCode >= 0) al parser
+- **Errors técnicos ya no convierten a Critical**: la política usa señales específicas, no Errors.Count
+- 85 tests nuevos (916 total)
 - SmartctlAvailability, SmartDiskDevice, SmartctlCommandResult
 - ISmartctlRunner, ISmartDiskService interfaces
 - 32 tests de smartctl + 18 tests de SMART (214 total)
