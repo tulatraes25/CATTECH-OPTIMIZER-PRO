@@ -145,6 +145,12 @@ public class HtmlReportService : IReportGenerationService
             sb.AppendLine(BuildSmartSection(options));
         }
 
+        // Self-tests SMART persistidos
+        if (options.IncludeSmartTests && options.SmartTestSessions.Count > 0)
+        {
+            sb.AppendLine(BuildSmartTestsSection(options));
+        }
+
         // Recomendaciones
         if (options.IncludeRecommendations)
         {
@@ -548,6 +554,172 @@ public class HtmlReportService : IReportGenerationService
         return sb.ToString();
     }
 
+    /// <summary>
+    /// Construye la sección HTML de Self-Tests SMART persistidos.
+    /// Solo usa sesiones seleccionadas manualmente (no ejecuta smartctl).
+    /// </summary>
+    private string BuildSmartTestsSection(ReportGenerationOptions options)
+    {
+        // Ordenar sesiones seleccionadas: más reciente → más antigua
+        var ordered = options.SmartTestSessions
+            .OrderByDescending(GetTestEffectiveDate)
+            .ToList();
+
+        var sb = new StringBuilder();
+        sb.AppendLine("<div class='section' style='page-break-inside: auto;'>");
+        sb.AppendLine("<h2 class='section-title'>Pruebas SMART (Self-Test)</h2>");
+
+        foreach (var test in ordered)
+        {
+            sb.AppendLine(BuildSmartTestBlock(test));
+        }
+
+        sb.AppendLine("</div>");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Fecha efectiva de una sesión de test para ordenar.
+    /// </summary>
+    private static DateTime GetTestEffectiveDate(SmartTestSession session)
+    {
+        return session.LastCheckedAt
+            ?? session.CompletedAt
+            ?? session.StartedAt
+            ?? session.RequestedAt;
+    }
+
+    /// <summary>
+    /// Construye el bloque HTML de detalle de una sesión de self-test.
+    /// </summary>
+    private string BuildSmartTestBlock(SmartTestSession test)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("<div class='smart-test'>");
+
+        // Identificación
+        var modelName = !string.IsNullOrEmpty(test.ModelName) ? test.ModelName : test.Device;
+        sb.AppendLine($"<h3>{EscapeHtml(modelName)}</h3>");
+        sb.AppendLine("<table>");
+        sb.AppendLine($"<tr><td class='label'>Dispositivo:</td><td>{EscapeHtml(test.Device)}</td></tr>");
+        if (!string.IsNullOrEmpty(test.SerialNumber))
+            sb.AppendLine($"<tr><td class='label'>Número de serie:</td><td>{EscapeHtml(test.SerialNumber)}</td></tr>");
+
+        // Test
+        var typeText = test.TestType == SmartTestType.Extended ? "Extendido" : "Corto";
+        sb.AppendLine($"<tr><td class='label'>Tipo:</td><td>{typeText}</td></tr>");
+        sb.AppendLine($"<tr><td class='label'>Estado:</td><td>{GetSmartTestStatusText(test.Status)}</td></tr>");
+
+        // Fechas
+        sb.AppendLine($"<tr><td class='label'>Fecha solicitada:</td><td>{FormatDate(test.RequestedAt)}</td></tr>");
+        if (test.StartedAt.HasValue)
+            sb.AppendLine($"<tr><td class='label'>Inicio:</td><td>{FormatDate(test.StartedAt.Value)}</td></tr>");
+        if (test.CompletedAt.HasValue)
+            sb.AppendLine($"<tr><td class='label'>Finalización:</td><td>{FormatDate(test.CompletedAt.Value)}</td></tr>");
+
+        // Duración
+        if (test.EstimatedDurationMinutes.HasValue)
+        {
+            sb.AppendLine($"<tr><td class='label'>Duración estimada:</td><td>{test.EstimatedDurationMinutes.Value} min</td></tr>");
+            if (test.EstimatedCompletionAt.HasValue)
+                sb.AppendLine($"<tr><td class='label'>Finalización estimada:</td><td>{FormatDate(test.EstimatedCompletionAt.Value)}</td></tr>");
+        }
+        else
+        {
+            sb.AppendLine("<tr><td class='label'>Duración estimada:</td><td>No disponible</td></tr>");
+        }
+
+        if (test.LastCheckedAt.HasValue)
+            sb.AppendLine($"<tr><td class='label'>Última consulta:</td><td>{FormatDate(test.LastCheckedAt.Value)}</td></tr>");
+
+        // Progreso
+        if (test.ProgressPercent.HasValue)
+            sb.AppendLine($"<tr><td class='label'>Progreso:</td><td>{test.ProgressPercent.Value}%</td></tr>");
+
+        // Resultado
+        if (!string.IsNullOrEmpty(test.ResultMessage))
+            sb.AppendLine($"<tr><td class='label'>Resultado:</td><td>{EscapeHtml(test.ResultMessage)}</td></tr>");
+
+        sb.AppendLine("</table>");
+
+        // Mensajes de incertidumbre por estado
+        var uncertainty = GetSmartTestUncertaintyMessage(test.Status);
+        if (uncertainty != null)
+            sb.AppendLine($"<div class='smart-test-unknown'>{EscapeHtml(uncertainty)}</div>");
+
+        // Última consulta fallida
+        if (!test.LastCheckSucceeded)
+        {
+            sb.AppendLine("<div class='smart-test-warning'><strong>La última consulta del estado no pudo completarse.</strong> El estado mostrado puede no estar actualizado.");
+            if (!string.IsNullOrEmpty(test.LastCheckError))
+                sb.AppendLine($"<br><em>{EscapeHtml(test.LastCheckError)}</em>");
+            sb.AppendLine("</div>");
+        }
+
+        // Warnings
+        if (test.Warnings.Count > 0)
+        {
+            sb.AppendLine("<div class='smart-test-warning'><strong>Advertencias del test:</strong><ul>");
+            foreach (var w in test.Warnings)
+                sb.AppendLine($"<li>{EscapeHtml(w)}</li>");
+            sb.AppendLine("</ul></div>");
+        }
+
+        // Errors
+        if (test.Errors.Count > 0)
+        {
+            sb.AppendLine("<div class='smart-test-error'><strong>Errores registrados:</strong><ul>");
+            foreach (var e in test.Errors)
+                sb.AppendLine($"<li>{EscapeHtml(e)}</li>");
+            sb.AppendLine("</ul></div>");
+        }
+
+        sb.AppendLine("</div>");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Texto de estado legible de un self-test.
+    /// </summary>
+    private static string GetSmartTestStatusText(SmartTestStatus status) => status switch
+    {
+        SmartTestStatus.CompletedWithoutError => "Completado sin errores",
+        SmartTestStatus.CompletedWithError => "Completado con errores",
+        SmartTestStatus.InProgress => "En ejecución",
+        SmartTestStatus.Starting => "Iniciando",
+        SmartTestStatus.Aborted => "Abortado",
+        SmartTestStatus.Interrupted => "Interrumpido",
+        SmartTestStatus.Unsupported => "No soportado",
+        SmartTestStatus.FailedToStart => "No se pudo iniciar",
+        SmartTestStatus.Unknown => "Estado desconocido",
+        SmartTestStatus.NotStarted => "No iniciado",
+        _ => "Estado desconocido"
+    };
+
+    /// <summary>
+    /// Mensaje de incertidumbre según el estado, o null si no aplica.
+    /// </summary>
+    private static string? GetSmartTestUncertaintyMessage(SmartTestStatus status) => status switch
+    {
+        SmartTestStatus.InProgress =>
+            "Prueba en ejecución al momento de la última consulta. No constituye un resultado final.",
+        SmartTestStatus.Unsupported =>
+            "El dispositivo no soportó esta prueba. Esto no permite concluir que el disco esté sano.",
+        SmartTestStatus.FailedToStart =>
+            "No fue posible iniciar la prueba. Esto no implica por sí mismo una falla del disco.",
+        SmartTestStatus.Aborted or SmartTestStatus.Interrupted or SmartTestStatus.Unknown or SmartTestStatus.NotStarted =>
+            "Resultado no concluyente.",
+        _ => null
+    };
+
+    /// <summary>
+    /// Formatea una fecha; no muestra DateTime.MinValue.
+    /// </summary>
+    private static string FormatDate(DateTime date)
+    {
+        return date == DateTime.MinValue ? "No disponible" : date.ToString("dd/MM/yyyy HH:mm");
+    }
+
     private string BuildRecommendationsSection(ReportGenerationOptions options)
     {
         var recommendations = ReportRecommendationEngine.GenerateRecommendations(options);
@@ -667,6 +839,14 @@ public class HtmlReportService : IReportGenerationService
     .smart-backup-warning { background: #FFF8E1; border-left: 4px solid #F9A825; padding: 8px 12px; margin: 8px 0; font-size: 10pt; }
     .smart-backup-ok { background: #E8F5E9; border-left: 4px solid #4CAF50; padding: 8px 12px; margin: 8px 0; font-size: 10pt; }
     .smart-backup-unknown { background: #F5F5F5; border-left: 4px solid #9E9E9E; padding: 8px 12px; margin: 8px 0; font-size: 10pt; color: #616161; }
+    .smart-test { margin-bottom: 15px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; page-break-inside: avoid; }
+    .smart-test h3 { font-size: 11pt; margin-bottom: 8px; }
+    .smart-test-success { background: #E8F5E9; border-left: 4px solid #4CAF50; padding: 8px 12px; margin: 8px 0; font-size: 10pt; }
+    .smart-test-error { background: #FDECEA; border-left: 4px solid #D93025; padding: 8px 12px; margin: 8px 0; font-size: 10pt; }
+    .smart-test-warning { background: #FFF8E1; border-left: 4px solid #F9A825; padding: 8px 12px; margin: 8px 0; font-size: 10pt; }
+    .smart-test-info { background: #E3F2FD; border-left: 4px solid #42A5F5; padding: 8px 12px; margin: 8px 0; font-size: 10pt; }
+    .smart-test-unknown { background: #F5F5F5; border-left: 4px solid #9E9E9E; padding: 8px 12px; margin: 8px 0; font-size: 10pt; color: #616161; }
+    .smart-test-warning ul, .smart-test-error ul { margin: 4px 0 0 18px; }
     .smart-warnings { background: #FFF8E1; padding: 8px 12px; margin: 8px 0; border-radius: 4px; font-size: 10pt; }
     .smart-errors { background: #FDECEA; padding: 8px 12px; margin: 8px 0; border-radius: 4px; font-size: 10pt; }
     .smart-warnings ul, .smart-errors ul { margin: 4px 0 0 18px; }

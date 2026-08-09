@@ -324,6 +324,9 @@ Ir a **📊 Informes** para generar un informe profesional en HTML.
 **Estado SMART de discos:**
 El informe puede incluir un análisis SMART persistido: estado por disco (Bueno/Precaución/Crítico/No disponible), métricas ATA y NVMe, y recomendación de backup. El informe usa únicamente resultados ya guardados, no ejecuta smartctl.
 
+**Pruebas SMART (Self-Test):**
+También puede incluir sesiones de self-test Short/Extended persistidas, seleccionadas manualmente por el técnico. Las sesiones no están vinculadas automáticamente al cliente o servicio, por lo que solo se incluyen las seleccionadas explícitamente para el informe.
+
 **Recomendaciones automáticas:**
 - RAM ≤ 4 GB: recomendar ampliar
 - Disco HDD: recomendar SSD

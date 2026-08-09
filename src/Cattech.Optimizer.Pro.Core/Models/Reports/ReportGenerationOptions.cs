@@ -55,6 +55,11 @@ public class ReportGenerationOptions
     public SmartAnalysisResult? SmartAnalysis { get; set; }
 
     /// <summary>
+    /// Sesiones de self-test SMART persistidas, seleccionadas manualmente por el técnico.
+    /// </summary>
+    public List<SmartTestSession> SmartTestSessions { get; set; } = new();
+
+    /// <summary>
     /// Observaciones finales del técnico.
     /// </summary>
     public string FinalObservations { get; set; } = string.Empty;
@@ -98,6 +103,11 @@ public class ReportGenerationOptions
     /// Incluir sección de estado SMART de discos.
     /// </summary>
     public bool IncludeSmart { get; set; } = true;
+
+    /// <summary>
+    /// Incluir sección de self-tests SMART persistidos.
+    /// </summary>
+    public bool IncludeSmartTests { get; set; }
 
     /// <summary>
     /// Incluir recomendaciones automáticas.

@@ -114,6 +114,8 @@
                                       IsEnabled="{Binding HasRestorePointData}" FontSize="12" Margin="0,0,0,6" />
                             <CheckBox Content="Estado SMART de discos" IsChecked="{Binding IncludeSmart}"
                                       IsEnabled="{Binding HasSmartData}" FontSize="12" Margin="0,0,0,6" />
+                            <CheckBox Content="Pruebas SMART (Self-Test)" IsChecked="{Binding IncludeSmartTests}"
+                                      IsEnabled="{Binding HasSmartTestData}" FontSize="12" Margin="0,0,0,6" />
                             <CheckBox Content="Recomendaciones automáticas" IsChecked="{Binding IncludeRecommendations}"
                                       FontSize="12" />
                         </StackPanel>
@@ -173,6 +175,27 @@
                                       DisplayMemberPath="DisplayName"
                                       FontSize="11" Padding="8,6" Margin="0,0,0,10"
                                       IsEnabled="{Binding HasSmartData}" />
+
+                            <!-- Self-tests SMART -->
+                            <TextBlock Text="Self-tests SMART disponibles:" FontSize="11" FontWeight="SemiBold" Foreground="#555" Margin="0,0,0,4" />
+                            <Border BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="4" Padding="8,6"
+                                    Background="#FAFAFA" MaxHeight="150"
+                                    Visibility="{Binding HasSmartTestData, Converter={StaticResource BoolToVis}}">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <ItemsControl ItemsSource="{Binding AvailableSmartTestSessions}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <CheckBox Content="{Binding DisplayName}"
+                                                          IsChecked="{Binding IsSelected}"
+                                                          FontSize="10" Margin="0,2,0,2" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </Border>
+                            <TextBlock Text="Las sesiones de self-test no están vinculadas automáticamente al cliente o servicio. Seleccione únicamente las correspondientes a este informe."
+                                       FontSize="9" Foreground="#999" TextWrapping="Wrap" Margin="0,4,0,0"
+                                       Visibility="{Binding HasSmartTestData, Converter={StaticResource BoolToVis}}" />
                         </StackPanel>
                     </Border>
                 </StackPanel>

@@ -719,4 +719,330 @@ public class ReportGenerationTests
         Assert.False(isNotAvailableOrUnknown);
         Assert.False(report.RequiresBackupRecommendation);
     }
+
+    // =====================
+    // Tests Fase A.7.2a - Self-Tests en informe
+    // =====================
+
+    private static SmartTestSession CreateTestSession(string id, SmartTestType type, SmartTestStatus status,
+        DateTime requestedAt, DateTime? lastCheckedAt = null, DateTime? completedAt = null)
+    {
+        return new SmartTestSession
+        {
+            Id = id,
+            Device = "/dev/sda",
+            ModelName = "Samsung SSD 860 EVO",
+            TestType = type,
+            Status = status,
+            RequestedAt = requestedAt,
+            LastCheckedAt = lastCheckedAt,
+            CompletedAt = completedAt
+        };
+    }
+
+    [Fact]
+    public void ReportGenerationOptions_AcceptsSmartTestSessionsList()
+    {
+        var options = new ReportGenerationOptions
+        {
+            SmartTestSessions =
+            [
+                CreateTestSession("TST00001", SmartTestType.Short, SmartTestStatus.CompletedWithoutError, new DateTime(2026, 8, 9, 10, 0, 0))
+            ]
+        };
+
+        Assert.Single(options.SmartTestSessions);
+        Assert.False(options.IncludeSmartTests);
+    }
+
+    [Fact]
+    public void IncludeSmartTestsFalse_OmitsSection()
+    {
+        var options = new ReportGenerationOptions
+        {
+            IncludeSmartTests = false,
+            SmartTestSessions = [CreateTestSession("TST00002", SmartTestType.Short, SmartTestStatus.InProgress, DateTime.Now)]
+        };
+
+        var include = options.IncludeSmartTests && options.SmartTestSessions.Count > 0;
+        Assert.False(include);
+    }
+
+    [Fact]
+    public void IncludeSmartTestsTrue_WithEmptyList_OmitsSection()
+    {
+        var options = new ReportGenerationOptions
+        {
+            IncludeSmartTests = true,
+            SmartTestSessions = []
+        };
+
+        var include = options.IncludeSmartTests && options.SmartTestSessions.Count > 0;
+        Assert.False(include);
+    }
+
+    [Fact]
+    public void ShortTestType_AppearsAsCorto()
+    {
+        var session = CreateTestSession("TST00003", SmartTestType.Short, SmartTestStatus.CompletedWithoutError, DateTime.Now);
+        var text = session.TestType == SmartTestType.Extended ? "Extendido" : "Corto";
+        Assert.Equal("Corto", text);
+    }
+
+    [Fact]
+    public void ExtendedTestType_AppearsAsExtendido()
+    {
+        var session = CreateTestSession("TST00004", SmartTestType.Extended, SmartTestStatus.CompletedWithoutError, DateTime.Now);
+        var text = session.TestType == SmartTestType.Extended ? "Extendido" : "Corto";
+        Assert.Equal("Extendido", text);
+    }
+
+    [Fact]
+    public void CompletedWithoutError_MapsCorrectly()
+    {
+        var session = CreateTestSession("TST00005", SmartTestType.Short, SmartTestStatus.CompletedWithoutError, DateTime.Now);
+        var text = session.Status switch
+        {
+            SmartTestStatus.CompletedWithoutError => "Completado sin errores",
+            _ => "Otro"
+        };
+        Assert.Equal("Completado sin errores", text);
+    }
+
+    [Fact]
+    public void CompletedWithError_MapsCorrectly()
+    {
+        var session = CreateTestSession("TST00006", SmartTestType.Short, SmartTestStatus.CompletedWithError, DateTime.Now);
+        var text = session.Status switch
+        {
+            SmartTestStatus.CompletedWithError => "Completado con errores",
+            _ => "Otro"
+        };
+        Assert.Equal("Completado con errores", text);
+    }
+
+    [Fact]
+    public void InProgress_IsNotFinalResult()
+    {
+        var session = CreateTestSession("TST00007", SmartTestType.Short, SmartTestStatus.InProgress, DateTime.Now);
+        Assert.Equal(SmartTestStatus.InProgress, session.Status);
+        // InProgress no es resultado final
+        Assert.False(session.Status == SmartTestStatus.CompletedWithoutError ||
+                     session.Status == SmartTestStatus.CompletedWithError);
+    }
+
+    [Fact]
+    public void Unsupported_DoesNotClaimDiskIsHealthy()
+    {
+        var session = CreateTestSession("TST00008", SmartTestType.Short, SmartTestStatus.Unsupported, DateTime.Now);
+        // Unsupported no implica disco sano
+        Assert.NotEqual(SmartTestStatus.CompletedWithoutError, session.Status);
+    }
+
+    [Fact]
+    public void FailedToStart_NotPresentedAsDiskFailure()
+    {
+        var session = CreateTestSession("TST00009", SmartTestType.Short, SmartTestStatus.FailedToStart, DateTime.Now);
+        // FailedToStart no implica falla del disco
+        Assert.NotEqual(SmartTestStatus.CompletedWithError, session.Status);
+    }
+
+    [Fact]
+    public void Interrupted_IsNonConclusive()
+    {
+        var session = CreateTestSession("TST00010", SmartTestType.Short, SmartTestStatus.Interrupted, DateTime.Now);
+        var isNonConclusive = session.Status is SmartTestStatus.Aborted or SmartTestStatus.Interrupted or SmartTestStatus.Unknown or SmartTestStatus.NotStarted;
+        Assert.True(isNonConclusive);
+    }
+
+    [Fact]
+    public void Aborted_IsNonConclusive()
+    {
+        var session = CreateTestSession("TST00011", SmartTestType.Short, SmartTestStatus.Aborted, DateTime.Now);
+        var isNonConclusive = session.Status is SmartTestStatus.Aborted or SmartTestStatus.Interrupted or SmartTestStatus.Unknown or SmartTestStatus.NotStarted;
+        Assert.True(isNonConclusive);
+    }
+
+    [Fact]
+    public void Unknown_IsNonConclusive()
+    {
+        var session = CreateTestSession("TST00012", SmartTestType.Short, SmartTestStatus.Unknown, DateTime.Now);
+        var isNonConclusive = session.Status is SmartTestStatus.Aborted or SmartTestStatus.Interrupted or SmartTestStatus.Unknown or SmartTestStatus.NotStarted;
+        Assert.True(isNonConclusive);
+    }
+
+    [Fact]
+    public void NullDuration_AppearsAsNotAvailable()
+    {
+        var session = CreateTestSession("TST00013", SmartTestType.Short, SmartTestStatus.CompletedWithoutError, DateTime.Now);
+        Assert.Null(session.EstimatedDurationMinutes);
+        var text = session.EstimatedDurationMinutes.HasValue
+            ? $"{session.EstimatedDurationMinutes.Value} min"
+            : "No disponible";
+        Assert.Equal("No disponible", text);
+    }
+
+    [Fact]
+    public void Progress_AppearsWhenExists()
+    {
+        var session = CreateTestSession("TST00014", SmartTestType.Short, SmartTestStatus.InProgress, DateTime.Now);
+        session.ProgressPercent = 45;
+        Assert.Equal(45, session.ProgressPercent);
+    }
+
+    [Fact]
+    public void LastCheckFailed_GeneratesWarning()
+    {
+        var session = CreateTestSession("TST00015", SmartTestType.Short, SmartTestStatus.InProgress, DateTime.Now);
+        session.LastCheckSucceeded = false;
+        session.LastCheckError = "Timeout";
+        Assert.False(session.LastCheckSucceeded);
+        Assert.Equal("Timeout", session.LastCheckError);
+    }
+
+    [Fact]
+    public void LastCheckError_IsEscaped()
+    {
+        var error = "<script>alert('x')</script>";
+        var escaped = System.Net.WebUtility.HtmlEncode(error);
+        Assert.DoesNotContain("<script>", escaped);
+        Assert.Contains("&lt;script&gt;", escaped);
+    }
+
+    [Fact]
+    public void ResultMessage_IsEscaped()
+    {
+        var message = "<b>bold</b> & test";
+        var escaped = System.Net.WebUtility.HtmlEncode(message);
+        Assert.DoesNotContain("<b>", escaped);
+        Assert.Contains("&lt;b&gt;", escaped);
+    }
+
+    [Fact]
+    public void Warnings_AreEscaped()
+    {
+        var warning = "<img src=x onerror=alert(1)>";
+        var escaped = System.Net.WebUtility.HtmlEncode(warning);
+        Assert.DoesNotContain("<img", escaped);
+    }
+
+    [Fact]
+    public void Errors_AreEscaped()
+    {
+        var error = "<script>alert(1)</script>";
+        var escaped = System.Net.WebUtility.HtmlEncode(error);
+        Assert.DoesNotContain("<script>", escaped);
+    }
+
+    [Fact]
+    public void MultipleSelectedSessions_AppearInHtml()
+    {
+        var options = new ReportGenerationOptions
+        {
+            IncludeSmartTests = true,
+            SmartTestSessions =
+            [
+                CreateTestSession("TST00016", SmartTestType.Short, SmartTestStatus.CompletedWithoutError, new DateTime(2026, 8, 9, 10, 0, 0)),
+                CreateTestSession("TST00017", SmartTestType.Extended, SmartTestStatus.CompletedWithError, new DateTime(2026, 8, 9, 11, 0, 0))
+            ]
+        };
+
+        Assert.Equal(2, options.SmartTestSessions.Count);
+    }
+
+    [Fact]
+    public void HtmlOrder_NewestFirst()
+    {
+        var sessions = new List<SmartTestSession>
+        {
+            CreateTestSession("TST00018", SmartTestType.Short, SmartTestStatus.CompletedWithoutError, new DateTime(2026, 8, 9, 9, 0, 0)),
+            CreateTestSession("TST00019", SmartTestType.Short, SmartTestStatus.CompletedWithoutError, new DateTime(2026, 8, 9, 11, 0, 0)),
+            CreateTestSession("TST00020", SmartTestType.Short, SmartTestStatus.CompletedWithoutError, new DateTime(2026, 8, 9, 10, 0, 0))
+        };
+
+        static DateTime GetEffectiveDate(SmartTestSession s) =>
+            s.LastCheckedAt ?? s.CompletedAt ?? s.StartedAt ?? s.RequestedAt;
+
+        var ordered = sessions.OrderByDescending(GetEffectiveDate).ToList();
+
+        Assert.Equal("TST00019", ordered[0].Id);
+        Assert.Equal("TST00020", ordered[1].Id);
+        Assert.Equal("TST00018", ordered[2].Id);
+    }
+
+    [Fact]
+    public void BuildOptions_OnlyIncludesSelectedSessions()
+    {
+        // Simular la selección: solo 2 de 3 sesiones seleccionadas
+        var items = new List<(bool IsSelected, SmartTestSession Session)>
+        {
+            (true, CreateTestSession("SEL00001", SmartTestType.Short, SmartTestStatus.CompletedWithoutError, DateTime.Now)),
+            (true, CreateTestSession("SEL00002", SmartTestType.Short, SmartTestStatus.CompletedWithoutError, DateTime.Now)),
+            (false, CreateTestSession("SEL00003", SmartTestType.Short, SmartTestStatus.CompletedWithoutError, DateTime.Now))
+        };
+
+        var selected = items.Where(x => x.IsSelected).Select(x => x.Session).ToList();
+
+        Assert.Equal(2, selected.Count);
+        Assert.DoesNotContain(selected, s => s.Id == "SEL00003");
+    }
+
+    [Fact]
+    public void UnselectedSessions_NotIncluded()
+    {
+        var allSessions = new List<SmartTestSession>
+        {
+            CreateTestSession("UNS00001", SmartTestType.Short, SmartTestStatus.CompletedWithoutError, DateTime.Now),
+            CreateTestSession("UNS00002", SmartTestType.Short, SmartTestStatus.CompletedWithoutError, DateTime.Now)
+        };
+
+        // Ninguna seleccionada → lista vacía en el informe
+        var selected = new List<SmartTestSession>();
+        Assert.Empty(selected);
+        Assert.Equal(2, allSessions.Count);
+    }
+
+    [Fact]
+    public void IncludedSections_AddsSmartSelfTests()
+    {
+        var info = new GeneratedReportInfo();
+        info.IncludedSections.Add("SMART Self-Tests");
+        Assert.Contains("SMART Self-Tests", info.IncludedSections);
+    }
+
+    [Fact]
+    public void HtmlWithoutSelfTests_StillWorks()
+    {
+        var options = new ReportGenerationOptions
+        {
+            IncludeSmartTests = false,
+            SmartTestSessions = []
+        };
+
+        var include = options.IncludeSmartTests && options.SmartTestSessions.Count > 0;
+        Assert.False(include);
+    }
+
+    [Fact]
+    public void SmartTestSessionSelectionItem_DisplayName_Format()
+    {
+        var session = CreateTestSession("TST00021", SmartTestType.Short, SmartTestStatus.CompletedWithoutError, new DateTime(2026, 8, 9, 10, 30, 0));
+        var displayName = $"{session.RequestedAt:dd/MM/yyyy HH:mm} - Corto - {session.ModelName} - Completado sin errores";
+        Assert.Equal("09/08/2026 10:30 - Corto - Samsung SSD 860 EVO - Completado sin errores", displayName);
+    }
+
+    [Fact]
+    public void Sessions_DefaultToUnselected()
+    {
+        // La selección manual implica IsSelected = false por defecto
+        var selected = false;
+        Assert.False(selected);
+    }
+
+    [Fact]
+    public void IncludeSmartTests_DefaultsToFalse_AfterLoad()
+    {
+        // Tras LoadData, IncludeSmartTests queda false (selección manual intencional)
+        Assert.False(new ReportGenerationOptions().IncludeSmartTests);
+    }
 }

@@ -157,6 +157,17 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - **Orden descendente**: más reciente → más antiguo
 - **JSON corrupto**: se omite sin romper el listado
 - 17 tests nuevos (354 total)
+
+### Added (Self-Tests SMART en Informe - Fase A.7.2a)
+- **Sección "Pruebas SMART (Self-Test)"**: sesiones Short/Extended persistidas en el informe HTML/PDF
+- **Selección manual**: wrapper SmartTestSessionSelectionItem (solo UI) con IsSelected y DisplayName
+- **Instancia compartida**: SmartTestService creado UNA vez en MainViewModel, usado por SmartDisk y Report
+- **Carga**: solo `ListSessionsAsync(20)`, sin ejecutar smartctl ni consultar estado
+- **Builder único**: BuildReportOptionsAsync filtra solo sesiones seleccionadas
+- **Mensajes de incertidumbre**: InProgress/Unsupported/FailedToStart/Aborted/Interrupted/Unknown con aclaraciones
+- **Última consulta fallida**: LastCheckSucceeded=false genera advertencia
+- **Orden**: más reciente → más antigua en el HTML
+- 29 tests nuevos (383 total)
 - SmartctlAvailability, SmartDiskDevice, SmartctlCommandResult
 - ISmartctlRunner, ISmartDiskService interfaces
 - 32 tests de smartctl + 18 tests de SMART (214 total)

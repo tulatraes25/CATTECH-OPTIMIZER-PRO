@@ -29,6 +29,7 @@ public partial class ReportViewModel : ObservableObject
     private readonly IVisualOptimizationService _visualOptimizationService;
     private readonly IRestorePointService _restorePointService;
     private readonly ISmartDiskService _smartDiskService;
+    private readonly ISmartTestService _smartTestService;
 
     // --- Estado de la UI ---
 
@@ -79,6 +80,9 @@ public partial class ReportViewModel : ObservableObject
     [ObservableProperty]
     private bool _hasSmartData;
 
+    [ObservableProperty]
+    private bool _hasSmartTestData;
+
     // --- Secciones seleccionadas ---
 
     [ObservableProperty]
@@ -104,6 +108,9 @@ public partial class ReportViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _includeSmart = true;
+
+    [ObservableProperty]
+    private bool _includeSmartTests;
 
     [ObservableProperty]
     private bool _includeRecommendations = true;
@@ -145,6 +152,7 @@ public partial class ReportViewModel : ObservableObject
     public ObservableCollection<VisualOptimizationResult> AvailableVisualOptResults { get; } = new();
     public ObservableCollection<RestorePointResult> AvailableRestorePointResults { get; } = new();
     public ObservableCollection<SmartAnalysisResult> AvailableSmartAnalyses { get; } = new();
+    public ObservableCollection<SmartTestSessionSelectionItem> AvailableSmartTestSessions { get; } = new();
 
     // --- Último informe generado ---
 
@@ -175,7 +183,8 @@ public partial class ReportViewModel : ObservableObject
         ITempCleanupService cleanupService,
         IVisualOptimizationService visualOptimizationService,
         IRestorePointService restorePointService,
-        ISmartDiskService smartDiskService)
+        ISmartDiskService smartDiskService,
+        ISmartTestService smartTestService)
     {
         _reportService = reportService;
         _pdfExportService = pdfExportService;
@@ -187,6 +196,7 @@ public partial class ReportViewModel : ObservableObject
         _visualOptimizationService = visualOptimizationService;
         _restorePointService = restorePointService;
         _smartDiskService = smartDiskService;
+        _smartTestService = smartTestService;
     }
 
     /// <summary>
@@ -286,6 +296,20 @@ public partial class ReportViewModel : ObservableObject
                 IncludeSmart = false;
             }
 
+            // Self-tests SMART persistidos (solo lectura, NO se consulta estado)
+            var smartTests = await _smartTestService.ListSessionsAsync(20);
+            AvailableSmartTestSessions.Clear();
+            foreach (var test in smartTests)
+            {
+                AvailableSmartTestSessions.Add(new SmartTestSessionSelectionItem
+                {
+                    Session = test,
+                    IsSelected = false
+                });
+            }
+            HasSmartTestData = AvailableSmartTestSessions.Count > 0;
+            IncludeSmartTests = false; // Selección manual intencional
+
             StatusText = "Datos cargados";
         }
         catch (Exception ex)
@@ -332,6 +356,7 @@ public partial class ReportViewModel : ObservableObject
             if (IncludeVisualOptimization) info.IncludedSections.Add("Optimización");
             if (IncludeRestorePoint) info.IncludedSections.Add("Restauración");
             if (IncludeSmart && SelectedSmartAnalysis != null) info.IncludedSections.Add("SMART");
+            if (IncludeSmartTests && AvailableSmartTestSessions.Any(x => x.IsSelected)) info.IncludedSections.Add("SMART Self-Tests");
             if (IncludeRecommendations) info.IncludedSections.Add("Recomendaciones");
 
             await _reportService.SaveReportInfoAsync(info);
@@ -466,6 +491,12 @@ public partial class ReportViewModel : ObservableObject
     /// </summary>
     private async Task<ReportGenerationOptions> BuildReportOptionsAsync()
     {
+        // Solo sesiones seleccionadas manualmente
+        var selectedTests = AvailableSmartTestSessions
+            .Where(x => x.IsSelected)
+            .Select(x => x.Session)
+            .ToList();
+
         return new ReportGenerationOptions
         {
             Settings = await _settingsService.LoadSettingsAsync(),
@@ -476,6 +507,7 @@ public partial class ReportViewModel : ObservableObject
             VisualOptimizationResult = SelectedVisualOptimizationResult,
             RestorePointResult = SelectedRestorePointResult,
             SmartAnalysis = SelectedSmartAnalysis,
+            SmartTestSessions = selectedTests,
             FinalObservations = FinalObservations,
             IncludeCompany = IncludeCompany,
             IncludeClient = IncludeClient,
@@ -485,6 +517,7 @@ public partial class ReportViewModel : ObservableObject
             IncludeVisualOptimization = IncludeVisualOptimization,
             IncludeRestorePoint = IncludeRestorePoint,
             IncludeSmart = IncludeSmart,
+            IncludeSmartTests = IncludeSmartTests && selectedTests.Count > 0,
             IncludeRecommendations = IncludeRecommendations
         };
     }
@@ -511,5 +544,34 @@ public partial class ReportViewModel : ObservableObject
         IsSuccess = false;
         HasError = false;
         ErrorMessage = string.Empty;
+    }
+}
+
+/// <summary>
+/// Wrapper de UI para selección manual de sesiones de self-test SMART.
+/// No se persiste.
+/// </summary>
+public partial class SmartTestSessionSelectionItem : ObservableObject
+{
+    /// <summary>Sesión SMART persistida.</summary>
+    public required SmartTestSession Session { get; init; }
+
+    /// <summary>Si la sesión fue seleccionada para el informe.</summary>
+    [ObservableProperty]
+    private bool _isSelected;
+
+    /// <summary>
+    /// Nombre de presentación: fecha - tipo - modelo/dispositivo - estado.
+    /// </summary>
+    public string DisplayName
+    {
+        get
+        {
+            var date = Session.RequestedAt.ToString("dd/MM/yyyy HH:mm");
+            var type = Session.TestType == SmartTestType.Extended ? "Extendido" : "Corto";
+            var model = !string.IsNullOrEmpty(Session.ModelName) ? Session.ModelName : Session.Device;
+            var status = Session.Status.ToDisplayMessage();
+            return $"{date} - {type} - {model} - {status}";
+        }
     }
 }

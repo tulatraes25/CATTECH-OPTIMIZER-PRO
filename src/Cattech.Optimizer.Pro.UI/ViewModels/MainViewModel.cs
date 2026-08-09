@@ -48,6 +48,7 @@ public partial class MainViewModel : ObservableObject
     private readonly IPdfExportService _pdfExportService;
     private readonly ISmartctlRunner _smartctlRunner;
     private readonly ISmartDiskService _smartDiskService;
+    private readonly ISmartTestService _smartTestService;
 
     // ViewModels de secciones
     private CompanySettingsViewModel? _companySettingsViewModel;
@@ -75,6 +76,7 @@ public partial class MainViewModel : ObservableObject
         _pdfExportService = new PdfExportService();
         _smartctlRunner = new SmartctlRunner();
         _smartDiskService = new SmartDiskService(_smartctlRunner);
+        _smartTestService = new SmartTestService(_smartctlRunner);
         NavigateTo("Home");
     }
 
@@ -194,7 +196,8 @@ public partial class MainViewModel : ObservableObject
             _tempCleanupService,
             _visualOptimizationService,
             _restorePointService,
-            _smartDiskService);
+            _smartDiskService,
+            _smartTestService);
 
         return new ReportView
         {
@@ -207,7 +210,7 @@ public partial class MainViewModel : ObservableObject
         _smartDiskViewModel ??= new SmartDiskViewModel(
             _smartctlRunner,
             _smartDiskService,
-            new SmartTestService(_smartctlRunner));
+            _smartTestService);
 
         return new SmartDiskView
         {
