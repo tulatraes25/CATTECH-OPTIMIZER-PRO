@@ -308,17 +308,21 @@ Ir a **📊 Informes** para generar un informe profesional en HTML.
 3. Diagnóstico inicial (RAM, disco, inicio, seguridad)
 4. Acciones realizadas (limpieza, optimización, restauración)
 5. Resultados y espacio liberado
-6. Recomendaciones automáticas
-7. Observaciones finales del técnico
-8. Firma
+6. Estado SMART de discos (si hay análisis guardado)
+7. Recomendaciones automáticas
+8. Observaciones finales del técnico
+9. Firma
 
 **Cómo funciona:**
 1. Click en "Cargar datos" para buscar información disponible
 2. Seleccionar qué secciones incluir
-3. Seleccionar datos específicos (cliente, diagnóstico, etc.)
+3. Seleccionar datos específicos (cliente, diagnóstico, análisis SMART, etc.)
 4. Agregar observaciones finales
 5. Click en "Generar informe"
 6. Abrir y verificar el HTML generado
+
+**Estado SMART de discos:**
+El informe puede incluir un análisis SMART persistido: estado por disco (Bueno/Precaución/Crítico/No disponible), métricas ATA y NVMe, y recomendación de backup. El informe usa únicamente resultados ya guardados, no ejecuta smartctl.
 
 **Recomendaciones automáticas:**
 - RAM ≤ 4 GB: recomendar ampliar

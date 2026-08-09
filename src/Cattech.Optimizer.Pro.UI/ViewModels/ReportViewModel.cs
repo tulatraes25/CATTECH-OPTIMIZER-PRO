@@ -10,6 +10,7 @@ using Cattech.Optimizer.Pro.Core.Models.Startup;
 using Cattech.Optimizer.Pro.Core.Models.Cleanup;
 using Cattech.Optimizer.Pro.Core.Models.VisualOptimization;
 using Cattech.Optimizer.Pro.Core.Models.RestorePoint;
+using Cattech.Optimizer.Pro.Core.Models.Smart;
 
 namespace Cattech.Optimizer.Pro.UI.ViewModels;
 
@@ -27,6 +28,7 @@ public partial class ReportViewModel : ObservableObject
     private readonly ITempCleanupService _cleanupService;
     private readonly IVisualOptimizationService _visualOptimizationService;
     private readonly IRestorePointService _restorePointService;
+    private readonly ISmartDiskService _smartDiskService;
 
     // --- Estado de la UI ---
 
@@ -74,6 +76,9 @@ public partial class ReportViewModel : ObservableObject
     [ObservableProperty]
     private bool _hasRestorePointData;
 
+    [ObservableProperty]
+    private bool _hasSmartData;
+
     // --- Secciones seleccionadas ---
 
     [ObservableProperty]
@@ -96,6 +101,9 @@ public partial class ReportViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _includeRestorePoint = true;
+
+    [ObservableProperty]
+    private bool _includeSmart = true;
 
     [ObservableProperty]
     private bool _includeRecommendations = true;
@@ -125,6 +133,9 @@ public partial class ReportViewModel : ObservableObject
     [ObservableProperty]
     private RestorePointResult? _selectedRestorePointResult;
 
+    [ObservableProperty]
+    private SmartAnalysisResult? _selectedSmartAnalysis;
+
     // --- Listas de datos disponibles ---
 
     public ObservableCollection<ServiceReport> AvailableServiceReports { get; } = new();
@@ -133,6 +144,7 @@ public partial class ReportViewModel : ObservableObject
     public ObservableCollection<TempCleanupResult> AvailableCleanupResults { get; } = new();
     public ObservableCollection<VisualOptimizationResult> AvailableVisualOptResults { get; } = new();
     public ObservableCollection<RestorePointResult> AvailableRestorePointResults { get; } = new();
+    public ObservableCollection<SmartAnalysisResult> AvailableSmartAnalyses { get; } = new();
 
     // --- Último informe generado ---
 
@@ -162,7 +174,8 @@ public partial class ReportViewModel : ObservableObject
         IStartupService startupService,
         ITempCleanupService cleanupService,
         IVisualOptimizationService visualOptimizationService,
-        IRestorePointService restorePointService)
+        IRestorePointService restorePointService,
+        ISmartDiskService smartDiskService)
     {
         _reportService = reportService;
         _pdfExportService = pdfExportService;
@@ -173,6 +186,7 @@ public partial class ReportViewModel : ObservableObject
         _cleanupService = cleanupService;
         _visualOptimizationService = visualOptimizationService;
         _restorePointService = restorePointService;
+        _smartDiskService = smartDiskService;
     }
 
     /// <summary>
@@ -255,6 +269,23 @@ public partial class ReportViewModel : ObservableObject
             }
             IncludeRestorePoint = HasRestorePointData;
 
+            // SMART (solo datos persistidos, NO se ejecuta smartctl)
+            var smartAnalyses = await _smartDiskService.ListResultsAsync(10);
+            AvailableSmartAnalyses.Clear();
+            foreach (var smart in smartAnalyses)
+                AvailableSmartAnalyses.Add(smart);
+            HasSmartData = AvailableSmartAnalyses.Count > 0;
+            if (HasSmartData)
+            {
+                SelectedSmartAnalysis = AvailableSmartAnalyses.First();
+                IncludeSmart = true;
+            }
+            else
+            {
+                SelectedSmartAnalysis = null;
+                IncludeSmart = false;
+            }
+
             StatusText = "Datos cargados";
         }
         catch (Exception ex)
@@ -280,25 +311,7 @@ public partial class ReportViewModel : ObservableObject
 
         try
         {
-            var options = new ReportGenerationOptions
-            {
-                Settings = await _settingsService.LoadSettingsAsync(),
-                ServiceReport = SelectedServiceReport,
-                DiagnosticReport = SelectedDiagnosticReport,
-                StartupAnalysis = SelectedStartupAnalysis,
-                CleanupResult = SelectedCleanupResult,
-                VisualOptimizationResult = SelectedVisualOptimizationResult,
-                RestorePointResult = SelectedRestorePointResult,
-                FinalObservations = FinalObservations,
-                IncludeCompany = IncludeCompany,
-                IncludeClient = IncludeClient,
-                IncludeDiagnostic = IncludeDiagnostic,
-                IncludeStartup = IncludeStartup,
-                IncludeCleanup = IncludeCleanup,
-                IncludeVisualOptimization = IncludeVisualOptimization,
-                IncludeRestorePoint = IncludeRestorePoint,
-                IncludeRecommendations = IncludeRecommendations
-            };
+            var options = await BuildReportOptionsAsync();
 
             var filePath = await _reportService.GenerateHtmlReportAsync(options);
 
@@ -318,6 +331,7 @@ public partial class ReportViewModel : ObservableObject
             if (IncludeCleanup) info.IncludedSections.Add("Limpieza");
             if (IncludeVisualOptimization) info.IncludedSections.Add("Optimización");
             if (IncludeRestorePoint) info.IncludedSections.Add("Restauración");
+            if (IncludeSmart && SelectedSmartAnalysis != null) info.IncludedSections.Add("SMART");
             if (IncludeRecommendations) info.IncludedSections.Add("Recomendaciones");
 
             await _reportService.SaveReportInfoAsync(info);
@@ -365,13 +379,13 @@ public partial class ReportViewModel : ObservableObject
     [RelayCommand]
     private async Task ExportPdfAsync()
     {
-        // Si no hay HTML generado, generarlo primero
+        // Si no hay HTML generado, generarlo primero con el builder completo
         if (string.IsNullOrEmpty(LastReportPath) || !File.Exists(LastReportPath))
         {
             StatusText = "Generando HTML primero...";
             try
             {
-                var options = BuildReportOptions();
+                var options = await BuildReportOptionsAsync();
                 LastReportPath = await _reportService.GenerateHtmlReportAsync(options);
                 HasGeneratedReport = true;
             }
@@ -448,6 +462,7 @@ public partial class ReportViewModel : ObservableObject
 
     /// <summary>
     /// Construye las opciones del informe desde los datos actuales.
+    /// Única fuente lógica para generar informes (HTML y PDF).
     /// </summary>
     private async Task<ReportGenerationOptions> BuildReportOptionsAsync()
     {
@@ -460,6 +475,7 @@ public partial class ReportViewModel : ObservableObject
             CleanupResult = SelectedCleanupResult,
             VisualOptimizationResult = SelectedVisualOptimizationResult,
             RestorePointResult = SelectedRestorePointResult,
+            SmartAnalysis = SelectedSmartAnalysis,
             FinalObservations = FinalObservations,
             IncludeCompany = IncludeCompany,
             IncludeClient = IncludeClient,
@@ -468,23 +484,8 @@ public partial class ReportViewModel : ObservableObject
             IncludeCleanup = IncludeCleanup,
             IncludeVisualOptimization = IncludeVisualOptimization,
             IncludeRestorePoint = IncludeRestorePoint,
+            IncludeSmart = IncludeSmart,
             IncludeRecommendations = IncludeRecommendations
-        };
-    }
-
-    private ReportGenerationOptions BuildReportOptions()
-    {
-        return new ReportGenerationOptions
-        {
-            IncludeCompany = IncludeCompany,
-            IncludeClient = IncludeClient,
-            IncludeDiagnostic = IncludeDiagnostic,
-            IncludeStartup = IncludeStartup,
-            IncludeCleanup = IncludeCleanup,
-            IncludeVisualOptimization = IncludeVisualOptimization,
-            IncludeRestorePoint = IncludeRestorePoint,
-            IncludeRecommendations = IncludeRecommendations,
-            FinalObservations = FinalObservations
         };
     }
 

@@ -5,6 +5,7 @@ using Cattech.Optimizer.Pro.Core.Models.Startup;
 using Cattech.Optimizer.Pro.Core.Models.Cleanup;
 using Cattech.Optimizer.Pro.Core.Models.VisualOptimization;
 using Cattech.Optimizer.Pro.Core.Models.RestorePoint;
+using Cattech.Optimizer.Pro.Core.Models.Smart;
 
 namespace Cattech.Optimizer.Pro.Core.Models.Reports;
 
@@ -49,6 +50,11 @@ public class ReportGenerationOptions
     public RestorePointResult? RestorePointResult { get; set; }
 
     /// <summary>
+    /// Análisis SMART persistido (no se ejecuta smartctl durante el informe).
+    /// </summary>
+    public SmartAnalysisResult? SmartAnalysis { get; set; }
+
+    /// <summary>
     /// Observaciones finales del técnico.
     /// </summary>
     public string FinalObservations { get; set; } = string.Empty;
@@ -87,6 +93,11 @@ public class ReportGenerationOptions
     /// Incluir sección de punto de restauración.
     /// </summary>
     public bool IncludeRestorePoint { get; set; } = true;
+
+    /// <summary>
+    /// Incluir sección de estado SMART de discos.
+    /// </summary>
+    public bool IncludeSmart { get; set; } = true;
 
     /// <summary>
     /// Incluir recomendaciones automáticas.

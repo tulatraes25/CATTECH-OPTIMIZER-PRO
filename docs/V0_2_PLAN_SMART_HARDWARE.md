@@ -77,7 +77,9 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 | Fase A.4: UI Discos SMART | 1 semana | Modelo + Parser | ✅ Implementado |
 | Fase A.5: Test SMART corto | 0.5 semana | smartctl | ✅ Implementado |
 | Fase A.6: Test extendido + advertencia | 0.5 semana | Test corto | ✅ Implementado |
-| Fase A.7: Inclusión en informe | 0.5 semana | Modelo SMART | Pendiente |
+| Fase A.7: Inclusión en informe | 0.5 semana | Modelo SMART | En curso |
+| A.7.1: Integración análisis SMART en informe | — | — | ✅ Implementado |
+| A.7.2: Resultados de self-test y recomendaciones | — | — | ⏳ Pendiente |
 | **Total Fase A** | **4 semanas** | |
 | Fase B.1: Sensores temperatura | 1 semana | LibreHardwareMonitorLib |
 | Fase B.2: CPU/GPU/Batería | 1 semana | LibreHardwareMonitorLib |

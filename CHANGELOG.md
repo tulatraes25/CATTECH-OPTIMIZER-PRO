@@ -127,6 +127,19 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - **GetLatestResultAsync**: detecta tipo desde el log (Extended offline)
 - **Bloqueo mutuo**: Short bloquea Extended y viceversa mientras hay test activo
 - 17 tests nuevos (304 total)
+
+### Added (SMART en Informe Técnico - Fase A.7.1)
+- **Sección "Estado SMART de Discos"** en informe HTML: usa resultados persistidos, NO ejecuta smartctl
+- **ReportGenerationOptions**: SmartAnalysis + IncludeSmart
+- **ReportViewModel**: carga análisis SMART persistidos via ListResultsAsync (sin AnalyzeAllDisksAsync)
+- **BuildReportOptionsAsync único**: GenerateReportAsync y ExportPdfAsync usan la misma fuente lógica
+- **UI**: checkbox "Estado SMART de discos" + selector "Análisis SMART" con DisplayName
+- **Resumen general**: fecha, smartctl version, discos, buenos/precaución/críticos/no disponibles/desconocidos
+- **Detalle por disco**: info básica, estado con clase CSS, métricas ATA y NVMe estructuradas
+- **NotAvailable explícito**: "SMART no disponible. Esto no permite confirmar que el disco esté sano."
+- **Backup recomendado**: indicador claro en discos con RequiresBackupRecommendation
+- **IncludedSections**: agrega "SMART" cuando corresponde
+- 19 tests nuevos (323 total)
 - SmartctlAvailability, SmartDiskDevice, SmartctlCommandResult
 - ISmartctlRunner, ISmartDiskService interfaces
 - 32 tests de smartctl + 18 tests de SMART (214 total)

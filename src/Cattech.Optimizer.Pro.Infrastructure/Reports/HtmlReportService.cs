@@ -4,6 +4,7 @@ using System.Text.Json;
 using Cattech.Optimizer.Pro.Core.Interfaces;
 using Cattech.Optimizer.Pro.Core.Models.Diagnostics;
 using Cattech.Optimizer.Pro.Core.Models.Reports;
+using Cattech.Optimizer.Pro.Core.Models.Smart;
 
 namespace Cattech.Optimizer.Pro.Infrastructure.Reports;
 
@@ -137,6 +138,12 @@ public class HtmlReportService : IReportGenerationService
 
         // Resultados
         sb.AppendLine(BuildResultsSection(options));
+
+        // Estado SMART de discos
+        if (options.IncludeSmart && options.SmartAnalysis != null)
+        {
+            sb.AppendLine(BuildSmartSection(options));
+        }
 
         // Recomendaciones
         if (options.IncludeRecommendations)
@@ -362,6 +369,171 @@ public class HtmlReportService : IReportGenerationService
 </div>";
     }
 
+    /// <summary>
+    /// Construye la sección HTML de Estado SMART de Discos.
+    /// Usa únicamente resultados SMART persistidos (no ejecuta smartctl).
+    /// </summary>
+    private string BuildSmartSection(ReportGenerationOptions options)
+    {
+        var analysis = options.SmartAnalysis!;
+
+        // Resumen general
+        var good = analysis.Reports.Count(r => r.HealthStatus == SmartHealthStatus.Good);
+        var warning = analysis.Reports.Count(r => r.HealthStatus == SmartHealthStatus.Warning);
+        var critical = analysis.Reports.Count(r => r.HealthStatus == SmartHealthStatus.Critical);
+        var notAvailable = analysis.Reports.Count(r => r.HealthStatus == SmartHealthStatus.NotAvailable);
+        var unknown = analysis.Reports.Count(r => r.HealthStatus == SmartHealthStatus.Unknown);
+
+        var summaryHtml = $@"
+<div class='smart-summary'>
+    <table>
+        <tr><td class='label'>Fecha del análisis:</td><td>{analysis.StartedAt:dd/MM/yyyy HH:mm}</td></tr>
+        <tr><td class='label'>Versión de smartctl:</td><td>{EscapeHtml(analysis.SmartctlVersion)}</td></tr>
+        <tr><td class='label'>Discos analizados:</td><td>{analysis.DevicesAnalyzed}</td></tr>
+        <tr><td class='label'>Buenos:</td><td>{good}</td></tr>
+        <tr><td class='label'>Precaución:</td><td>{warning}</td></tr>
+        <tr><td class='label'>Críticos:</td><td>{critical}</td></tr>
+        <tr><td class='label'>No disponibles:</td><td>{notAvailable}</td></tr>
+        <tr><td class='label'>Desconocidos:</td><td>{unknown}</td></tr>
+    </table>
+</div>";
+
+        // Detalle por disco
+        var disksHtml = new StringBuilder();
+        foreach (var report in analysis.Reports)
+        {
+            disksHtml.AppendLine(BuildSmartDiskBlock(report));
+        }
+
+        return $@"
+<div class='section' style='page-break-inside: auto;'>
+    <h2 class='section-title'>Estado SMART de Discos</h2>
+    {summaryHtml}
+    {disksHtml}
+</div>";
+    }
+
+    /// <summary>
+    /// Construye el bloque HTML de detalle de un disco SMART.
+    /// </summary>
+    private string BuildSmartDiskBlock(SmartDiskReport report)
+    {
+        var statusClass = report.HealthStatus switch
+        {
+            SmartHealthStatus.Good => "smart-good",
+            SmartHealthStatus.Warning => "smart-warning",
+            SmartHealthStatus.Critical => "smart-critical",
+            SmartHealthStatus.NotAvailable => "smart-unavailable",
+            _ => "smart-unknown"
+        };
+
+        var statusText = report.HealthStatus switch
+        {
+            SmartHealthStatus.Good => "Bueno",
+            SmartHealthStatus.Warning => "Precaución",
+            SmartHealthStatus.Critical => "Crítico",
+            SmartHealthStatus.NotAvailable => "No disponible",
+            SmartHealthStatus.Unknown => "Desconocido",
+            _ => "Desconocido"
+        };
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"<div class='smart-disk'>");
+        sb.AppendLine($"<h3>{EscapeHtml(report.ModelName)} <span class='{statusClass}'>{statusText}</span></h3>");
+
+        // Información básica
+        sb.AppendLine("<table>");
+        sb.AppendLine($"<tr><td class='label'>Dispositivo:</td><td>{EscapeHtml(report.Device)}</td></tr>");
+        if (!string.IsNullOrEmpty(report.SerialNumber))
+            sb.AppendLine($"<tr><td class='label'>Número de serie:</td><td>{EscapeHtml(report.SerialNumber)}</td></tr>");
+        sb.AppendLine($"<tr><td class='label'>Tipo:</td><td>{EscapeHtml(report.DeviceType)}</td></tr>");
+        if (!string.IsNullOrEmpty(report.Protocol))
+            sb.AppendLine($"<tr><td class='label'>Protocolo:</td><td>{EscapeHtml(report.Protocol)}</td></tr>");
+        if (!string.IsNullOrEmpty(report.FirmwareVersion))
+            sb.AppendLine($"<tr><td class='label'>Firmware:</td><td>{EscapeHtml(report.FirmwareVersion)}</td></tr>");
+        if (report.CapacityBytes > 0)
+            sb.AppendLine($"<tr><td class='label'>Capacidad:</td><td>{report.CapacityGB} GB</td></tr>");
+        sb.AppendLine($"<tr><td class='label'>Estado:</td><td>{statusText}</td></tr>");
+
+        // HealthSummary
+        if (!string.IsNullOrEmpty(report.HealthSummary))
+            sb.AppendLine($"<tr><td class='label'>Resumen:</td><td>{EscapeHtml(report.HealthSummary)}</td></tr>");
+
+        // NotAvailable: aclaración explícita
+        if (report.HealthStatus == SmartHealthStatus.NotAvailable)
+            sb.AppendLine("<tr><td colspan='2'><em>SMART no disponible. Esto no permite confirmar que el disco esté sano.</em></td></tr>");
+
+        // Métricas ATA/SATA
+        var isAta = report.DeviceType.Contains("HDD", StringComparison.OrdinalIgnoreCase) ||
+                    report.DeviceType.Contains("SSD", StringComparison.OrdinalIgnoreCase) ||
+                    report.Protocol.Contains("SATA", StringComparison.OrdinalIgnoreCase);
+
+        if (isAta || report.TemperatureCelsius > 0 || report.PowerOnHours > 0)
+        {
+            if (report.TemperatureCelsius > 0)
+                sb.AppendLine($"<tr><td class='label'>Temperatura:</td><td>{report.TemperatureCelsius} °C</td></tr>");
+            if (report.PowerOnHours > 0)
+                sb.AppendLine($"<tr><td class='label'>Horas de uso:</td><td>{report.PowerOnHours}</td></tr>");
+            if (report.PowerCycleCount > 0)
+                sb.AppendLine($"<tr><td class='label'>Ciclos de encendido:</td><td>{report.PowerCycleCount}</td></tr>");
+            sb.AppendLine($"<tr><td class='label'>Sectores reasignados:</td><td>{report.ReallocatedSectorCount}</td></tr>");
+            sb.AppendLine($"<tr><td class='label'>Sectores pendientes:</td><td>{report.PendingSectorCount}</td></tr>");
+            sb.AppendLine($"<tr><td class='label'>Offline no corregibles:</td><td>{report.OfflineUncorrectableCount}</td></tr>");
+            sb.AppendLine($"<tr><td class='label'>Errores CRC UDMA:</td><td>{report.UDMACrcErrorCount}</td></tr>");
+        }
+
+        // Métricas NVMe
+        if (report.Protocol.Contains("NVMe", StringComparison.OrdinalIgnoreCase))
+        {
+            if (report.TemperatureCelsius > 0)
+                sb.AppendLine($"<tr><td class='label'>Temperatura:</td><td>{report.TemperatureCelsius} °C</td></tr>");
+            if (report.PowerOnHours > 0)
+                sb.AppendLine($"<tr><td class='label'>Horas de uso:</td><td>{report.PowerOnHours}</td></tr>");
+            if (report.NvmePercentageUsed.HasValue)
+                sb.AppendLine($"<tr><td class='label'>Porcentaje usado:</td><td>{report.NvmePercentageUsed}%</td></tr>");
+            if (report.NvmeAvailableSpare.HasValue)
+                sb.AppendLine($"<tr><td class='label'>Spare disponible:</td><td>{report.NvmeAvailableSpare}%</td></tr>");
+            if (report.NvmeMediaErrors.HasValue)
+                sb.AppendLine($"<tr><td class='label'>Media errors:</td><td>{report.NvmeMediaErrors}</td></tr>");
+            if (report.NvmeUnsafeShutdowns.HasValue)
+                sb.AppendLine($"<tr><td class='label'>Unsafe shutdowns:</td><td>{report.NvmeUnsafeShutdowns}</td></tr>");
+        }
+
+        sb.AppendLine("</table>");
+
+        // Backup recomendado
+        if (report.RequiresBackupRecommendation)
+        {
+            sb.AppendLine("<div class='smart-backup-warning'><strong>Backup recomendado: Sí</strong> - Se recomienda realizar backup de los datos importantes antes de continuar con pruebas o reparaciones.</div>");
+        }
+        else
+        {
+            sb.AppendLine("<div class='smart-backup-ok'><strong>Backup recomendado: No</strong></div>");
+        }
+
+        // Warnings
+        if (report.Warnings.Count > 0)
+        {
+            sb.AppendLine("<div class='smart-warnings'><strong>Advertencias:</strong><ul>");
+            foreach (var warning in report.Warnings)
+                sb.AppendLine($"<li>{EscapeHtml(warning)}</li>");
+            sb.AppendLine("</ul></div>");
+        }
+
+        // Errors
+        if (report.Errors.Count > 0)
+        {
+            sb.AppendLine("<div class='smart-errors'><strong>Errores SMART:</strong><ul>");
+            foreach (var error in report.Errors)
+                sb.AppendLine($"<li>{EscapeHtml(error)}</li>");
+            sb.AppendLine("</ul></div>");
+        }
+
+        sb.AppendLine("</div>");
+
+        return sb.ToString();
+    }
+
     private string BuildRecommendationsSection(ReportGenerationOptions options)
     {
         var recommendations = ReportRecommendationEngine.GenerateRecommendations(options);
@@ -470,6 +642,19 @@ public class HtmlReportService : IReportGenerationService
     .sig-line { border-bottom: 1px solid #333; margin-bottom: 8px; height: 40px; }
     .sig-block p { font-size: 9pt; color: #555; }
     .footer { text-align: center; margin-top: 30px; padding-top: 10px; border-top: 1px solid #ddd; font-size: 8pt; color: #999; }
+    .smart-summary { margin-bottom: 15px; }
+    .smart-disk { margin-bottom: 15px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; page-break-inside: avoid; }
+    .smart-disk h3 { font-size: 11pt; margin-bottom: 8px; }
+    .smart-good { background: #E8F5E9; color: #2E7D32; padding: 2px 8px; border-radius: 3px; font-size: 9pt; font-weight: 600; }
+    .smart-warning { background: #FFF8E1; color: #E65100; padding: 2px 8px; border-radius: 3px; font-size: 9pt; font-weight: 600; }
+    .smart-critical { background: #FDECEA; color: #C62828; padding: 2px 8px; border-radius: 3px; font-size: 9pt; font-weight: 600; }
+    .smart-unavailable { background: #F5F5F5; color: #757575; padding: 2px 8px; border-radius: 3px; font-size: 9pt; font-weight: 600; }
+    .smart-unknown { background: #F5F5F5; color: #616161; padding: 2px 8px; border-radius: 3px; font-size: 9pt; font-weight: 600; }
+    .smart-backup-warning { background: #FFF8E1; border-left: 4px solid #F9A825; padding: 8px 12px; margin: 8px 0; font-size: 10pt; }
+    .smart-backup-ok { background: #E8F5E9; border-left: 4px solid #4CAF50; padding: 8px 12px; margin: 8px 0; font-size: 10pt; }
+    .smart-warnings { background: #FFF8E1; padding: 8px 12px; margin: 8px 0; border-radius: 4px; font-size: 10pt; }
+    .smart-errors { background: #FDECEA; padding: 8px 12px; margin: 8px 0; border-radius: 4px; font-size: 10pt; }
+    .smart-warnings ul, .smart-errors ul { margin: 4px 0 0 18px; }
 </style>";
     }
 

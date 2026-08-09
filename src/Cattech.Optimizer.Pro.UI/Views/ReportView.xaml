@@ -112,6 +112,8 @@
                                       IsEnabled="{Binding HasVisualOptimizationData}" FontSize="12" Margin="0,0,0,6" />
                             <CheckBox Content="Punto de restauración" IsChecked="{Binding IncludeRestorePoint}"
                                       IsEnabled="{Binding HasRestorePointData}" FontSize="12" Margin="0,0,0,6" />
+                            <CheckBox Content="Estado SMART de discos" IsChecked="{Binding IncludeSmart}"
+                                      IsEnabled="{Binding HasSmartData}" FontSize="12" Margin="0,0,0,6" />
                             <CheckBox Content="Recomendaciones automáticas" IsChecked="{Binding IncludeRecommendations}"
                                       FontSize="12" />
                         </StackPanel>
@@ -163,6 +165,14 @@
                                       DisplayMemberPath="RestorePointName"
                                       FontSize="11" Padding="8,6" Margin="0,0,0,10"
                                       IsEnabled="{Binding HasRestorePointData}" />
+
+                            <!-- Análisis SMART -->
+                            <TextBlock Text="Análisis SMART:" FontSize="11" FontWeight="SemiBold" Foreground="#555" Margin="0,0,0,4" />
+                            <ComboBox ItemsSource="{Binding AvailableSmartAnalyses}"
+                                      SelectedItem="{Binding SelectedSmartAnalysis}"
+                                      DisplayMemberPath="DisplayName"
+                                      FontSize="11" Padding="8,6" Margin="0,0,0,10"
+                                      IsEnabled="{Binding HasSmartData}" />
                         </StackPanel>
                     </Border>
                 </StackPanel>

@@ -245,4 +245,10 @@ public class SmartAnalysisResult
 
     /// <summary>Advertencias generales.</summary>
     public List<string> Warnings { get; set; } = new();
+
+    /// <summary>
+    /// Nombre de presentación para la UI del informe.
+    /// Ejemplo: "08/08/2026 20:30 - 2 discos"
+    /// </summary>
+    public string DisplayName => $"{StartedAt:dd/MM/yyyy HH:mm} - {Reports.Count} disco(s)";
 }

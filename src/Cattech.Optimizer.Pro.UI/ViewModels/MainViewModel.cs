@@ -193,7 +193,8 @@ public partial class MainViewModel : ObservableObject
             _startupService,
             _tempCleanupService,
             _visualOptimizationService,
-            _restorePointService);
+            _restorePointService,
+            _smartDiskService);
 
         return new ReportView
         {

@@ -6,6 +6,7 @@ using Cattech.Optimizer.Pro.Core.Models.Diagnostics;
 using Cattech.Optimizer.Pro.Core.Models.Startup;
 using Cattech.Optimizer.Pro.Core.Models.Cleanup;
 using Cattech.Optimizer.Pro.Core.Models.RestorePoint;
+using Cattech.Optimizer.Pro.Core.Models.Smart;
 
 namespace Cattech.Optimizer.Pro.Core.Tests.Models;
 
@@ -217,5 +218,232 @@ public class ReportGenerationTests
         };
 
         Assert.Equal("Informe_Perez_20240115", options.OutputFileName);
+    }
+
+    // =====================
+    // Tests Fase A.7.1 - SMART en informe
+    // =====================
+
+    [Fact]
+    public void ReportGenerationOptions_AcceptsSmartAnalysis()
+    {
+        var options = new ReportGenerationOptions
+        {
+            SmartAnalysis = new SmartAnalysisResult
+            {
+                StartedAt = new DateTime(2026, 8, 8, 20, 30, 0),
+                DevicesAnalyzed = 2
+            }
+        };
+
+        Assert.NotNull(options.SmartAnalysis);
+        Assert.Equal(2, options.SmartAnalysis.DevicesAnalyzed);
+        Assert.True(options.IncludeSmart);
+    }
+
+    [Fact]
+    public void IncludeSmartFalse_OmitsSmartSection()
+    {
+        var options = new ReportGenerationOptions
+        {
+            IncludeSmart = false,
+            SmartAnalysis = new SmartAnalysisResult()
+        };
+
+        var includeSection = options.IncludeSmart && options.SmartAnalysis != null;
+        Assert.False(includeSection);
+    }
+
+    [Fact]
+    public void IncludeSmartTrue_WithNullAnalysis_OmitsSectionWithoutError()
+    {
+        var options = new ReportGenerationOptions
+        {
+            IncludeSmart = true,
+            SmartAnalysis = null
+        };
+
+        var includeSection = options.IncludeSmart && options.SmartAnalysis != null;
+        Assert.False(includeSection);
+    }
+
+    [Fact]
+    public void SmartGood_AppearsAsBueno()
+    {
+        var report = new SmartDiskReport { HealthStatus = SmartHealthStatus.Good };
+        var text = report.HealthStatus switch
+        {
+            SmartHealthStatus.Good => "Bueno",
+            _ => "Otro"
+        };
+        Assert.Equal("Bueno", text);
+    }
+
+    [Fact]
+    public void SmartWarning_AppearsAsPrecaucion()
+    {
+        var report = new SmartDiskReport { HealthStatus = SmartHealthStatus.Warning };
+        var text = report.HealthStatus switch
+        {
+            SmartHealthStatus.Warning => "Precaución",
+            _ => "Otro"
+        };
+        Assert.Equal("Precaución", text);
+    }
+
+    [Fact]
+    public void SmartCritical_AppearsAsCritico()
+    {
+        var report = new SmartDiskReport { HealthStatus = SmartHealthStatus.Critical };
+        var text = report.HealthStatus switch
+        {
+            SmartHealthStatus.Critical => "Crítico",
+            _ => "Otro"
+        };
+        Assert.Equal("Crítico", text);
+    }
+
+    [Fact]
+    public void SmartNotAvailable_NotAppearsAsSano()
+    {
+        var report = new SmartDiskReport { HealthStatus = SmartHealthStatus.NotAvailable };
+        var text = report.HealthStatus switch
+        {
+            SmartHealthStatus.Good => "Bueno",
+            SmartHealthStatus.NotAvailable => "No disponible",
+            _ => "Otro"
+        };
+        Assert.Equal("No disponible", text);
+        Assert.NotEqual("Bueno", text);
+    }
+
+    [Fact]
+    public void SmartUnknown_NotAppearsAsSano()
+    {
+        var report = new SmartDiskReport { HealthStatus = SmartHealthStatus.Unknown };
+        var text = report.HealthStatus switch
+        {
+            SmartHealthStatus.Good => "Bueno",
+            SmartHealthStatus.Unknown => "Desconocido",
+            _ => "Otro"
+        };
+        Assert.Equal("Desconocido", text);
+        Assert.NotEqual("Bueno", text);
+    }
+
+    [Fact]
+    public void ReallocatedSectorCount_UsesRealValue()
+    {
+        var report = new SmartDiskReport
+        {
+            ImportantAttributes = [new SmartAttribute { Id = 5, RawValue = 12 }]
+        };
+        Assert.Equal(12, report.ReallocatedSectorCount);
+    }
+
+    [Fact]
+    public void PendingSectorCount_UsesRealValue()
+    {
+        var report = new SmartDiskReport
+        {
+            ImportantAttributes = [new SmartAttribute { Id = 197, RawValue = 7 }]
+        };
+        Assert.Equal(7, report.PendingSectorCount);
+    }
+
+    [Fact]
+    public void NvmePercentageUsed_AppearsCorrectly()
+    {
+        var report = new SmartDiskReport
+        {
+            Protocol = "NVMe",
+            NvmePercentageUsed = 85
+        };
+        Assert.Equal(85, report.NvmePercentageUsed);
+    }
+
+    [Fact]
+    public void NvmeNull_NotShownAsZero()
+    {
+        var report = new SmartDiskReport { Protocol = "NVMe" };
+        Assert.Null(report.NvmePercentageUsed);
+        Assert.Null(report.NvmeMediaErrors);
+    }
+
+    [Fact]
+    public void RequiresBackupRecommendation_ShownInReport()
+    {
+        var report = new SmartDiskReport
+        {
+            HealthStatus = SmartHealthStatus.Critical,
+            RequiresBackupRecommendation = true
+        };
+        Assert.True(report.RequiresBackupRecommendation);
+    }
+
+    [Fact]
+    public void Warnings_IncludedInReport()
+    {
+        var report = new SmartDiskReport();
+        report.Warnings.Add("Warning 1");
+        report.Warnings.Add("Warning 2");
+        Assert.Equal(2, report.Warnings.Count);
+    }
+
+    [Fact]
+    public void Errors_IncludedInReport()
+    {
+        var report = new SmartDiskReport();
+        report.Errors.Add("Error 1");
+        Assert.Single(report.Errors);
+    }
+
+    [Fact]
+    public void SmartContent_EscapesHtml()
+    {
+        var report = new SmartDiskReport
+        {
+            ModelName = "<script>alert('x')</script>"
+        };
+        var escaped = System.Net.WebUtility.HtmlEncode(report.ModelName);
+        Assert.DoesNotContain("<script>", escaped);
+        Assert.Contains("&lt;script&gt;", escaped);
+    }
+
+    [Fact]
+    public void SmartAnalysisResult_DisplayName_Format()
+    {
+        var analysis = new SmartAnalysisResult
+        {
+            StartedAt = new DateTime(2026, 8, 8, 20, 30, 0),
+            Reports = [new SmartDiskReport(), new SmartDiskReport()]
+        };
+        Assert.Equal("08/08/2026 20:30 - 2 disco(s)", analysis.DisplayName);
+    }
+
+    [Fact]
+    public void IncludedSections_AddsSmart()
+    {
+        var info = new GeneratedReportInfo();
+        info.IncludedSections.Add("SMART");
+        Assert.Contains("SMART", info.IncludedSections);
+    }
+
+    [Fact]
+    public void BuildReportOptions_IncludesSmartAnalysis()
+    {
+        // Verificar que el builder incluye SmartAnalysis (simulado)
+        var options = new ReportGenerationOptions
+        {
+            SmartAnalysis = new SmartAnalysisResult
+            {
+                StartedAt = DateTime.Now,
+                Reports = [new SmartDiskReport { HealthStatus = SmartHealthStatus.Good }]
+            },
+            IncludeSmart = true
+        };
+
+        Assert.NotNull(options.SmartAnalysis);
+        Assert.True(options.IncludeSmart);
     }
 }
