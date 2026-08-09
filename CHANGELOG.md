@@ -178,6 +178,20 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - **Sin thresholds nuevos**: el engine confía en HealthStatus/RequiresBackupRecommendation/Status; no reinterpreta atributos raw
 - **Etiquetas legibles**: ModelName → DeviceName → Device
 - 35 tests nuevos (418 total)
+
+### Added (Fundación sensores de temperatura - Fase B.1.1)
+- **Dependencia**: LibreHardwareMonitorLib 0.9.6 (NuGet, MPL 2.0); System.Management actualizado de 8.0.0 a 10.0.2 (requisito mínimo de LHM 0.9.6, sin NU1605/downgrade)
+- **IHardwareSensorService** (Core): `GetTemperatureSnapshotAsync(CancellationToken)` — capa separada de IHardwareService/WMI
+- **Modelos Core sin dependencia de LHM**: HardwareTemperatureSensor (HardwareName, HardwareType string propio, SensorName, SensorIdentifier, Value/Min/Max nullable) y HardwareTemperatureSnapshot (CapturedAt, IsAvailable, IsElevated, Sensors, Warnings, Errors, HasSensors, ValidSensorCount)
+- **LibreHardwareSensorService**: read-only, CPU/GPU/Memory/Motherboard/Storage/Controller habilitados, recorrido recursivo de SubHardware, filtro exclusivo por SensorType.Temperature
+- **Normalización**: null se conserva como null (nunca 0 °C); NaN/Infinity → null
+- **Deduplicación por SensorIdentifier** (no por nombre); fallback id hardware + nombre
+- **Permisos**: IsElevated detectado; sin elevación → warning informativo, no error fatal
+- **Tolerancia a errores**: fallo de un hardware no pierde sensores válidos de otros; Open fallido → IsAvailable=false con errores controlados
+- **Ciclo de vida**: Computer → Open → Accept(visitor) → lectura → Close en finally; HardwareUpdateVisitor propio (UpdateVisitor no es público en 0.9.6)
+- **Async-compatible**: lectura sincrónica en background (Task.Run), respeta CancellationToken
+- **Testabilidad**: abstracción interna IHardwareMonitorFactory/IHardwareMonitorSession/IHardwareNode/ISensorNode + InternalsVisibleTo; tests con fakes, sin acceso a hardware real
+- 22 tests nuevos (440 total)
 - SmartctlAvailability, SmartDiskDevice, SmartctlCommandResult
 - ISmartctlRunner, ISmartDiskService interfaces
 - 32 tests de smartctl + 18 tests de SMART (214 total)

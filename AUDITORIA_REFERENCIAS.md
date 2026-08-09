@@ -11,7 +11,7 @@ Objetivo: Analizar herramientas existentes para inspirar arquitectura y lógica 
 |------------|----------|-------------------------|
 | ChrisTitusTech/winutil | MIT | Usar solo como referencia |
 | smartmontools | GPL-2.0 | Invocar binario externo |
-| LibreHardwareMonitor | MPL 2.0 | Evaluar librería NuGet |
+| LibreHardwareMonitor | MPL 2.0 | Integrado vía NuGet (sensores read-only) |
 | a1ive/nwinfo | Unlicense | Usar solo como referencia |
 | memtest86plus | GPL-2.0 | Dejar para versión futura |
 | script-wureset | MIT | Usar solo como referencia |
@@ -135,30 +135,37 @@ Software de monitoreo de hardware que muestra:
 - Requiere attribution y compartir cambios en archivos MPL
 
 ### Uso permitido en CATTECH
-✅ **Evaluar librería NuGet**  
-- Usar paquete NuGet `LibreHardwareMonitorLib`
-- Acceder a datos de hardware en tiempo real
-- Crear capa de abstracción propia sobre la librería
-- Respetar atribución en documentación
+✅ **Integración efectiva vía NuGet (Fase B.1.1)**  
+- Paquete: `LibreHardwareMonitorLib` versión estable **0.9.6**
+- Licencia: **MPL 2.0** (atribución en documentación)
+- Integración mediante NuGet; CATTECH **no copia ni modifica código fuente** de la librería en esta fase
+- Capa de abstracción propia sobre la librería (interfaces internas en Infrastructure)
+- Solo lectura: no modifica valores, no controla ventiladores, no escribe configuraciones
+- Algunos sensores pueden requerir privilegios administrativos
 
-### Implementación recomendada
+### Implementación en v0.2 (B.1.1 completada)
 ```csharp
-// Referencia a NuGet: LibreHardwareMonitorLib
+// Referencia a NuGet: LibreHardwareMonitorLib 0.9.6
 using LibreHardwareMonitor.Hardware;
 
 var computer = new Computer {
     IsCpuEnabled = true,
     IsGpuEnabled = true,
-    IsStorageEnabled = true
+    IsMemoryEnabled = true,
+    IsMotherboardEnabled = true,
+    IsStorageEnabled = true,
+    IsControllerEnabled = true
 };
 computer.Open();
+computer.Accept(new HardwareUpdateVisitor()); // UpdateVisitor no es público en 0.9.6
 // Leer sensores...
 ```
 
 ### Consideraciones técnicas
-- Requiere permisos de administrador para sensores
+- Requiere permisos de administrador para algunos sensores (no es error fatal; warning informativo)
 - Soporta .NET Framework 4.7.2+ y .NET Standard 2.0
-- Excelente documentación y ejemplos oficiales
+- En 0.9.6: `Computer` no expone `Update()` ni `UpdateVisitor` público; se implementa `IVisitor` propio
+- El enum `HardwareType` de 0.9.6 no incluye `Controller`; `IsControllerEnabled` sigue disponible en `Computer`
 
 ---
 

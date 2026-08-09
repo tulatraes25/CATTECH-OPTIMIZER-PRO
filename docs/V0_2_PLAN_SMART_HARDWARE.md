@@ -32,7 +32,7 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 6. **Test SMART extendido** (solo opción avanzada con advertencia)
 7. **Inclusión de resultados SMART en informe HTML/PDF**
 
-### Fase B: Hardware Avanzado (posterior dentro de v0.2)
+### Fase B: Hardware Avanzado (posterior dentro de v0.2) — En curso
 
 1. Sensores de temperatura en tiempo real
 2. CPU detallada (núcleos, temperatura, uso)
@@ -48,7 +48,7 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 | Dependencia | Licencia | Tipo | Uso |
 |-------------|----------|------|-----|
 | smartmontools (smartctl.exe) | GPL-2.0 | Binario externo | Diagnóstico SMART |
-| LibreHardwareMonitorLib | MPL 2.0 | NuGet | Sensores hardware |
+| LibreHardwareMonitorLib | MPL 2.0 | NuGet (0.9.6) | Sensores hardware |
 
 ---
 
@@ -82,7 +82,8 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 | A.7.2a: Self-tests persistidos en informe | — | — | ✅ Implementado |
 | A.7.2b: Recomendaciones SMART/self-test | — | — | ✅ Implementado |
 | **Total Fase A** | **4 semanas** | | ✅ Completada |
-| Fase B.1: Sensores temperatura | 1 semana | LibreHardwareMonitorLib |
+| B.1.1: Fundación LibreHardwareMonitor + lectura temperatura | — | LibreHardwareMonitorLib 0.9.6 | ✅ Implementado |
+| Fase B.1: Sensores temperatura | 1 semana | LibreHardwareMonitorLib | En curso |
 | Fase B.2: CPU/GPU/Batería | 1 semana | LibreHardwareMonitorLib |
 | Fase B.3: RAM avanzada | 0.5 semana | LibreHardwareMonitorLib |
 | Fase B.4: UI Hardware avanzado | 1 semana | Modelos |
