@@ -244,14 +244,9 @@ public class SmartTestService : ISmartTestService
     {
         EnsureDirectoryExists();
 
-        var fileName = $"smart-test-{session.TestType.ToString().ToLowerInvariant()}-{session.RequestedAt:yyyyMMdd-HHmmss}.json";
+        // Filename determinístico: la misma sesión siempre sobrescribe el mismo archivo
+        var fileName = $"smart-test-{session.TestType.ToString().ToLowerInvariant()}-{session.RequestedAt:yyyyMMdd-HHmmss}-{session.Id}.json";
         var filePath = Path.Combine(_testsDirectory, fileName);
-
-        if (File.Exists(filePath))
-        {
-            fileName = $"smart-test-{session.TestType.ToString().ToLowerInvariant()}-{session.RequestedAt:yyyyMMdd-HHmmss}-{session.Id}.json";
-            filePath = Path.Combine(_testsDirectory, fileName);
-        }
 
         var json = JsonSerializer.Serialize(session, SerializerOptions);
         await File.WriteAllTextAsync(filePath, json);
@@ -267,9 +262,9 @@ public class SmartTestService : ISmartTestService
         if (!Directory.Exists(_testsDirectory))
             return sessions;
 
-        var files = Directory.GetFiles(_testsDirectory, "smart-test-*.json")
-            .OrderByDescending(f => File.GetLastWriteTime(f))
-            .Take(maxResults);
+        // Leer TODOS los archivos relevantes (incluye formato legacy sin Id)
+        var files = Directory.GetFiles(_testsDirectory, "smart-test-*.json");
+        var byId = new Dictionary<string, SmartTestSession>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var file in files)
         {
@@ -277,13 +272,49 @@ public class SmartTestService : ISmartTestService
             {
                 var json = await File.ReadAllTextAsync(file);
                 var session = JsonSerializer.Deserialize<SmartTestSession>(json, SerializerOptions);
-                if (session != null)
-                    sessions.Add(session);
+
+                if (session == null || string.IsNullOrEmpty(session.Id))
+                    continue;
+
+                // Si ya hay un snapshot para este Id, quedarse con el más reciente
+                if (byId.TryGetValue(session.Id, out var existing))
+                {
+                    if (GetEffectiveDate(session) > GetEffectiveDate(existing))
+                        byId[session.Id] = session;
+                }
+                else
+                {
+                    byId[session.Id] = session;
+                }
             }
-            catch { }
+            catch
+            {
+                // Archivo corrupto: omitir sin romper el listado
+            }
         }
 
+        // Ordenar por fecha efectiva descendente (más reciente → más antiguo)
+        sessions = byId.Values
+            .OrderByDescending(GetEffectiveDate)
+            .ToList();
+
+        // Recién después aplicar maxResults
+        if (maxResults > 0 && sessions.Count > maxResults)
+            sessions = sessions.Take(maxResults).ToList();
+
         return sessions;
+    }
+
+    /// <summary>
+    /// Fecha efectiva de una sesión para ordenar/desempate.
+    /// Prioridad: LastCheckedAt → CompletedAt → StartedAt → RequestedAt.
+    /// </summary>
+    private static DateTime GetEffectiveDate(SmartTestSession session)
+    {
+        return session.LastCheckedAt
+            ?? session.CompletedAt
+            ?? session.StartedAt
+            ?? session.RequestedAt;
     }
 
     private void EnsureDirectoryExists()

@@ -148,6 +148,15 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - **Backup para NotAvailable/Unknown**: "Backup recomendado: No determinado" con aclaración, nunca "Backup: No"
 - **Clase visual neutra**: smart-backup-unknown para estados no determinados
 - 14 tests nuevos (337 total)
+
+### Fixed (Persistencia SmartTestSession)
+- **Filename determinístico**: `smart-test-{type}-{RequestedAt}-{Id}.json` siempre, la misma sesión sobrescribe el mismo archivo
+- **Compatibilidad legacy**: ListSessionsAsync sigue leyendo formatos antiguos sin Id (solo lectura)
+- **Deduplicación por Id**: se agrupa por SmartTestSession.Id ANTES de aplicar maxResults
+- **Snapshot más reciente**: se elige por fecha efectiva (LastCheckedAt → CompletedAt → StartedAt → RequestedAt)
+- **Orden descendente**: más reciente → más antiguo
+- **JSON corrupto**: se omite sin romper el listado
+- 17 tests nuevos (354 total)
 - SmartctlAvailability, SmartDiskDevice, SmartctlCommandResult
 - ISmartctlRunner, ISmartDiskService interfaces
 - 32 tests de smartctl + 18 tests de SMART (214 total)

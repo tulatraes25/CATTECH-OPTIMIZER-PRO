@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text.Json;
 using Cattech.Optimizer.Pro.Core.Interfaces;
 using Cattech.Optimizer.Pro.Core.Models.Smart;
 using Cattech.Optimizer.Pro.Infrastructure.Smart;
@@ -909,6 +910,422 @@ public class SmartTestServiceTests
 
         Assert.False(canStartTest);
         Assert.False(canStartExtendedTest);
+    }
+
+    // =====================
+    // Tests de persistencia estabilizada
+    // =====================
+
+    private static string CreateTestDir()
+        => Path.Combine(Path.GetTempPath(), $"cattech_smart_test_{Guid.NewGuid():N}");
+
+    private static readonly JsonSerializerOptions TestSerializer = new()
+    {
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
+    [Fact]
+    public async Task SaveSession_AlwaysIncludesId()
+    {
+        var service = new SmartTestService(new SmartctlRunner("/nonexistent/smartctl.exe"), CreateTestDir());
+        var session = new SmartTestSession
+        {
+            Id = "ABC12345",
+            Device = "/dev/sda",
+            TestType = SmartTestType.Short,
+            RequestedAt = new DateTime(2026, 8, 9, 11, 15, 0)
+        };
+
+        var fileName = await service.SaveSessionAsync(session);
+
+        Assert.Contains("ABC12345", fileName);
+    }
+
+    [Fact]
+    public async Task SaveSession_SameSession_SameFilename()
+    {
+        var dir = CreateTestDir();
+        var service = new SmartTestService(new SmartctlRunner("/nonexistent/smartctl.exe"), dir);
+        var session = new SmartTestSession
+        {
+            Id = "ABC12345",
+            Device = "/dev/sda",
+            TestType = SmartTestType.Short,
+            RequestedAt = new DateTime(2026, 8, 9, 11, 15, 0)
+        };
+
+        var first = await service.SaveSessionAsync(session);
+        session.Status = SmartTestStatus.CompletedWithoutError;
+        var second = await service.SaveSessionAsync(session);
+
+        Assert.Equal(first, second);
+    }
+
+    [Fact]
+    public async Task SaveSession_SecondPersist_DoesNotCreateSecondFile()
+    {
+        var dir = CreateTestDir();
+        var service = new SmartTestService(new SmartctlRunner("/nonexistent/smartctl.exe"), dir);
+        var session = new SmartTestSession
+        {
+            Id = "ABC12345",
+            Device = "/dev/sda",
+            TestType = SmartTestType.Short,
+            RequestedAt = new DateTime(2026, 8, 9, 11, 15, 0)
+        };
+
+        await service.SaveSessionAsync(session);
+        session.Status = SmartTestStatus.CompletedWithoutError;
+        await service.SaveSessionAsync(session);
+
+        var files = Directory.GetFiles(Path.Combine(dir, "data", "smart-tests"), "smart-test-*.json");
+        Assert.Single(files);
+    }
+
+    [Fact]
+    public async Task SaveSession_Short_UsesShortPrefix()
+    {
+        var service = new SmartTestService(new SmartctlRunner("/nonexistent/smartctl.exe"), CreateTestDir());
+        var session = new SmartTestSession
+        {
+            Id = "ABC12345",
+            Device = "/dev/sda",
+            TestType = SmartTestType.Short,
+            RequestedAt = new DateTime(2026, 8, 9, 11, 15, 0)
+        };
+
+        var fileName = await service.SaveSessionAsync(session);
+        Assert.StartsWith("smart-test-short-", fileName);
+    }
+
+    [Fact]
+    public async Task SaveSession_Extended_UsesExtendedPrefix()
+    {
+        var service = new SmartTestService(new SmartctlRunner("/nonexistent/smartctl.exe"), CreateTestDir());
+        var session = new SmartTestSession
+        {
+            Id = "E5F6G7H8",
+            Device = "/dev/sda",
+            TestType = SmartTestType.Extended,
+            RequestedAt = new DateTime(2026, 8, 9, 11, 20, 0)
+        };
+
+        var fileName = await service.SaveSessionAsync(session);
+        Assert.StartsWith("smart-test-extended-", fileName);
+    }
+
+    [Fact]
+    public async Task ListSessions_LegacyFormat_StillReadable()
+    {
+        var dir = CreateTestDir();
+        var testsDir = Path.Combine(dir, "data", "smart-tests");
+        Directory.CreateDirectory(testsDir);
+
+        // Formato legacy sin Id
+        var legacy = new SmartTestSession
+        {
+            Id = "LEGACY01",
+            Device = "/dev/sda",
+            TestType = SmartTestType.Short,
+            RequestedAt = new DateTime(2026, 8, 9, 10, 0, 0)
+        };
+        var legacyJson = JsonSerializer.Serialize(legacy, TestSerializer);
+        await File.WriteAllTextAsync(Path.Combine(testsDir, "smart-test-short-20260809-100000.json"), legacyJson);
+
+        var service = new SmartTestService(new SmartctlRunner("/nonexistent/smartctl.exe"), dir);
+        var sessions = await service.ListSessionsAsync();
+
+        Assert.Single(sessions);
+        Assert.Equal("LEGACY01", sessions[0].Id);
+    }
+
+    [Fact]
+    public async Task ListSessions_LegacyAndNew_SameId_Deduplicated()
+    {
+        var dir = CreateTestDir();
+        var testsDir = Path.Combine(dir, "data", "smart-tests");
+        Directory.CreateDirectory(testsDir);
+
+        // Snapshot legacy sin Id en filename pero con session.Id
+        var legacy = new SmartTestSession
+        {
+            Id = "DUPE001",
+            Device = "/dev/sda",
+            TestType = SmartTestType.Short,
+            RequestedAt = new DateTime(2026, 8, 9, 10, 0, 0),
+            Status = SmartTestStatus.InProgress,
+            StartedAt = new DateTime(2026, 8, 9, 10, 0, 5)
+        };
+        await File.WriteAllTextAsync(
+            Path.Combine(testsDir, "smart-test-short-20260809-100000.json"),
+            JsonSerializer.Serialize(legacy, TestSerializer));
+
+        // Snapshot nuevo con mismo session.Id y estado más reciente
+        var newer = new SmartTestSession
+        {
+            Id = "DUPE001",
+            Device = "/dev/sda",
+            TestType = SmartTestType.Short,
+            RequestedAt = new DateTime(2026, 8, 9, 10, 0, 0),
+            Status = SmartTestStatus.CompletedWithoutError,
+            StartedAt = new DateTime(2026, 8, 9, 10, 0, 5),
+            CompletedAt = new DateTime(2026, 8, 9, 10, 5, 0)
+        };
+        await File.WriteAllTextAsync(
+            Path.Combine(testsDir, "smart-test-short-20260809-100000-DUPE001.json"),
+            JsonSerializer.Serialize(newer, TestSerializer));
+
+        var service = new SmartTestService(new SmartctlRunner("/nonexistent/smartctl.exe"), dir);
+        var sessions = await service.ListSessionsAsync();
+
+        Assert.Single(sessions);
+        Assert.Equal(SmartTestStatus.CompletedWithoutError, sessions[0].Status);
+    }
+
+    [Fact]
+    public async Task ListSessions_NewestLastCheckedAt_Wins()
+    {
+        var dir = CreateTestDir();
+        var testsDir = Path.Combine(dir, "data", "smart-tests");
+        Directory.CreateDirectory(testsDir);
+
+        var older = new SmartTestSession
+        {
+            Id = "WIN001",
+            Device = "/dev/sda",
+            TestType = SmartTestType.Short,
+            RequestedAt = new DateTime(2026, 8, 9, 10, 0, 0),
+            LastCheckedAt = new DateTime(2026, 8, 9, 10, 1, 0),
+            Warnings = ["old warning"]
+        };
+        await File.WriteAllTextAsync(
+            Path.Combine(testsDir, "smart-test-short-20260809-100000-WIN001.json"),
+            JsonSerializer.Serialize(older, TestSerializer));
+
+        var newer = new SmartTestSession
+        {
+            Id = "WIN001",
+            Device = "/dev/sda",
+            TestType = SmartTestType.Short,
+            RequestedAt = new DateTime(2026, 8, 9, 10, 0, 0),
+            LastCheckedAt = new DateTime(2026, 8, 9, 10, 2, 0),
+            Warnings = ["new warning"]
+        };
+        await File.WriteAllTextAsync(
+            Path.Combine(testsDir, "smart-test-short-20260809-100000-WIN001-2.json"),
+            JsonSerializer.Serialize(newer, TestSerializer));
+
+        var service = new SmartTestService(new SmartctlRunner("/nonexistent/smartctl.exe"), dir);
+        var sessions = await service.ListSessionsAsync();
+
+        Assert.Single(sessions);
+        Assert.Contains("new warning", sessions[0].Warnings);
+    }
+
+    [Fact]
+    public async Task GetEffectiveDate_UsesCompletedAt_WhenLastCheckedNull()
+    {
+        var dir = CreateTestDir();
+        var testsDir = Path.Combine(dir, "data", "smart-tests");
+        Directory.CreateDirectory(testsDir);
+
+        var noLastCheck = new SmartTestSession
+        {
+            Id = "DATE01",
+            Device = "/dev/sda",
+            TestType = SmartTestType.Short,
+            RequestedAt = new DateTime(2026, 8, 9, 10, 0, 0),
+            CompletedAt = new DateTime(2026, 8, 9, 10, 5, 0),
+            Status = SmartTestStatus.CompletedWithoutError
+        };
+        await File.WriteAllTextAsync(
+            Path.Combine(testsDir, "smart-test-short-20260809-100000-DATE01.json"),
+            JsonSerializer.Serialize(noLastCheck, TestSerializer));
+
+        var service = new SmartTestService(new SmartctlRunner("/nonexistent/smartctl.exe"), dir);
+        var sessions = await service.ListSessionsAsync();
+
+        Assert.Single(sessions);
+        Assert.Equal(SmartTestStatus.CompletedWithoutError, sessions[0].Status);
+    }
+
+    [Fact]
+    public async Task GetEffectiveDate_UsesStartedAt_WhenLaterDatesNull()
+    {
+        var dir = CreateTestDir();
+        var testsDir = Path.Combine(dir, "data", "smart-tests");
+        Directory.CreateDirectory(testsDir);
+
+        var session = new SmartTestSession
+        {
+            Id = "DATE02",
+            Device = "/dev/sda",
+            TestType = SmartTestType.Short,
+            RequestedAt = new DateTime(2026, 8, 9, 10, 0, 0),
+            StartedAt = new DateTime(2026, 8, 9, 10, 0, 30),
+            Status = SmartTestStatus.InProgress
+        };
+        await File.WriteAllTextAsync(
+            Path.Combine(testsDir, "smart-test-short-20260809-100000-DATE02.json"),
+            JsonSerializer.Serialize(session, TestSerializer));
+
+        var service = new SmartTestService(new SmartctlRunner("/nonexistent/smartctl.exe"), dir);
+        var sessions = await service.ListSessionsAsync();
+
+        Assert.Single(sessions);
+        Assert.Equal(SmartTestStatus.InProgress, sessions[0].Status);
+    }
+
+    [Fact]
+    public async Task GetEffectiveDate_UsesRequestedAt_AsFallback()
+    {
+        var dir = CreateTestDir();
+        var testsDir = Path.Combine(dir, "data", "smart-tests");
+        Directory.CreateDirectory(testsDir);
+
+        var session = new SmartTestSession
+        {
+            Id = "DATE03",
+            Device = "/dev/sda",
+            TestType = SmartTestType.Short,
+            RequestedAt = new DateTime(2026, 8, 9, 10, 0, 0)
+        };
+        await File.WriteAllTextAsync(
+            Path.Combine(testsDir, "smart-test-short-20260809-100000-DATE03.json"),
+            JsonSerializer.Serialize(session, TestSerializer));
+
+        var service = new SmartTestService(new SmartctlRunner("/nonexistent/smartctl.exe"), dir);
+        var sessions = await service.ListSessionsAsync();
+
+        Assert.Single(sessions);
+        Assert.Equal("DATE03", sessions[0].Id);
+    }
+
+    [Fact]
+    public async Task ListSessions_DifferentIds_NeverDeduplicated()
+    {
+        var dir = CreateTestDir();
+        var testsDir = Path.Combine(dir, "data", "smart-tests");
+        Directory.CreateDirectory(testsDir);
+
+        var sessionA = new SmartTestSession { Id = "AAAA1111", Device = "/dev/sda", TestType = SmartTestType.Short, RequestedAt = new DateTime(2026, 8, 9, 10, 0, 0) };
+        var sessionB = new SmartTestSession { Id = "BBBB2222", Device = "/dev/sdb", TestType = SmartTestType.Short, RequestedAt = new DateTime(2026, 8, 9, 10, 1, 0) };
+
+        await File.WriteAllTextAsync(Path.Combine(testsDir, "smart-test-short-20260809-100000-AAAA1111.json"), JsonSerializer.Serialize(sessionA, TestSerializer));
+        await File.WriteAllTextAsync(Path.Combine(testsDir, "smart-test-short-20260809-100100-BBBB2222.json"), JsonSerializer.Serialize(sessionB, TestSerializer));
+
+        var service = new SmartTestService(new SmartctlRunner("/nonexistent/smartctl.exe"), dir);
+        var sessions = await service.ListSessionsAsync();
+
+        Assert.Equal(2, sessions.Count);
+    }
+
+    [Fact]
+    public async Task ListSessions_DedupBeforeMaxResults()
+    {
+        var dir = CreateTestDir();
+        var testsDir = Path.Combine(dir, "data", "smart-tests");
+        Directory.CreateDirectory(testsDir);
+
+        // 2 snapshots del mismo Id + 1 sesión distinta = 2 únicas, maxResults=1 → 1
+        var sessionA1 = new SmartTestSession { Id = "AAA00001", Device = "/dev/sda", TestType = SmartTestType.Short, RequestedAt = new DateTime(2026, 8, 9, 10, 0, 0), LastCheckedAt = new DateTime(2026, 8, 9, 10, 0, 1) };
+        var sessionA2 = new SmartTestSession { Id = "AAA00001", Device = "/dev/sda", TestType = SmartTestType.Short, RequestedAt = new DateTime(2026, 8, 9, 10, 0, 0), LastCheckedAt = new DateTime(2026, 8, 9, 10, 0, 2) };
+        var sessionB = new SmartTestSession { Id = "BBB00002", Device = "/dev/sdb", TestType = SmartTestType.Short, RequestedAt = new DateTime(2026, 8, 9, 10, 1, 0) };
+
+        await File.WriteAllTextAsync(Path.Combine(testsDir, "smart-test-short-20260809-100000-AAA00001.json"), JsonSerializer.Serialize(sessionA1, TestSerializer));
+        await File.WriteAllTextAsync(Path.Combine(testsDir, "smart-test-short-20260809-100000-AAA00001-2.json"), JsonSerializer.Serialize(sessionA2, TestSerializer));
+        await File.WriteAllTextAsync(Path.Combine(testsDir, "smart-test-short-20260809-100100-BBB00002.json"), JsonSerializer.Serialize(sessionB, TestSerializer));
+
+        var service = new SmartTestService(new SmartctlRunner("/nonexistent/smartctl.exe"), dir);
+        var sessions = await service.ListSessionsAsync(maxResults: 1);
+
+        Assert.Single(sessions);
+    }
+
+    [Fact]
+    public async Task ListSessions_OrderedDescending()
+    {
+        var dir = CreateTestDir();
+        var testsDir = Path.Combine(dir, "data", "smart-tests");
+        Directory.CreateDirectory(testsDir);
+
+        var older = new SmartTestSession { Id = "ORDER01", Device = "/dev/sda", TestType = SmartTestType.Short, RequestedAt = new DateTime(2026, 8, 9, 9, 0, 0) };
+        var middle = new SmartTestSession { Id = "ORDER02", Device = "/dev/sdb", TestType = SmartTestType.Short, RequestedAt = new DateTime(2026, 8, 9, 10, 0, 0) };
+        var newer = new SmartTestSession { Id = "ORDER03", Device = "/dev/sdc", TestType = SmartTestType.Short, RequestedAt = new DateTime(2026, 8, 9, 11, 0, 0) };
+
+        await File.WriteAllTextAsync(Path.Combine(testsDir, "smart-test-short-20260809-090000-ORDER01.json"), JsonSerializer.Serialize(older, TestSerializer));
+        await File.WriteAllTextAsync(Path.Combine(testsDir, "smart-test-short-20260809-100000-ORDER02.json"), JsonSerializer.Serialize(middle, TestSerializer));
+        await File.WriteAllTextAsync(Path.Combine(testsDir, "smart-test-short-20260809-110000-ORDER03.json"), JsonSerializer.Serialize(newer, TestSerializer));
+
+        var service = new SmartTestService(new SmartctlRunner("/nonexistent/smartctl.exe"), dir);
+        var sessions = await service.ListSessionsAsync();
+
+        Assert.Equal(3, sessions.Count);
+        Assert.Equal("ORDER03", sessions[0].Id);
+        Assert.Equal("ORDER02", sessions[1].Id);
+        Assert.Equal("ORDER01", sessions[2].Id);
+    }
+
+    [Fact]
+    public async Task ListSessions_SelectedSnapshot_PreservesWarnings()
+    {
+        var dir = CreateTestDir();
+        var testsDir = Path.Combine(dir, "data", "smart-tests");
+        Directory.CreateDirectory(testsDir);
+
+        var older = new SmartTestSession { Id = "WARN01", Device = "/dev/sda", TestType = SmartTestType.Short, RequestedAt = new DateTime(2026, 8, 9, 10, 0, 0), LastCheckedAt = new DateTime(2026, 8, 9, 10, 1, 0), Warnings = ["old"] };
+        var newer = new SmartTestSession { Id = "WARN01", Device = "/dev/sda", TestType = SmartTestType.Short, RequestedAt = new DateTime(2026, 8, 9, 10, 0, 0), LastCheckedAt = new DateTime(2026, 8, 9, 10, 2, 0), Warnings = ["kept warning"] };
+
+        await File.WriteAllTextAsync(Path.Combine(testsDir, "smart-test-short-20260809-100000-WARN01.json"), JsonSerializer.Serialize(older, TestSerializer));
+        await File.WriteAllTextAsync(Path.Combine(testsDir, "smart-test-short-20260809-100000-WARN01-2.json"), JsonSerializer.Serialize(newer, TestSerializer));
+
+        var service = new SmartTestService(new SmartctlRunner("/nonexistent/smartctl.exe"), dir);
+        var sessions = await service.ListSessionsAsync();
+
+        Assert.Single(sessions);
+        Assert.Contains("kept warning", sessions[0].Warnings);
+    }
+
+    [Fact]
+    public async Task ListSessions_SelectedSnapshot_PreservesErrors()
+    {
+        var dir = CreateTestDir();
+        var testsDir = Path.Combine(dir, "data", "smart-tests");
+        Directory.CreateDirectory(testsDir);
+
+        var older = new SmartTestSession { Id = "ERR001", Device = "/dev/sda", TestType = SmartTestType.Short, RequestedAt = new DateTime(2026, 8, 9, 10, 0, 0), LastCheckedAt = new DateTime(2026, 8, 9, 10, 1, 0), Errors = ["old"] };
+        var newer = new SmartTestSession { Id = "ERR001", Device = "/dev/sda", TestType = SmartTestType.Short, RequestedAt = new DateTime(2026, 8, 9, 10, 0, 0), LastCheckedAt = new DateTime(2026, 8, 9, 10, 2, 0), Errors = ["kept error"] };
+
+        await File.WriteAllTextAsync(Path.Combine(testsDir, "smart-test-short-20260809-100000-ERR001.json"), JsonSerializer.Serialize(older, TestSerializer));
+        await File.WriteAllTextAsync(Path.Combine(testsDir, "smart-test-short-20260809-100000-ERR001-2.json"), JsonSerializer.Serialize(newer, TestSerializer));
+
+        var service = new SmartTestService(new SmartctlRunner("/nonexistent/smartctl.exe"), dir);
+        var sessions = await service.ListSessionsAsync();
+
+        Assert.Single(sessions);
+        Assert.Contains("kept error", sessions[0].Errors);
+    }
+
+    [Fact]
+    public async Task ListSessions_CorruptJson_DoesNotBreakList()
+    {
+        var dir = CreateTestDir();
+        var testsDir = Path.Combine(dir, "data", "smart-tests");
+        Directory.CreateDirectory(testsDir);
+
+        // Archivo corrupto
+        await File.WriteAllTextAsync(Path.Combine(testsDir, "smart-test-short-corrupt.json"), "{ not json !!!");
+
+        // Sesión válida
+        var valid = new SmartTestSession { Id = "VALID01", Device = "/dev/sda", TestType = SmartTestType.Short, RequestedAt = new DateTime(2026, 8, 9, 10, 0, 0) };
+        await File.WriteAllTextAsync(Path.Combine(testsDir, "smart-test-short-20260809-100000-VALID01.json"), JsonSerializer.Serialize(valid, TestSerializer));
+
+        var service = new SmartTestService(new SmartctlRunner("/nonexistent/smartctl.exe"), dir);
+        var sessions = await service.ListSessionsAsync();
+
+        Assert.Single(sessions);
+        Assert.Equal("VALID01", sessions[0].Id);
     }
 }
 
