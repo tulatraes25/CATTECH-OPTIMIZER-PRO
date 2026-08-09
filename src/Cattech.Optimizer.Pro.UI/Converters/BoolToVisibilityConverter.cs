@@ -463,3 +463,25 @@ public class SmartctlAvailColorConverter : IValueConverter
         throw new NotImplementedException();
     }
 }
+
+/// <summary>
+/// Convierte un valor de temperatura nullable a texto.
+/// null → "N/D" (nunca 0 °C); valor → "48,2 °C".
+/// </summary>
+public class NullableTemperatureConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (value is double d)
+        {
+            return $"{d.ToString("0.0", culture)} °C";
+        }
+
+        return "N/D";
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}

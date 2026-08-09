@@ -208,6 +208,23 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - **Error parcial por nodo**: sensores y subhardware encapsulados de forma tolerante; IsAvailable=true con error parcial si el monitor sigue abierto
 - **Sin hot-plug**: la lista raíz de hardware se mantiene estable durante la sesión
 - 25 tests nuevos (465 total)
+
+### Added (UI de temperaturas - Fase B.1.3)
+- **HardwareView funcional**: reemplaza el placeholder "Información de Hardware"; encabezado con subtítulo y nota "Lectura mediante LibreHardwareMonitor — solo lectura"
+- **HardwareViewModel**: depende solo de IHardwareSensorService (Core), sin referencia a LibreHardwareMonitorLib
+- **Actualizar una vez**: GetTemperatureSnapshotAsync con IsBusy; aplica el snapshot a la UI
+- **Iniciar monitoreo / Detener**: WatchTemperatureSnapshotsAsync con cadencia visual de 2 segundos; una sola enumeración activa (CTS propio); Stop idempotente
+- **Cancelación al navegar**: MainViewModel detiene el monitoreo si se abandona la sección Hardware (no queda LHM abierto oculto)
+- **ApplySnapshot único**: Clear de sensores por muestra (sin datos stale); orden estable Tipo → Hardware → Sensor; deduplicación respetada
+- **Valores N/D**: NullableTemperatureConverter — null → "N/D" (nunca 0 °C); valor → "48,2 °C"
+- **Resumen**: sensores detectados, con lectura válida, proveedor, modo administrador
+- **Estados**: Sin lectura / Leyendo... / Monitoreando / Lectura disponible / Lectura no disponible / Sin sensores disponibles
+- **Warnings y Errors** del snapshot visibles; sin elevación → aviso informativo, sin UAC, sin cambiar app.manifest
+- **Recuperación**: muestra IsAvailable=false vacía la tabla sin detener el stream; la siguiente muestra disponible recupera la UI
+- **Sin colores de salud**: diseño neutral; sin thresholds ni estados Hot/Critical
+- **Sin inicio automático**: al entrar a Hardware se pide acción explícita del técnico
+- Tests UI: proyecto de tests migrado a net8.0-windows con referencia a UI + InternalsVisibleTo
+- 27 tests nuevos (492 total)
 - SmartctlAvailability, SmartDiskDevice, SmartctlCommandResult
 - ISmartctlRunner, ISmartDiskService interfaces
 - 32 tests de smartctl + 18 tests de SMART (214 total)

@@ -49,6 +49,7 @@ public partial class MainViewModel : ObservableObject
     private readonly ISmartctlRunner _smartctlRunner;
     private readonly ISmartDiskService _smartDiskService;
     private readonly ISmartTestService _smartTestService;
+    private readonly IHardwareSensorService _hardwareSensorService;
 
     // ViewModels de secciones
     private CompanySettingsViewModel? _companySettingsViewModel;
@@ -60,8 +61,14 @@ public partial class MainViewModel : ObservableObject
     private RestorePointViewModel? _restorePointViewModel;
     private ReportViewModel? _reportViewModel;
     private SmartDiskViewModel? _smartDiskViewModel;
+    private HardwareViewModel? _hardwareViewModel;
 
     public MainViewModel()
+        : this(new LibreHardwareSensorService())
+    {
+    }
+
+    internal MainViewModel(IHardwareSensorService hardwareSensorService)
     {
         // TODO: Reemplazar con Dependency Injection cuando se configure
         _settingsService = new JsonSettingsService();
@@ -77,6 +84,7 @@ public partial class MainViewModel : ObservableObject
         _smartctlRunner = new SmartctlRunner();
         _smartDiskService = new SmartDiskService(_smartctlRunner);
         _smartTestService = new SmartTestService(_smartctlRunner);
+        _hardwareSensorService = hardwareSensorService;
         NavigateTo("Home");
     }
 
@@ -91,12 +99,18 @@ public partial class MainViewModel : ObservableObject
 
     private void NavigateTo(string section)
     {
+        // No dejar el monitoreo de Hardware activo al navegar a otra sección.
+        if (CurrentSection == "Hardware" && section != "Hardware")
+        {
+            _hardwareViewModel?.StopMonitoringCommand.Execute(null);
+        }
+
         CurrentSection = section;
 
         CurrentView = section switch
         {
             "Home" => CreatePlaceholder("Inicio - Panel principal"),
-            "Hardware" => CreatePlaceholder("Información de Hardware"),
+            "Hardware" => CreateHardwareView(),
             "SmartDisk" => CreateSmartDiskView(),
             "Diagnostics" => CreateQuickDiagnosticView(),
             "TempCleanup" => CreateTempCleanupView(),
@@ -215,6 +229,16 @@ public partial class MainViewModel : ObservableObject
         return new SmartDiskView
         {
             DataContext = _smartDiskViewModel
+        };
+    }
+
+    private object CreateHardwareView()
+    {
+        _hardwareViewModel ??= new HardwareViewModel(_hardwareSensorService);
+
+        return new HardwareView
+        {
+            DataContext = _hardwareViewModel
         };
     }
 

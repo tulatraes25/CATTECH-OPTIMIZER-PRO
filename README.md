@@ -298,6 +298,22 @@ Ir a **🛡️ Punto de restauración** para crear un punto de restauración de 
 
 Los resultados se guardan en `data/restore-points/restore-point-result-YYYYMMDD-HHMMSS.json`.
 
+## Hardware (temperaturas)
+
+Ir a **🌡️ Hardware** para monitorear los sensores de temperatura en tiempo real mediante LibreHardwareMonitorLib (solo lectura).
+
+**Funcionalidades:**
+- **Actualizar una vez**: lee un snapshot único de los sensores
+- **Iniciar monitoreo / Detener**: muestreo periódico (cada 2 segundos) reutilizando una sola sesión; se cancela automáticamente al salir de la sección
+- **Tabla de temperaturas**: Tipo, Hardware, Sensor, Actual, Mín., Máx. — valores no disponibles se muestran como N/D (nunca 0 °C)
+- **Resumen**: sensores detectados, sensores con lectura válida, proveedor disponible/no disponible, modo administrador
+- **Warnings y errores controlados**: sin permisos de administrador se muestra un aviso informativo; no se exige elevación
+
+**Consideraciones:**
+- No interpreta salud térmica: no hay colores de alerta, thresholds ni estados Hot/Crítico
+- El monitoreo nunca se inicia automáticamente: requiere acción explícita del técnico
+- Algunos sensores pueden requerir privilegios administrativos para estar disponibles
+
 ## Informe técnico HTML
 
 Ir a **📊 Informes** para generar un informe profesional en HTML.

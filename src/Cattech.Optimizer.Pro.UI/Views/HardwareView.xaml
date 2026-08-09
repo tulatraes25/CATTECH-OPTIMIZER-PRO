@@ -1,0 +1,171 @@
+<UserControl x:Class="Cattech.Optimizer.Pro.UI.Views.HardwareView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:converters="clr-namespace:Cattech.Optimizer.Pro.UI.Converters">
+
+    <UserControl.Resources>
+        <converters:BoolToVisibilityConverter x:Key="BoolToVis" />
+        <converters:InvertBoolConverter x:Key="InvertBool" />
+        <converters:NullableTemperatureConverter x:Key="TempConverter" />
+    </UserControl.Resources>
+
+    <Grid Margin="30">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Row 0: Título -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,10">
+            <TextBlock Text="Hardware" FontSize="26" FontWeight="Bold" Foreground="#1B1B1B" />
+            <TextBlock Text="Monitoreo de temperaturas en tiempo real" FontSize="13" Foreground="#666"
+                       Margin="0,5,0,0" />
+            <TextBlock Text="Lectura mediante LibreHardwareMonitor — solo lectura" FontSize="11" Foreground="#888"
+                       Margin="0,4,0,0" />
+        </StackPanel>
+
+        <!-- Row 1: Controles + estado -->
+        <Grid Grid.Row="1" Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Button Grid.Column="0" Content="Actualizar una vez" Padding="14,8"
+                    Command="{Binding RefreshCommand}" />
+            <Button Grid.Column="2" Content="Iniciar monitoreo" Padding="14,8"
+                    Command="{Binding StartMonitoringCommand}" />
+            <Button Grid.Column="4" Content="Detener" Padding="14,8"
+                    Command="{Binding StopMonitoringCommand}" />
+
+            <StackPanel Grid.Column="5" VerticalAlignment="Center" Margin="20,0,0,0">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="Estado:" FontSize="12" Foreground="#555" />
+                    <TextBlock Text="{Binding StatusText}" FontSize="12" FontWeight="SemiBold"
+                               Foreground="#1B1B1B" Margin="6,0,0,0" />
+                </StackPanel>
+                <TextBlock Text="{Binding LastUpdatedText}" FontSize="11" Foreground="#777" Margin="0,3,0,0"
+                           Visibility="{Binding LastUpdatedText, Converter={StaticResource BoolToVis}}" />
+                <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                    <TextBlock Text="Modo administrador:" FontSize="11" Foreground="#555" />
+                    <TextBlock Text="{Binding AdminText}" FontSize="11" FontWeight="SemiBold" Margin="6,0,0,0" />
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+
+        <!-- Row 2: Hint inicial -->
+        <TextBlock Grid.Row="2" Text="Presione 'Actualizar una vez' o 'Iniciar monitoreo'."
+                   FontSize="12" Foreground="#888" Margin="0,0,0,12" />
+
+        <!-- Row 3: Resumen -->
+        <Grid Grid.Row="3" Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
+                    Padding="12,10" Background="White" Margin="0,0,6,0">
+                <StackPanel>
+                    <TextBlock Text="Sensores detectados" FontSize="11" Foreground="#555" />
+                    <TextBlock Text="{Binding SensorCountText}" FontSize="22" FontWeight="Bold"
+                               Foreground="#1B1B1B" Margin="0,4,0,0" />
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Column="1" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
+                    Padding="12,10" Background="White" Margin="6,0">
+                <StackPanel>
+                    <TextBlock Text="Sensores con lectura válida" FontSize="11" Foreground="#555" />
+                    <TextBlock Text="{Binding ValidSensorCountText}" FontSize="22" FontWeight="Bold"
+                               Foreground="#1B1B1B" Margin="0,4,0,0" />
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Column="2" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
+                    Padding="12,10" Background="White" Margin="6,0">
+                <StackPanel>
+                    <TextBlock Text="Proveedor" FontSize="11" Foreground="#555" />
+                    <TextBlock Text="{Binding ProviderStatusText}" FontSize="22" FontWeight="Bold"
+                               Foreground="#1B1B1B" Margin="0,4,0,0" />
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Column="3" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
+                    Padding="12,10" Background="White" Margin="6,0,0,0">
+                <StackPanel>
+                    <TextBlock Text="Administrador" FontSize="11" Foreground="#555" />
+                    <TextBlock Text="{Binding AdminText}" FontSize="22" FontWeight="Bold"
+                               Foreground="#1B1B1B" Margin="0,4,0,0" />
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Row 4: Warnings y Errors -->
+        <StackPanel Grid.Row="4" Margin="0,0,0,12">
+            <Border CornerRadius="6" Padding="12,10" Margin="0,0,0,8"
+                    Background="#FFF8E1" BorderBrush="#F9A825" BorderThickness="1"
+                    Visibility="{Binding HasWarnings, Converter={StaticResource BoolToVis}}">
+                <ItemsControl ItemsSource="{Binding Warnings}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" FontSize="12" Foreground="#E65100"
+                                       TextWrapping="Wrap" Margin="0,1" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Border>
+            <Border CornerRadius="6" Padding="12,10" Margin="0,0,0,8"
+                    Background="#FDECEA" BorderBrush="#D93025" BorderThickness="1"
+                    Visibility="{Binding HasErrors, Converter={StaticResource BoolToVis}}">
+                <ItemsControl ItemsSource="{Binding Errors}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" FontSize="12" Foreground="#C62828"
+                                       TextWrapping="Wrap" Margin="0,1" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Border>
+        </StackPanel>
+
+        <!-- Row 5: Tabla de temperaturas -->
+        <DataGrid Grid.Row="5" ItemsSource="{Binding TemperatureSensors}" AutoGenerateColumns="False"
+                  IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False"
+                  HeadersVisibility="Column" RowHeight="30" GridLinesVisibility="Horizontal"
+                  Background="White" BorderBrush="#E0E0E0" BorderThickness="1"
+                  AlternatingRowBackground="#FAFAFA">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Tipo" Binding="{Binding HardwareType}" Width="130" />
+                <DataGridTextColumn Header="Hardware" Binding="{Binding HardwareName}" Width="*" />
+                <DataGridTextColumn Header="Sensor" Binding="{Binding SensorName}" Width="180" />
+                <DataGridTextColumn Header="Actual" Width="90">
+                    <DataGridTextColumn.Binding>
+                        <Binding Path="ValueCelsius" Converter="{StaticResource TempConverter}" />
+                    </DataGridTextColumn.Binding>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="Mín." Width="90">
+                    <DataGridTextColumn.Binding>
+                        <Binding Path="MinCelsius" Converter="{StaticResource TempConverter}" />
+                    </DataGridTextColumn.Binding>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="Máx." Width="90">
+                    <DataGridTextColumn.Binding>
+                        <Binding Path="MaxCelsius" Converter="{StaticResource TempConverter}" />
+                    </DataGridTextColumn.Binding>
+                </DataGridTextColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+    </Grid>
+</UserControl>

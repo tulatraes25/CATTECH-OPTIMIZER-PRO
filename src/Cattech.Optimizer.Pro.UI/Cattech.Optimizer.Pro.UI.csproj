@@ -31,4 +31,8 @@
     <ProjectReference Include="..\Cattech.Optimizer.Pro.Infrastructure\Cattech.Optimizer.Pro.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Cattech.Optimizer.Pro.Core.Tests" />
+  </ItemGroup>
+
 </Project>

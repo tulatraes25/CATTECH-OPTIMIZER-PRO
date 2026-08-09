@@ -34,12 +34,14 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 
 ### Fase B: Hardware Avanzado (posterior dentro de v0.2) — En curso
 
-1. Sensores de temperatura en tiempo real
+1. ✅ Temperaturas en tiempo real (B.1 completada: B.1.1 fundación, B.1.2 muestreo repetido, B.1.3 UI inicial)
 2. CPU detallada (núcleos, temperatura, uso)
 3. GPU detallada (temperatura, uso, memoria)
 4. Batería de notebooks (si aplica)
 5. Placa madre (BIOS, chipset)
 6. RAM avanzada (velocidad, timings, slots)
+
+> B.1.3 creó la UI inicial exclusiva de temperaturas; B.4 ampliará esa misma pantalla con todo el hardware avanzado (CPU/GPU/batería/RAM/placa).
 
 ---
 
@@ -84,7 +86,8 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 | **Total Fase A** | **4 semanas** | | ✅ Completada |
 | B.1.1: Fundación LibreHardwareMonitor + lectura temperatura | — | LibreHardwareMonitorLib 0.9.6 | ✅ Implementado |
 | B.1.2: Muestreo repetido + sesión reutilizable | — | B.1.1 | ✅ Implementado |
-| Fase B.1: Sensores temperatura | 1 semana | LibreHardwareMonitorLib | En curso |
+| B.1.3: UI de temperaturas en tiempo real | — | B.1.2 | ✅ Implementado |
+| Fase B.1: Sensores temperatura | 1 semana | LibreHardwareMonitorLib | ✅ Completada |
 | Fase B.2: CPU/GPU/Batería | 1 semana | LibreHardwareMonitorLib |
 | Fase B.3: RAM avanzada | 0.5 semana | LibreHardwareMonitorLib |
 | Fase B.4: UI Hardware avanzado | 1 semana | Modelos |
@@ -107,7 +110,7 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 
 ### Hardware
 - [x] Fundación sensores de temperatura (B.1.1/B.1.2): sesión reutilizable, muestreo repetido cancelable
-- [ ] Mostrar sensores de temperatura
+- [x] UI inicial de temperaturas en tiempo real (B.1.3): Actualizar una vez, Iniciar/Detener monitoreo, N/D, sin thresholds
 - [ ] Mostrar CPU detallada
 - [ ] Mostrar GPU detallada
 - [ ] Mostrar batería (si aplica)
