@@ -170,6 +170,14 @@ No marcar Desktop PASS / Notebook PASS hasta ejecutarlos realmente.
 
 ## Hallazgos conocidos de v0.2.0
 
+### SMOKE-B1-001 — Crash XAML al navegar a Cliente/equipo
+
+- **Detected in**: v0.2.0 official release (smoke P.3.2-B1, 2/2 reproducible, sin admin)
+- **Severity**: Blocker
+- **Cause**: `ClientEquipmentView.xaml` usaba `{StaticResource InvertBoolConverter}` sin registrarlo en sus `UserControl.Resources` → `XamlParseException` al instanciar la vista (Event Viewer: .NET Runtime ID 1026)
+- **Fix status**: Fixed on main / pending verification (se corrigió también QuickDiagnosticView, VisualOptimizationView y CompanySettingsView por la misma auditoría; se agregaron smoke tests STA en `tests/.../UI/XamlViewSmokeTests.cs`)
+- **Nota**: la Release oficial v0.2.0 continúa conteniendo el defecto (no se modifica la release histórica); el fix se distribuirá en v0.2.1
+
 ### QA-META-001 — Trazabilidad de build del artefacto publicado
 
 - **Release v0.2.0 tag source**: `8d54e8a527f0183314eb1812ffb226f7ac1d5255`

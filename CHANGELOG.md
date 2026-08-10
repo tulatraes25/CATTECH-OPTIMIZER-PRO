@@ -77,6 +77,12 @@ Cambios posteriores a v0.2.0.
 - Hallazgo QA-META-001 documentado (trazabilidad de build v0.2.0: ProductVersion `0.2.0+13c0c26...` vs tag `8d54e8a`; Low, sin impacto funcional; P.2.3 endurecerá provenance)
 - Provenance guard Source SHA ↔ EXE ProductVersion en release packaging: el candidate exige `ProductVersion == {version}+{source_sha}` exacto (comparación exacta, sin StartsWith) y falla antes de empaquetar si la metadata Git no coincide; outputs `product_version`/`file_version` reutilizables; QA-META-001 marcado como mitigado para releases futuras
 
+### Fixed (SMOKE-B1-001 — XAML StaticResource)
+- Corregido crash al navegar a Cliente/equipo: `ClientEquipmentView.xaml` usaba `{StaticResource InvertBoolConverter}` sin registrarlo en sus Resources → XamlParseException al instanciar la vista (detectado en smoke real v0.2.0, 2/2 reproducible)
+- Auditoría StaticResource de las vistas: se corrigieron además QuickDiagnosticView (InvertBoolConverter), VisualOptimizationView (RestoreColorConverter/RestoreTextConverter) y CompanySettingsView (HexToColorConverter/LogoPathColorConverter) — mismo defecto latente
+- Agregados smoke tests WPF STA (`XamlViewSmokeTests`): carga de ClientEquipmentView, navegación MainViewModel → Cliente/equipo, y carga de las 10 vistas del sidebar sin DataContext/comandos — previenen regresiones de StaticResource en CI
+- 3 tests nuevos (948 total)
+
 ---
 
 ## [0.2.0] - 2026-08-09
