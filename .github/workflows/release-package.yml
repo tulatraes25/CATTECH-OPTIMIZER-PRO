@@ -237,8 +237,9 @@ jobs:
           $zipPath = "${{ github.workspace }}\output\CATTECH-Optimizer-Pro-v$version-win-x64.zip"
           $zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
           try {
-            $names = $zip.Entries | ForEach-Object { $_.FullName }
-            foreach ($required in @("Cattech.Optimizer.Pro.UI.exe", "LibreHardwareMonitorLib.dll", "config\herramientas.json", "README.md", "LICENSE")) {
+            # Compress-Archive (pwsh/.NET) normalizes separators to '/'
+            $names = $zip.Entries | ForEach-Object { $_.FullName.Replace('\', '/') }
+            foreach ($required in @("Cattech.Optimizer.Pro.UI.exe", "LibreHardwareMonitorLib.dll", "config/herramientas.json", "README.md", "LICENSE")) {
               if (-not ($names -contains $required)) { throw "ZIP missing entry: $required" }
             }
             if ($names -match "smartctl\.exe") { throw "ZIP contains smartctl.exe" }
