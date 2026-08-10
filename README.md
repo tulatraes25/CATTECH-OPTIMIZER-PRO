@@ -1,5 +1,7 @@
 # CATTECH OPTIMIZER PRO
 
+[![CATTECH CI](https://github.com/tulatraes25/CATTECH-OPTIMIZER-PRO/actions/workflows/ci.yml/badge.svg)](https://github.com/tulatraes25/CATTECH-OPTIMIZER-PRO/actions/workflows/ci.yml)
+
 **Versión**: v0.2.0  
 **Licencia**: MIT  
 **Plataforma**: Windows 10 (1809+) / Windows 11

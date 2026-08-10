@@ -60,7 +60,11 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
-Cambios posteriores a v0.2.0 (vacío al momento de la publicación).
+Cambios posteriores a v0.2.0.
+
+### Infrastructure
+- CI de Windows mediante GitHub Actions (`CATTECH CI`): restore/build/tests Release automáticos en push a main, pull requests contra main y ejecución manual
+- Resultados TRX conservados como artifact (`cattech-test-results`, retención 14 días)
 
 ---
 
