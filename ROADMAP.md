@@ -1,6 +1,6 @@
 # Roadmap - CATTECH OPTIMIZER PRO
 
-**Versión actual**: 0.2 (release candidate — publicación pendiente de S.3.2)  
+**Versión actual**: 0.2.0 (publicada)  
 **Última actualización**: 2026  
 **Objetivo**: Suite completa de diagnóstico, optimización y reparación para técnicos informáticos.
 
@@ -168,7 +168,7 @@ templates/report-html.html
 
 **Objetivo**: Diagnóstico profundo de discos y hardware avanzado.
 
-> **Estado actual**: Fase A (SMART) y Fase B (Hardware) completadas; estabilización S.1 (exit status/transporte) y S.2 (semántica de salud) completadas; S.3.1 release gate **PASS** (ver `docs/QA_V0_2.md` y `docs/RELEASE_NOTES_V0_2.md`). Publicación v0.2.0 pendiente de S.3.2. smartctl se distribuye como dependencia externa (autodetección), no incluido en el paquete.
+> **Estado actual**: v0.2.0 publicada. Fase A (SMART) y Fase B (Hardware) completadas; estabilización S.1/S.2 completadas; S.3.1 release gate **PASS** y S.3.2 versionado/tag/release completados (ver `docs/QA_V0_2.md` y `docs/RELEASE_NOTES_V0_2.md`). smartctl se distribuye como dependencia externa (autodetección), no incluido en el paquete.
 
 **Documentación de referencia**:
 - `docs/V0_2_PLAN_SMART_HARDWARE.md` - Plan detallado

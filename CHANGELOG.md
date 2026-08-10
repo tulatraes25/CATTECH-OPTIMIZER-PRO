@@ -58,7 +58,13 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ---
 
-## [Unreleased - v0.2]
+## [Unreleased]
+
+Cambios posteriores a v0.2.0 (vacío al momento de la publicación).
+
+---
+
+## [0.2.0] - 2026-08-09
 
 ### Added
 - **Integración base smartctl** (Fase A.1)
@@ -383,6 +389,15 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - **ZIP v0.1.1 versionado eliminado** del repositorio (artefacto obsoleto)
 - **docs/QA_V0_2.md** y **docs/RELEASE_NOTES_V0_2.md** creados
 - 20 tests nuevos (936 total)
+
+### Release (S.3.2)
+- Release Gate S.3.1 PASS
+- Versionado 0.2.0 (Version, AssemblyVersion 0.2.0.0, FileVersion 0.2.0.0)
+- Build/publish final win-x64 self-contained
+- Artefacto portable `CATTECH-Optimizer-Pro-v0.2.0-win-x64.zip` + checksum SHA-256
+- Configuración `config/herramientas.json` incluida en el publish
+- Tag `v0.2.0`
+- GitHub Release v0.2.0 (según disponibilidad de GitHub CLI)
 - SmartctlAvailability, SmartDiskDevice, SmartctlCommandResult
 - ISmartctlRunner, ISmartDiskService interfaces
 - 32 tests de smartctl + 18 tests de SMART (214 total)

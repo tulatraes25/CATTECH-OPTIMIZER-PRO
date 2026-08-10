@@ -1,8 +1,25 @@
 # Plan v0.2 - SMART y Hardware Avanzado
 
-**Versión objetivo**: v0.2  
+**Versión objetivo**: v0.2.0  
 **Fecha**: 2026  
-**Estado**: Planificación
+**Estado**: ✅ Completada (publicada)
+
+---
+
+## Estado Final
+
+| Ítem | Estado |
+|------|--------|
+| Fase A (SMART) | ✅ Completada |
+| Fase B (Hardware) | ✅ Completada |
+| S.1 (exit status + transporte) | ✅ Implementado |
+| S.2 (semántica de salud) | ✅ Implementado |
+| S.3.1 (release gate) | ✅ PASS |
+| S.3.2 (versionado/tag/release) | ✅ Completada |
+| S.3 (release) | ✅ Completada |
+| v0.2 | ✅ Completada |
+
+Detalles de verificación: `docs/QA_V0_2.md` · Notas de versión: `docs/RELEASE_NOTES_V0_2.md`
 
 ---
 
@@ -40,7 +57,7 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 4. CPU detallada (núcleos, temperatura, uso)
 5. GPU detallada (temperatura, uso, memoria)
 6. Batería de notebooks (si aplica)
-7. Placa madre (BIOS, chipset)
+7. Placa madre / BIOS (fabricante, modelo, versión/fecha BIOS). Chipset no incluido en v0.2.0.
 8. RAM avanzada (velocidad, timings, slots)
 
 > B.1.3 creó la UI inicial exclusiva de temperaturas; B.4 ampliará esa misma pantalla con todo el hardware avanzado (CPU/GPU/batería/RAM/placa).
@@ -116,14 +133,14 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 ## Criterios de Aceptación v0.2
 
 ### SMART
-- [ ] Detectar discos HDD, SSD, NVMe
-- [ ] Leer atributos SMART relevantes
-- [ ] Mostrar estado: Bueno/Precaución/Crítico/No disponible
-- [ ] Ejecutar test corto con confirmación
-- [ ] Ejecutar test extendido con advertencia
-- [ ] Incluir resultados en informe HTML/PDF
-- [ ] Manejar discos sin SMART sin fallar
-- [ ] No ejecutar tests destructivos
+- [x] Detectar discos HDD, SSD, NVMe
+- [x] Leer atributos SMART relevantes
+- [x] Mostrar estado: Bueno/Precaución/Crítico/No disponible/Desconocido
+- [x] Ejecutar test corto con confirmación
+- [x] Ejecutar test extendido con advertencia
+- [x] Incluir resultados en informe HTML/PDF
+- [x] Manejar discos sin SMART sin fallar
+- [x] No ejecutar tests destructivos
 
 ### Hardware
 - [x] Fundación sensores de temperatura (B.1.1/B.1.2): sesión reutilizable, muestreo repetido cancelable
@@ -139,22 +156,21 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 - [x] Mostrar CPU detallada
 - [x] Mostrar GPU detallada
 - [x] Mostrar batería (si aplica)
-- [x] Mostrar placa madre
+- [x] Mostrar placa madre / BIOS (fabricante, modelo, versión/fecha BIOS). Chipset no incluido en v0.2.0.
 - [x] Mostrar RAM avanzada
 
 ### General
-- [ ] 164+ tests pasando (777 actuales)
-- [ ] Build sin errores
-- [ ] Documentación actualizada
-- [ ] Tests para SMART y hardware
+- [x] Tests pasando (936+ finales según QA)
+- [x] Build sin errores
+- [x] Documentación actualizada
+- [x] Tests para SMART y hardware
 
 ---
 
 *Plan v0.2 - CATTECH OPTIMIZER PRO*
 
-Pendiente: estabilización final v0.2 y revisión de release.
-
 ### Estabilización v0.2
 - [x] S.1 Exit status + transporte smartctl: bitmask de 8 bits (SmartctlExitFlags), bits 0-2 operativos vs 3-7 hallazgos; JSON exit_status numérico; -d TYPE preservado en análisis/self-tests/consulta; SmartctlDeviceType persistido en reportes/sesiones; ApproximateDiskType nunca se usa como transporte; legacy sin tipo → autodetección
 - [x] S.2 Semántica de salud SMART / atributos: HealthStatus default Unknown; OverallHealthPassed nullable (Good solo con evidencia positiva); eliminada RawValue vs THRESH; when_failed/prefailure/VALUE-THRESH como señales del estándar; política ATA por ID con crítico primero (5/197/198); CRC 199 → warning de interfaz sin backup; SSD vendor-specific sin thresholds raw; temperatura vía temperature.current; NVMe _log + critical_warning numérico + spare threshold + percentage_used (100% no es Critical) + media_errors Critical + unsafe_shutdowns informativo; exit bits 3-7 como evidencia; backup solo por señales críticas reales
-- [ ] S.3 Release gate / criterios de aceptación
+- [x] S.3.1 Release Gate técnico: PASS (restore/build/tests x2/publish win-x64; ver docs/QA_V0_2.md)
+- [x] S.3.2 Versionado 0.2.0 + tag v0.2.0 + GitHub Release

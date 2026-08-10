@@ -1,7 +1,5 @@
 # CATTECH OPTIMIZER PRO v0.2.0 — Release Notes
 
-> **Estado**: preparadas para publicación. La release aún no fue creada (pendiente de S.3.2: verificación en GitHub, versionado y tag).
-
 ---
 
 ## Novedades

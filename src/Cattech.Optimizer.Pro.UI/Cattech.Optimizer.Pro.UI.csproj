@@ -8,9 +8,9 @@
     <UseWPF>true</UseWPF>
     <RootNamespace>Cattech.Optimizer.Pro.UI</RootNamespace>
     <AssemblyName>Cattech.Optimizer.Pro.UI</AssemblyName>
-    <Version>0.1.1</Version>
-    <AssemblyVersion>0.1.1.0</AssemblyVersion>
-    <FileVersion>0.1.1.0</FileVersion>
+    <Version>0.2.0</Version>
+    <AssemblyVersion>0.2.0.0</AssemblyVersion>
+    <FileVersion>0.2.0.0</FileVersion>
     <Authors>CATTECH</Authors>
     <Company>CATTECH</Company>
     <Product>CATTECH Optimizer Pro</Product>
@@ -33,6 +33,14 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Cattech.Optimizer.Pro.Core.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\..\config\herramientas.json"
+             Link="config\herramientas.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
   </ItemGroup>
 
 </Project>

@@ -1,4 +1,4 @@
-# QA - CATTECH OPTIMIZER PRO v0.2
+# QA - CATTECH OPTIMIZER PRO v0.2.0
 
 **Fecha**: 2026  
 **Commit base evaluado**: dee93d3 (S.2) + correcciones del gate (S.3.1)  
@@ -57,7 +57,7 @@
 | Memoria GPU (SmallData) | LibreHardwareSensorServiceTests (B.2.2) |
 | Batería | LibreHardwareSensorServiceTests (B.2.3) |
 | RAM inventario WMI/SMBIOS | WmiMemoryInventoryTests (40) |
-| SPD timings | LibreHardwareSensorServiceTests (B.3.2) + SmartTestServiceTests |
+| SPD timings | LibreHardwareSensorServiceTests (B.3.2: SensorType.Timing) + HardwareViewModelTests (pestaña RAM SPD) |
 | CPU/GPU/placa/BIOS inventario | WmiMemoryInventoryTests + HardwareViewModelTests (B.4.2) |
 | Una sola sesión live | LibreHardwareSensorServiceTests (Create=1/Refresh=1/Dispose=1) |
 | Cancelación al navegar | HardwareViewModelTests.LeavingHardwareSection + ReturnToHardware |
@@ -106,15 +106,15 @@
 - CI GitHub no configurado (validación local)
 - Smoke test visual WPF: **no ejecutado por limitación del entorno** (CLI sin interacción visual); navegación cubierta por tests STA que instancian las Views reales
 
-## Version bump pendiente para S.3.2
+## Versionado final (S.3.2)
 
-- `src/Cattech.Optimizer.Pro.UI/Cattech.Optimizer.Pro.UI.csproj`: Version 0.1.1, AssemblyVersion 0.1.1.0, FileVersion 0.1.1.0
-- `README.md`: cabecera de versión (ya neutralizada a "v0.2 en desarrollo")
-- `MainWindow.xaml`: footer "v0.2 pre-release" (actualizado en S.3.1; S.3.2 pondrá 0.2.0)
-- `CHANGELOG.md`: sección [Unreleased - v0.2] → [0.2.0]
-- `HtmlReportService.cs`: footer sin número (S.3.2 puede agregar la versión real)
-- `docs/RELEASE_NOTES_V0_2.md`: nombre v0.2.0 cuando se publique
+- [x] `src/Cattech.Optimizer.Pro.UI/Cattech.Optimizer.Pro.UI.csproj`: Version 0.2.0, AssemblyVersion 0.2.0.0, FileVersion 0.2.0.0
+- [x] `README.md`: cabecera v0.2.0 + seccion de novedades
+- [x] `MainWindow.xaml`: footer v0.2.0
+- [x] `CHANGELOG.md`: sección [0.2.0] - 2026-08-09
+- [x] `HtmlReportService.cs`: footer informe con v0.2.0
+- [x] `docs/RELEASE_NOTES_V0_2.md`: finalizadas para v0.2.0
 
-## Resultado
+## Resultado final\n\n- Build Release final: 0 errores\n- Tests Release x2 finales\n- Publish final win-x64 self-contained\n- ZIP CATTECH-Optimizer-Pro-v0.2.0-win-x64.zip + SHA-256\n- ProductVersion/FileVersion del EXE verificados (0.2.0 / 0.2.0.0)\n- Tag v0.2.0 creado\n- GitHub Release: segun disponibilidad de GitHub CLI\n\n## Resultado
 
 **RELEASE GATE: PASS** — sin blockers abiertos. Publicación (tag/release) pendiente de S.3.2 tras verificar el commit en GitHub.

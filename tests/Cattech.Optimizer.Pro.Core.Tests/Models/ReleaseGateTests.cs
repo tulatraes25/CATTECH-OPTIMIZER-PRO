@@ -386,4 +386,112 @@ public class ReleaseGateTests
         Assert.NotEmpty(result.Errors);
         Assert.Empty(result.Reports);
     }
+
+    // =====================
+    // Consistencia de versión v0.2.0 (S.3.2)
+    // =====================
+
+    private static string RepoRoot()
+    {
+        return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../.."));
+    }
+
+    private static string ReadRepoFile(string relativePath)
+    {
+        return File.ReadAllText(Path.Combine(RepoRoot(), relativePath));
+    }
+
+    [Fact]
+    public void UiCsproj_Version_Is020()
+    {
+        var csproj = ReadRepoFile("src/Cattech.Optimizer.Pro.UI/Cattech.Optimizer.Pro.UI.csproj");
+
+        Assert.Contains("<Version>0.2.0</Version>", csproj);
+        Assert.Contains("<AssemblyVersion>0.2.0.0</AssemblyVersion>", csproj);
+        Assert.Contains("<FileVersion>0.2.0.0</FileVersion>", csproj);
+        Assert.DoesNotContain("<Version>0.1.1</Version>", csproj);
+    }
+
+    [Fact]
+    public void UiCsproj_IncludesHerramientasConfig_AsContent()
+    {
+        var csproj = ReadRepoFile("src/Cattech.Optimizer.Pro.UI/Cattech.Optimizer.Pro.UI.csproj");
+
+        Assert.Contains("config\\herramientas.json", csproj);
+        Assert.Contains("CopyToPublishDirectory", csproj);
+        Assert.Contains("PreserveNewest", csproj);
+    }
+
+    [Fact]
+    public void MainWindow_Shows_020_NoPreRelease()
+    {
+        var xaml = ReadRepoFile("src/Cattech.Optimizer.Pro.UI/MainWindow.xaml");
+
+        Assert.Contains("v0.2.0", xaml);
+        Assert.DoesNotContain("pre-release", xaml);
+        Assert.DoesNotContain("v0.1.1", xaml);
+    }
+
+    [Fact]
+    public void Home_Shows_020()
+    {
+        var vm = ReadRepoFile("src/Cattech.Optimizer.Pro.UI/ViewModels/MainViewModel.cs");
+
+        Assert.Contains("CATTECH OPTIMIZER PRO v0.2.0", vm);
+        Assert.DoesNotContain("versión en desarrollo", vm);
+    }
+
+    [Fact]
+    public void ReportFooter_Shows_020()
+    {
+        var service = ReadRepoFile("src/Cattech.Optimizer.Pro.Infrastructure/Reports/HtmlReportService.cs");
+
+        Assert.Contains("CATTECH OPTIMIZER PRO v0.2.0", service);
+    }
+
+    [Fact]
+    public void Readme_Header_Is_020_NotInDevelopment()
+    {
+        var readme = ReadRepoFile("README.md");
+
+        Assert.Contains("**Versión**: v0.2.0", readme);
+        Assert.DoesNotContain("en desarrollo — release candidate", readme);
+    }
+
+    [Fact]
+    public void ReleaseNotes_NoPendingPublishing()
+    {
+        var notes = ReadRepoFile("docs/RELEASE_NOTES_V0_2.md");
+
+        Assert.DoesNotContain("release aún no fue creada", notes);
+        Assert.DoesNotContain("preparadas para publicación", notes);
+    }
+
+    [Fact]
+    public void Plan_NoUncheckedSmartCriteria_NoOldCount()
+    {
+        var plan = ReadRepoFile("docs/V0_2_PLAN_SMART_HARDWARE.md");
+
+        Assert.DoesNotContain("- [ ] Detectar discos HDD", plan);
+        Assert.DoesNotContain("777 actuales", plan);
+        Assert.Contains("S.3.2 Versionado 0.2.0", plan);
+    }
+
+    [Fact]
+    public void HerramientasConfig_IsValidJson_NoSecrets()
+    {
+        var config = ReadRepoFile("config/herramientas.json");
+
+        using var doc = System.Text.Json.JsonDocument.Parse(config);
+        var root = doc.RootElement;
+
+        Assert.True(root.TryGetProperty("smartctlPath", out var path));
+        Assert.Equal(string.Empty, path.GetString());
+        Assert.True(root.TryGetProperty("smartctlAutoDetect", out var autoDetect));
+        Assert.True(autoDetect.GetBoolean());
+
+        Assert.DoesNotContain("C:\\Users", config);
+        Assert.DoesNotContain("token", config, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("password", config, StringComparison.OrdinalIgnoreCase);
+    }
 }
