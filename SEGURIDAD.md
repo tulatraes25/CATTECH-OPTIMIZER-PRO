@@ -646,7 +646,7 @@ Formato estándar: `CATTECH Optimizer Pro - Antes de mantenimiento - yyyy-MM-dd 
 2. **Disco crítico bloqueado**: Si HealthStatus == Critical, NO se inicia el test
    - Se muestra: "Este disco presenta indicadores críticos. Se recomienda realizar backup antes de ejecutar pruebas adicionales."
 3. **Un test a la vez**: No se inicia segundo test sobre disco con test InProgress
-4. **Verificación de soporte**: Si el dispositivo no soporta self-test, Status = Unsupported
+4. **Verificación de soporte**: Si el dispositivo no soporta self-test, el intento finaliza como FailedToStart con el error preservado (Unsupported solo si existe evidencia estructurada fiable; no se infiere del exit status 4)
 5. **Sin tests automáticos**: No se ejecutan tests sobre todos los discos
 6. **Solo lectura después del inicio**: CATTECH no mantiene procesos smartctl abiertos; el test ocurre en el firmware del disco
 7. **Sin comandos destructivos**: Solo `smartctl -t short -j`

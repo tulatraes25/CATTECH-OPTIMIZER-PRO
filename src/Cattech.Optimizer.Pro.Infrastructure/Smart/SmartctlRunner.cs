@@ -14,11 +14,13 @@ namespace Cattech.Optimizer.Pro.Infrastructure.Smart;
 public class SmartctlRunner : ISmartctlRunner
 {
     private readonly string? _configuredPath;
+    private readonly string _baseDirectory;
     private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(10);
 
-    public SmartctlRunner(string? configuredPath = null)
+    public SmartctlRunner(string? configuredPath = null, string? baseDirectory = null)
     {
         _configuredPath = configuredPath;
+        _baseDirectory = baseDirectory ?? AppDomain.CurrentDomain.BaseDirectory;
     }
 
     /// <inheritdoc/>
@@ -129,12 +131,25 @@ public class SmartctlRunner : ISmartctlRunner
 
     private async Task<string?> FindSmartctlPathAsync()
     {
-        // 1. Ruta configurada por el usuario
+        // 1. Ruta configurada por el llamador (tests/programática)
         if (!string.IsNullOrEmpty(_configuredPath) && File.Exists(_configuredPath))
             return _configuredPath;
 
-        // 2. Rutas comunes junto a la app
-        var appDir = AppDomain.CurrentDomain.BaseDirectory;
+        // 2. Ruta configurada en config/herramientas.json (smartctlPath / smartctlAutoDetect)
+        var configResult = ReadToolsConfig();
+        if (configResult.HasValue)
+        {
+            var (configuredPath, autoDetect) = configResult.Value;
+            if (!string.IsNullOrWhiteSpace(configuredPath) && File.Exists(configuredPath))
+                return configuredPath;
+
+            // smartctlAutoDetect=false y sin ruta válida: no auto-detección
+            if (!autoDetect)
+                return null;
+        }
+
+        // 3. Rutas comunes junto a la app
+        var appDir = _baseDirectory;
         var localPaths = new[]
         {
             Path.Combine(appDir, "tools", "smartmontools", "smartctl.exe"),
@@ -190,6 +205,36 @@ public class SmartctlRunner : ISmartctlRunner
         catch { }
 
         return null;
+    }
+
+    /// <summary>
+    /// Lee config/herramientas.json (smartctlPath, smartctlAutoDetect).
+    /// Archivo ausente o inválido → null (se usa autodetección).
+    /// </summary>
+    private (string SmartctlPath, bool AutoDetect)? ReadToolsConfig()
+    {
+        try
+        {
+            var configPath = Path.Combine(_baseDirectory, "config", "herramientas.json");
+            if (!File.Exists(configPath))
+                return null;
+
+            using var doc = JsonDocument.Parse(File.ReadAllText(configPath));
+            var root = doc.RootElement;
+
+            var path = root.TryGetProperty("smartctlPath", out var p) && p.ValueKind == JsonValueKind.String
+                ? p.GetString() ?? string.Empty
+                : string.Empty;
+
+            var autoDetect = !root.TryGetProperty("smartctlAutoDetect", out var a) ||
+                             a.ValueKind != JsonValueKind.False;
+
+            return (path, autoDetect);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     private static async Task<SmartctlCommandResult> RunSmartctlAsync(

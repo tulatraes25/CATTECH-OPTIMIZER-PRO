@@ -32,7 +32,7 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 6. **Test SMART extendido** (solo opción avanzada con advertencia)
 7. **Inclusión de resultados SMART en informe HTML/PDF**
 
-### Fase B: Hardware Avanzado (posterior dentro de v0.2) — En curso
+### Fase B: Hardware Avanzado (posterior dentro de v0.2) — ✅ Completada
 
 1. ✅ Temperaturas en tiempo real (B.1 completada: B.1.1 fundación, B.1.2 muestreo repetido, B.1.3 UI inicial)
 2. ✅ B.2.1: métricas dinámicas CPU/GPU (Load + Clock) capturadas con un solo Refresh
@@ -106,7 +106,8 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 | **Fase B: Hardware avanzado** | **3 semanas** | | ✅ Completada |
 | S.1: Exit status + transporte smartctl | — | — | ✅ Implementado |
 | S.2: Semántica de salud SMART / atributos | — | — | ✅ Implementado |
-| S.3: Release gate / criterios de aceptación | — | — | ⏳ Pendiente |
+| S.3.1: Release Gate técnico + QA v0.2 | — | — | ✅ PASS |
+| S.3.2: Versionado 0.2.0 + tag/release | — | — | ⏳ Pendiente |
 | **Total Fase B** | **3 semanas** | |
 | **Total v0.2** | **7 semanas** | |
 

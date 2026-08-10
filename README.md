@@ -1,8 +1,10 @@
 # CATTECH OPTIMIZER PRO
 
-**Versión**: v0.1.1 MVP estabilizado  
+**Versión**: v0.2 (en desarrollo — release candidate pendiente de publicación)  
 **Licencia**: MIT  
 **Plataforma**: Windows 10 (1809+) / Windows 11
+
+> Historial publicado: [v0.1.1 MVP estabilizado](CHANGELOG.md#011---2026). El bump oficial a v0.2.0 y el tag/release se realizarán tras el release gate (S.3.2).
 
 ---
 
@@ -18,6 +20,12 @@ CATTECH OPTIMIZER PRO es una aplicación de escritorio para Windows diseñada pa
 - **Optimización segura**: Limpieza de temporales, ajustes visuales
 - **Puntos de restauración**: Creación antes de cambios
 - **Informes profesionales**: HTML y PDF con logo personalizado
+
+### Novedades v0.2 (SMART + Hardware avanzado)
+
+- **SMART completo**: análisis read-only por disco, estados Good/Warning/Critical/NotAvailable/Unknown, self-tests corto y extendido con persistencia, sección SMART en informes HTML/PDF, recomendaciones automáticas, exit status de smartctl interpretado como bitmask, transporte `-d TYPE` preservado
+- **Hardware en tiempo real**: temperaturas, Load/Clock de CPU/GPU, memoria GPU, batería y timings SPD con una sola sesión LibreHardwareMonitor; inventario estático WMI/SMBIOS (CPU, GPU, RAM, módulos, placa madre/BIOS); sin thresholds de salud inventados
+- **Dependencia externa smartctl**: smartmontools/smartctl se detecta desde ruta configurada (`config/herramientas.json`), instalación estándar, rutas junto a la app o PATH. No se distribuye dentro del paquete en v0.2.
 
 ---
 
@@ -86,7 +94,7 @@ dotnet publish src\Cattech.Optimizer.Pro.UI\Cattech.Optimizer.Pro.UI.csproj `
 
 1. Descargar la última versión desde Releases
 2. Extraer el ZIP en una carpeta
-3. Ejecutar `CATTECH.Optimizer.Pro.exe` como administrador
+3. Ejecutar `Cattech.Optimizer.Pro.UI.exe` como administrador
 
 ### Versión con instalador (disponible en v1.0)
 

@@ -269,7 +269,7 @@ public partial class MainViewModel : ObservableObject
 
         var subtitle = new TextBlock
         {
-            Text = "Esta sección será implementada en futuras iteraciones del MVP.",
+            Text = "Panel principal en desarrollo.",
             FontSize = 14,
             Foreground = new System.Windows.Media.SolidColorBrush(
                 System.Windows.Media.Color.FromRgb(0x66, 0x66, 0x66)),
@@ -278,7 +278,7 @@ public partial class MainViewModel : ObservableObject
 
         var version = new TextBlock
         {
-            Text = "CATTECH OPTIMIZER PRO v0.1.1 MVP",
+            Text = "CATTECH OPTIMIZER PRO — versión en desarrollo",
             FontSize = 12,
             Foreground = new System.Windows.Media.SolidColorBrush(
                 System.Windows.Media.Color.FromRgb(0x99, 0x99, 0x99))

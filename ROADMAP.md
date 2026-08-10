@@ -1,6 +1,6 @@
 # Roadmap - CATTECH OPTIMIZER PRO
 
-**Versión actual**: 0.1 (En planificación)  
+**Versión actual**: 0.2 (release candidate — publicación pendiente de S.3.2)  
 **Última actualización**: 2026  
 **Objetivo**: Suite completa de diagnóstico, optimización y reparación para técnicos informáticos.
 
@@ -168,6 +168,8 @@ templates/report-html.html
 
 **Objetivo**: Diagnóstico profundo de discos y hardware avanzado.
 
+> **Estado actual**: Fase A (SMART) y Fase B (Hardware) completadas; estabilización S.1 (exit status/transporte) y S.2 (semántica de salud) completadas; S.3.1 release gate **PASS** (ver `docs/QA_V0_2.md` y `docs/RELEASE_NOTES_V0_2.md`). Publicación v0.2.0 pendiente de S.3.2. smartctl se distribuye como dependencia externa (autodetección), no incluido en el paquete.
+
 **Documentación de referencia**:
 - `docs/V0_2_PLAN_SMART_HARDWARE.md` - Plan detallado
 - `docs/SMART_INTEGRATION_DECISION.md` - Decisión de integración smartctl
@@ -175,11 +177,11 @@ templates/report-html.html
 ### Fase A: SMART Completo (4 semanas)
 
 #### A.1: Integración smartctl (1 semana)
-- [ ] Incluir smartctl.exe en `tools/smartmontools/`
-- [ ] Crear `SmartctlRunner` para ejecutar smartctl como proceso
-- [ ] Detectar smartctl en PATH o en `tools/`
-- [ ] Manejar ausencia de smartctl con mensaje claro
-- [ ] Registrar versión de smartctl usada
+- [x] Crear `SmartctlRunner` para ejecutar smartctl como proceso
+- [x] Detectar smartctl en PATH o en `tools/` (además: ruta programática y `config/herramientas.json`)
+- [x] Manejar ausencia de smartctl con mensaje claro
+- [x] Registrar versión de smartctl usada
+- [ ] Incluir smartctl.exe en `tools/smartmontools/` (NO en v0.2: dependencia externa con autodetección; revisión de redistribución futura)
 
 #### A.2: Modelo SmartDiskReport (1 semana)
 - [ ] `SmartDiskDevice`: información del disco

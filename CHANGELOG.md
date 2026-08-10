@@ -373,6 +373,16 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - **SmartDiskService entrega ExitFlags siempre** (ExitCode >= 0) al parser
 - **Errors técnicos ya no convierten a Critical**: la política usa señales específicas, no Errors.Count
 - 85 tests nuevos (916 total)
+
+### Added (Estabilización v0.2 - S.3.1: Release Gate técnico)
+- **Gate técnico PASS**: restore, build Release (0 errores), tests Release x2 (936/936, sin flaky), publish win-x64 self-contained OK
+- **config/herramientas.json ahora funcional**: SmartctlRunner lee `smartctlPath` y `smartctlAutoDetect` desde la base de la app (ruta programática tiene prioridad); `smartctlAutoDetect=false` sin ruta válida → SMART no disponible; los mensajes de la UI que referenciaban el config ahora son verdaderos
+- **Persistencia v0.2 verificada**: round-trip de SmartDiskReport (SmartctlDeviceType, OverallHealthPassed null, NvmeCriticalWarning, NvmeAvailableSpareThreshold, IsPrefailure) y SmartTestSession (SmartctlDeviceType); legacy sin campos nuevos → defaults correctos
+- **Seguridad de comandos auditada**: solo flags permitidos (--version, --scan, -a -j, -t short/long -j, -l selftest -j, -d); tests de builder sin flags destructivos
+- **Textos obsoletos corregidos**: footer ventana "v0.1.1 MVP" → "v0.2 pre-release"; footer informe sin número de versión; placeholder de Home sin "futuras iteraciones del MVP"; README con versión v0.2 en desarrollo y nota de smartctl externo; V0_2_PLAN con Fase B ✅
+- **ZIP v0.1.1 versionado eliminado** del repositorio (artefacto obsoleto)
+- **docs/QA_V0_2.md** y **docs/RELEASE_NOTES_V0_2.md** creados
+- 20 tests nuevos (936 total)
 - SmartctlAvailability, SmartDiskDevice, SmartctlCommandResult
 - ISmartctlRunner, ISmartDiskService interfaces
 - 32 tests de smartctl + 18 tests de SMART (214 total)
