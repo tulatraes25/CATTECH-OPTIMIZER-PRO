@@ -1,6 +1,6 @@
 name: CATTECH Release Package
 
-on:
+"on":
   workflow_dispatch:
     inputs:
       version:
