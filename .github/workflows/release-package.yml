@@ -1,0 +1,308 @@
+name: CATTECH Release Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Semantic version without v, for example 0.3.0"
+        required: true
+        type: string
+      source_ref:
+        description: "Git commit, branch or tag to package"
+        required: true
+        type: string
+        default: main
+  workflow_call:
+    inputs:
+      version:
+        description: "Semantic version without v, for example 0.3.0"
+        required: true
+        type: string
+      source_ref:
+        description: "Git commit, branch or tag to package"
+        required: true
+        type: string
+    outputs:
+      artifact_name:
+        description: "Name of the uploaded release candidate artifact"
+        value: ${{ jobs.package.outputs.artifact_name }}
+      zip_name:
+        description: "Name of the generated ZIP"
+        value: ${{ jobs.package.outputs.zip_name }}
+      checksum_name:
+        description: "Name of the generated SHA-256 file"
+        value: ${{ jobs.package.outputs.checksum_name }}
+      sha256:
+        description: "SHA-256 of the generated ZIP"
+        value: ${{ jobs.package.outputs.sha256 }}
+      source_sha:
+        description: "Full SHA of the packaged source"
+        value: ${{ jobs.package.outputs.source_sha }}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-package-${{ inputs.version }}-${{ inputs.source_ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: true
+  NUGET_XMLDOC_MODE: skip
+  CONFIGURATION: Release
+  RUNTIME: win-x64
+
+jobs:
+  package:
+    name: Package Release Candidate
+    runs-on: windows-latest
+    timeout-minutes: 45
+    outputs:
+      artifact_name: ${{ steps.metadata.outputs.artifact_name }}
+      zip_name: ${{ steps.metadata.outputs.zip_name }}
+      checksum_name: ${{ steps.metadata.outputs.checksum_name }}
+      sha256: ${{ steps.checksum.outputs.sha256 }}
+      source_sha: ${{ steps.source-sha.outputs.source_sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_ref }}
+          persist-credentials: false
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Resolve source SHA
+        id: source-sha
+        shell: pwsh
+        run: |
+          $sha = git rev-parse HEAD
+          Write-Output "source_sha=$sha" >> $env:GITHUB_OUTPUT
+          Write-Output "Packaging source SHA: $sha"
+
+      - name: Validate version
+        shell: pwsh
+        run: |
+          $version = "${{ inputs.version }}"
+          if ($version -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
+            throw "Invalid semantic version: '$version'. Expected MAJOR.MINOR.PATCH (e.g. 0.3.0)."
+          }
+          Write-Output "Version input valid: $version"
+
+      - name: Validate csproj version
+        shell: pwsh
+        run: |
+          $version = "${{ inputs.version }}"
+          $expectedAssembly = "$version.0"
+          [xml]$csproj = Get-Content "src/Cattech.Optimizer.Pro.UI/Cattech.Optimizer.Pro.UI.csproj"
+          $versionTag = $csproj.Project.PropertyGroup.Version
+          $assemblyVersion = $csproj.Project.PropertyGroup.AssemblyVersion
+          $fileVersion = $csproj.Project.PropertyGroup.FileVersion
+          if ($versionTag -ne $version) { throw "csproj Version '$versionTag' != input '$version'" }
+          if ($assemblyVersion -ne $expectedAssembly) { throw "csproj AssemblyVersion '$assemblyVersion' != '$expectedAssembly'" }
+          if ($fileVersion -ne $expectedAssembly) { throw "csproj FileVersion '$fileVersion' != '$expectedAssembly'" }
+          Write-Output "csproj versions consistent: $version / $assemblyVersion / $fileVersion"
+
+      - name: Validate visible versions
+        shell: pwsh
+        run: |
+          $version = "${{ inputs.version }}"
+          $readme = Get-Content "README.md" -Raw
+          $mainWindow = Get-Content "src/Cattech.Optimizer.Pro.UI/MainWindow.xaml" -Raw
+          $mainVm = Get-Content "src/Cattech.Optimizer.Pro.UI/ViewModels/MainViewModel.cs" -Raw
+          $htmlReport = Get-Content "src/Cattech.Optimizer.Pro.Infrastructure/Reports/HtmlReportService.cs" -Raw
+          $changelog = Get-Content "CHANGELOG.md" -Raw
+          if ($readme -notmatch "\*\*Versi.n\*\*: v$version") { throw "README does not declare version v$version" }
+          if ($mainWindow -notmatch "v$version") { throw "MainWindow.xaml does not show v$version" }
+          if ($mainVm -notmatch "CATTECH OPTIMIZER PRO v$version") { throw "MainViewModel does not show CATTECH OPTIMIZER PRO v$version" }
+          if ($htmlReport -notmatch "CATTECH OPTIMIZER PRO v$version") { throw "HtmlReportService footer does not show v$version" }
+          if ($changelog -notmatch "## \[$version\]") { throw "CHANGELOG does not contain section [$version]" }
+          Write-Output "Visible versions consistent with v$version"
+
+      - name: Restore
+        run: dotnet restore src/Cattech.Optimizer.Pro.sln
+
+      - name: Build Release
+        run: dotnet build src/Cattech.Optimizer.Pro.sln --configuration Release --no-restore
+
+      - name: Test Release #1
+        run: dotnet test src/Cattech.Optimizer.Pro.sln --configuration Release --no-build --logger "trx;LogFileName=release-candidate-1.trx" --results-directory "${{ github.workspace }}\TestResults\Run1"
+
+      - name: Test Release #2
+        run: dotnet test src/Cattech.Optimizer.Pro.sln --configuration Release --no-build --logger "trx;LogFileName=release-candidate-2.trx" --results-directory "${{ github.workspace }}\TestResults\Run2"
+
+      - name: Restore RID
+        run: dotnet restore src/Cattech.Optimizer.Pro.UI/Cattech.Optimizer.Pro.UI.csproj --runtime win-x64
+
+      - name: Publish win-x64
+        shell: pwsh
+        run: |
+          $publishDir = "${{ github.workspace }}\output\release-package\win-x64"
+          if (Test-Path $publishDir) { Remove-Item $publishDir -Recurse -Force }
+          dotnet publish src/Cattech.Optimizer.Pro.UI/Cattech.Optimizer.Pro.UI.csproj --configuration Release --runtime win-x64 --self-contained true --no-restore --output $publishDir
+
+      - name: Validate critical files
+        shell: pwsh
+        run: |
+          $publishDir = "${{ github.workspace }}\output\release-package\win-x64"
+          $required = @("Cattech.Optimizer.Pro.UI.exe", "LibreHardwareMonitorLib.dll", "config\herramientas.json")
+          foreach ($file in $required) {
+            if (-not (Test-Path (Join-Path $publishDir $file))) {
+              throw "Missing critical file: $file"
+            }
+          }
+          Write-Output "Critical files present: $($required -join ', ')"
+
+      - name: Validate herramientas.json
+        shell: pwsh
+        run: |
+          $config = Get-Content "${{ github.workspace }}\output\release-package\win-x64\config\herramientas.json" -Raw
+          $json = $config | ConvertFrom-Json
+          if ($json.smartctlPath -ne "") { throw "herramientas.json smartctlPath is not empty" }
+          if ($json.smartctlAutoDetect -ne $true) { throw "herramientas.json smartctlAutoDetect is not true" }
+          if ($config -match "C:\\Users|token|password|secret|api[_-]?key") {
+            throw "herramientas.json contains personal paths or secrets"
+          }
+          Write-Output "herramientas.json valid and clean"
+
+      - name: Validate smartctl absent
+        shell: pwsh
+        run: |
+          $found = Get-ChildItem "${{ github.workspace }}\output\release-package\win-x64" -Recurse -Filter "smartctl.exe" -ErrorAction SilentlyContinue
+          if ($found) { throw "smartctl.exe found in package: $($found.FullName)" }
+          Write-Output "smartctl.exe absent (expected external dependency)"
+
+      - name: Validate package root directories
+        shell: pwsh
+        run: |
+          $publishDir = "${{ github.workspace }}\output\release-package\win-x64"
+          $forbidden = @("data", "logs", "backups", "reports")
+          foreach ($dir in $forbidden) {
+            if (Test-Path (Join-Path $publishDir $dir)) {
+              throw "Forbidden root directory in package: $dir"
+            }
+          }
+          Write-Output "No personal/runtime root directories in package"
+
+      - name: Add README and LICENSE
+        shell: pwsh
+        run: |
+          $publishDir = "${{ github.workspace }}\output\release-package\win-x64"
+          Copy-Item "README.md" $publishDir -Force
+          Copy-Item "LICENSE" $publishDir -Force
+          Write-Output "README.md and LICENSE added to package root"
+
+      - name: Validate EXE version
+        shell: pwsh
+        run: |
+          $version = "${{ inputs.version }}"
+          $exe = "${{ github.workspace }}\output\release-package\win-x64\Cattech.Optimizer.Pro.UI.exe"
+          $info = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($exe)
+          $expectedFileVersion = "$version.0"
+          if ($info.FileVersion -ne $expectedFileVersion) {
+            throw "EXE FileVersion '$($info.FileVersion)' != '$expectedFileVersion'"
+          }
+          if (-not $info.ProductVersion.StartsWith($version)) {
+            throw "EXE ProductVersion '$($info.ProductVersion)' does not start with '$version'"
+          }
+          Write-Output "EXE FileVersion: $($info.FileVersion)"
+          Write-Output "EXE ProductVersion: $($info.ProductVersion)"
+
+      - name: Create ZIP and checksum
+        id: checksum
+        shell: pwsh
+        run: |
+          $version = "${{ inputs.version }}"
+          $publishDir = "${{ github.workspace }}\output\release-package\win-x64"
+          $zipName = "CATTECH-Optimizer-Pro-v$version-win-x64.zip"
+          $checksumName = "CATTECH-Optimizer-Pro-v$version-win-x64.sha256.txt"
+          $zipPath = "${{ github.workspace }}\output\$zipName"
+          Compress-Archive -Path "$publishDir\*" -DestinationPath $zipPath -CompressionLevel Optimal
+          $hash = (Get-FileHash $zipPath -Algorithm SHA256).Hash
+          "$hash  $zipName" | Set-Content "${{ github.workspace }}\output\$checksumName"
+          Write-Output "sha256=$hash" >> $env:GITHUB_OUTPUT
+          Write-Output "ZIP: $zipName ($((Get-Item $zipPath).Length) bytes)"
+          Write-Output "SHA-256: $hash"
+
+      - name: Validate ZIP contents
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $version = "${{ inputs.version }}"
+          $zipPath = "${{ github.workspace }}\output\CATTECH-Optimizer-Pro-v$version-win-x64.zip"
+          $zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
+          try {
+            $names = $zip.Entries | ForEach-Object { $_.FullName }
+            foreach ($required in @("Cattech.Optimizer.Pro.UI.exe", "LibreHardwareMonitorLib.dll", "config\herramientas.json", "README.md", "LICENSE")) {
+              if (-not ($names -contains $required)) { throw "ZIP missing entry: $required" }
+            }
+            if ($names -match "smartctl\.exe") { throw "ZIP contains smartctl.exe" }
+            if ($names -match "^data/|^logs/|^backups/|^reports/") { throw "ZIP contains personal/runtime directories" }
+            Write-Output "ZIP contents validated"
+          } finally {
+            $zip.Dispose()
+          }
+
+      - name: Metadata outputs
+        id: metadata
+        shell: pwsh
+        run: |
+          $version = "${{ inputs.version }}"
+          $artifactName = "cattech-release-v$version-win-x64"
+          $zipName = "CATTECH-Optimizer-Pro-v$version-win-x64.zip"
+          $checksumName = "CATTECH-Optimizer-Pro-v$version-win-x64.sha256.txt"
+          Write-Output "artifact_name=$artifactName" >> $env:GITHUB_OUTPUT
+          Write-Output "zip_name=$zipName" >> $env:GITHUB_OUTPUT
+          Write-Output "checksum_name=$checksumName" >> $env:GITHUB_OUTPUT
+
+      - name: Upload release candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cattech-release-v${{ inputs.version }}-win-x64
+          path: |
+            output/CATTECH-Optimizer-Pro-v${{ inputs.version }}-win-x64.zip
+            output/CATTECH-Optimizer-Pro-v${{ inputs.version }}-win-x64.sha256.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cattech-release-tests-v${{ inputs.version }}
+          path: TestResults/**/*.trx
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Job summary
+        if: always()
+        shell: pwsh
+        run: |
+          $version = "${{ inputs.version }}"
+          $sourceRef = "${{ inputs.source_ref }}"
+          $sourceSha = "${{ steps.source-sha.outputs.source_sha }}"
+          $sha = "${{ steps.checksum.outputs.sha256 }}"
+          $summary = @"
+## CATTECH Release Package
+
+| Field | Value |
+|-------|-------|
+| Version | v$version |
+| Source ref | $sourceRef |
+| Source SHA | $sourceSha |
+| Configuration | Release |
+| Runtime | win-x64 |
+| Self-contained | Sí |
+| Tests run #1 | PASS |
+| Tests run #2 | PASS |
+| ZIP | CATTECH-Optimizer-Pro-v$version-win-x64.zip |
+| SHA-256 | $sha |
+| smartctl included | No |
+| GitHub Release | NO — package candidate only |
+"@
+          $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append

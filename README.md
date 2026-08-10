@@ -516,6 +516,10 @@ Ver [AUDITORIA_REFERENCIAS.md](AUDITORIA_REFERENCIAS.md) para detalles completos
 - [smartmontools](https://github.com/smartmontools/smartmontools) - Diagnóstico SMART
 - Microsoft Edge - Exportación HTML a PDF
 
+## Automatización de releases
+
+Ver [docs/RELEASE_AUTOMATION.md](docs/RELEASE_AUTOMATION.md) para el CI (CATTECH CI) y el workflow reutilizable de release packaging (CATTECH Release Package).
+
 ---
 
 *Desarrollado con ❤️ para técnicos informáticos*
