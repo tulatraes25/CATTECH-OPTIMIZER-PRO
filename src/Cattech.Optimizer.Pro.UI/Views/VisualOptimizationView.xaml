@@ -1,4 +1,4 @@
-﻿<UserControl x:Class="Cattech.Optimizer.Pro.UI.Views.VisualOptimizationView"
+<UserControl x:Class="Cattech.Optimizer.Pro.UI.Views.VisualOptimizationView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:converters="clr-namespace:Cattech.Optimizer.Pro.UI.Converters"
@@ -10,9 +10,9 @@
         <converters:StringToVisibilityConverter x:Key="StringToVis" />
         <converters:ZeroToVisibilityConverter x:Key="ZeroToVis" />
         <converters:VisualRiskColorConverter x:Key="VisualRiskColorConverter" />
+        <converters:BoolToVisYesNoConverter x:Key="BoolToVisYesNo" />
         <converters:RestoreColorConverter x:Key="RestoreColorConverter" />
         <converters:RestoreTextConverter x:Key="RestoreTextConverter" />
-        <converters:BoolToVisYesNoConverter x:Key="BoolToVisYesNo" />
 
         <Style x:Key="ColumnHeaderStyle" TargetType="DataGridColumnHeader">
             <Setter Property="Background" Value="#F0F0F0" />
@@ -32,10 +32,10 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- Row 0: TÃ­tulo -->
+        <!-- Row 0: Título -->
         <StackPanel Grid.Row="0" Margin="0,0,0,10">
-            <TextBlock Text="OptimizaciÃ³n Visual Segura" FontSize="26" FontWeight="Bold" Foreground="#1B1B1B" />
-            <TextBlock Text="Ajustes visuales para mejorar rendimiento sin modificar resoluciÃ³n, drivers ni accesibilidad."
+            <TextBlock Text="Optimización Visual Segura" FontSize="26" FontWeight="Bold" Foreground="#1B1B1B" />
+            <TextBlock Text="Ajustes visuales para mejorar rendimiento sin modificar resolución, drivers ni accesibilidad."
                        FontSize="13" Foreground="#666" Margin="0,5,0,0" />
         </StackPanel>
 
@@ -69,12 +69,12 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
-            <Button Grid.Column="0" Content="ðŸ” Analizar ajustes"
+            <Button Grid.Column="0" Content="🔍 Analizar ajustes"
                     Command="{Binding AnalyzeCommand}" Padding="16,8" FontSize="12" FontWeight="SemiBold"
                     Background="#0078D4" Foreground="White" BorderThickness="0"
                     IsEnabled="{Binding IsRunning, Converter={StaticResource InvertBool}}" />
 
-            <Button Grid.Column="2" Content="âœ… Aplicar seleccionados"
+            <Button Grid.Column="2" Content="✅ Aplicar seleccionados"
                     Command="{Binding ApplyCommand}" Padding="16,8" FontSize="12" FontWeight="SemiBold"
                     Background="#2E7D32" Foreground="White" BorderThickness="0"
                     IsEnabled="{Binding HasResults}" />
@@ -83,11 +83,11 @@
                     Command="{Binding SelectAllSafeCommand}" Padding="12,8" FontSize="11"
                     Background="#F3F3F3" Foreground="#333" BorderBrush="#CCC" BorderThickness="1" />
 
-            <Button Grid.Column="6" Content="Limpiar selecciÃ³n"
+            <Button Grid.Column="6" Content="Limpiar selección"
                     Command="{Binding DeselectAllCommand}" Padding="12,8" FontSize="11"
                     Background="#F3F3F3" Foreground="#333" BorderBrush="#CCC" BorderThickness="1" />
 
-            <Button Grid.Column="8" Content="ðŸ“‹ Backups"
+            <Button Grid.Column="8" Content="📋 Backups"
                     Command="{Binding LoadBackupsCommand}" Padding="12,8" FontSize="11"
                     Background="#F3F3F3" Foreground="#333" BorderBrush="#CCC" BorderThickness="1" />
 
@@ -106,8 +106,8 @@
                 CornerRadius="6" Padding="12,8" Margin="0,0,0,10"
                 Visibility="{Binding HasResults, Converter={StaticResource BoolToVis}}">
             <TextBlock FontSize="11" Foreground="#1565C0">
-                <Run Text="â„¹ï¸ " FontWeight="Bold" />
-                <Run Text="Estos cambios priorizan rendimiento visual sin modificar resoluciÃ³n, drivers, servicios ni accesibilidad. " />
+                <Run Text="ℹ️ " FontWeight="Bold" />
+                <Run Text="Estos cambios priorizan rendimiento visual sin modificar resolución, drivers, servicios ni accesibilidad. " />
                 <Run Text="Se crea backup de cada valor antes de modificarlo. Reversible en cualquier momento." />
             </TextBlock>
         </Border>
@@ -126,7 +126,7 @@
                     <TextBlock Text="AJUSTES DISPONIBLES" FontSize="12" FontWeight="Bold"
                                Foreground="#0078D4" Margin="0,0,0,10" />
 
-                    <TextBlock Text="EjecutÃ¡ un anÃ¡lisis primero" FontSize="12" Foreground="#999"
+                    <TextBlock Text="Ejecutá un análisis primero" FontSize="12" Foreground="#999"
                                Visibility="{Binding HasResults, Converter={StaticResource InvertBool}}" />
 
                     <ItemsControl ItemsSource="{Binding Settings}" MaxHeight="500">
@@ -196,7 +196,7 @@
                                                 </Border>
                                                 <Border CornerRadius="3" Padding="4,1" Background="#E8EAF6"
                                                         Visibility="{Binding RequiresSignOut, Converter={StaticResource BoolToVis}}">
-                                                    <TextBlock Text="Requiere cerrar sesiÃ³n" FontSize="9" Foreground="#283593" />
+                                                    <TextBlock Text="Requiere cerrar sesión" FontSize="9" Foreground="#283593" />
                                                 </Border>
                                             </StackPanel>
                                         </StackPanel>
@@ -240,7 +240,7 @@
                                 <TextBlock Text="Reiniciar:" FontSize="11" Foreground="#555" />
                                 <TextBlock Text="{Binding RequiresRestart, Converter={StaticResource BoolToVisYesNo}}" FontSize="11" FontWeight="SemiBold" Grid.Column="1" /></Grid>
                             <Grid Margin="0,0,0,12"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                <TextBlock Text="Cerrar sesiÃ³n:" FontSize="11" Foreground="#555" />
+                                <TextBlock Text="Cerrar sesión:" FontSize="11" Foreground="#555" />
                                 <TextBlock Text="{Binding RequiresSignOut, Converter={StaticResource BoolToVisYesNo}}" FontSize="11" FontWeight="SemiBold" Grid.Column="1" /></Grid>
                         </StackPanel>
 
@@ -296,4 +296,3 @@
         </Grid>
     </Grid>
 </UserControl>
-

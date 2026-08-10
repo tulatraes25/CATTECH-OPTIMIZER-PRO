@@ -83,6 +83,10 @@ Cambios posteriores a v0.2.0.
 - Agregados smoke tests WPF STA (`XamlViewSmokeTests`): carga de ClientEquipmentView, navegación MainViewModel → Cliente/equipo, y carga de las 10 vistas del sidebar sin DataContext/comandos — previenen regresiones de StaticResource en CI
 - 3 tests nuevos (948 total)
 
+### Fixed (QA-ENC-001)
+- Corregida regresión de encoding UTF-8 en tres vistas (Configuración, Diagnóstico, Optimización) introducida durante la auditoría XAML del fix SMOKE-B1-001; textos y emojis restaurados sin perder los registros StaticResource corregidos
+- Diferencias vs la base limpia limitadas exclusivamente a los 6 registros de converters (ClientEquipment 1, CompanySettings 2, QuickDiagnostic 1, VisualOptimization 2); sin mojibake restante en los 12 XAML del proyecto
+
 ---
 
 ## [0.2.0] - 2026-08-09
