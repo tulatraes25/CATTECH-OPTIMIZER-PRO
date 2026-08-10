@@ -66,6 +66,7 @@ Cambios posteriores a v0.2.0.
 - CI de Windows mediante GitHub Actions (`CATTECH CI`): restore/build/tests Release automáticos en push a main, pull requests contra main y ejecución manual
 - Resultados TRX conservados como artifact (`cattech-test-results`, retención 14 días)
 - Workflow reutilizable de release packaging (`CATTECH Release Package`): genera candidates de versión con validación de consistencia (csproj, versiones visibles, semver), doble ejecución de tests, publish win-x64 self-contained, verificación EXE/config/smartctl, ZIP + SHA-256 como artifacts temporales
+- Workflow de publicación controlada (`CATTECH Release`): dry-run seguro por defecto, tag anotado vía API, reutilización del release package, checksums revalidados, build provenance mediante artifact attestation, permisos write limitados al job publish
 - Documentación: `docs/RELEASE_AUTOMATION.md`
 
 ---

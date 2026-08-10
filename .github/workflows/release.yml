@@ -1,0 +1,428 @@
+name: CATTECH Release
+
+"on":
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Semantic version without v, for example 0.3.0"
+        required: true
+        type: string
+      source_sha:
+        description: "Full 40-char commit SHA to publish (must be main HEAD for live publish)"
+        required: true
+        type: string
+      release_notes_path:
+        description: "Relative path to release notes file inside the source commit"
+        required: true
+        type: string
+      dry_run:
+        description: "Dry run: validate everything, write nothing"
+        required: true
+        type: boolean
+        default: true
+      publish_confirmation:
+        description: "For live publish must equal PUBLISH v{version}"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+
+env:
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  preflight:
+    name: Preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      tag_name: ${{ steps.metadata.outputs.tag_name }}
+      source_sha: ${{ steps.metadata.outputs.source_sha }}
+      main_sha: ${{ steps.main-sha.outputs.main_sha }}
+      tag_exists: ${{ steps.tag-check.outputs.tag_exists }}
+      release_exists: ${{ steps.release-check.outputs.release_exists }}
+      release_notes_path: ${{ steps.metadata.outputs.release_notes_path }}
+      dry_run: ${{ steps.metadata.outputs.dry_run }}
+
+    steps:
+      - name: Validate inputs
+        id: metadata
+        shell: bash
+        run: |
+          version="${{ inputs.version }}"
+          source_sha="${{ inputs.source_sha }}"
+          notes_path="${{ inputs.release_notes_path }}"
+          dry_run="${{ inputs.dry_run }}"
+          if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::Invalid semantic version: $version"
+            exit 1
+          fi
+          if [[ ! "$source_sha" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "::error::source_sha must be a 40-char git SHA: $source_sha"
+            exit 1
+          fi
+          if [[ "$notes_path" != /* && "$notes_path" != *..* && "$notes_path" != http* ]]; then
+            : # ok
+          else
+            echo "::error::Invalid release_notes_path (must be relative, no .., no URL): $notes_path"
+            exit 1
+          fi
+          source_sha_lower=$(echo "$source_sha" | tr 'A-F' 'a-f')
+          echo "tag_name=v$version" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$source_sha_lower" >> "$GITHUB_OUTPUT"
+          echo "release_notes_path=$notes_path" >> "$GITHUB_OUTPUT"
+          echo "dry_run=$dry_run" >> "$GITHUB_OUTPUT"
+          echo "Validated version=$version source_sha=$source_sha_lower"
+
+      - name: Resolve main SHA
+        id: main-sha
+        shell: bash
+        run: |
+          main_sha=$(gh api "repos/${{ github.repository }}/commits/main" --jq '.sha')
+          echo "main_sha=$main_sha" >> "$GITHUB_OUTPUT"
+          echo "Main HEAD SHA: $main_sha"
+
+      - name: Live-mode guards
+        if: ${{ inputs.dry_run == false }}
+        shell: bash
+        run: |
+          source_sha="${{ inputs.version }}" # placeholder, replaced below
+          source_sha="${{ steps.metadata.outputs.source_sha }}"
+          main_sha="${{ steps.main-sha.outputs.main_sha }}"
+          if [[ "$source_sha" != "$main_sha" ]]; then
+            echo "::error::source_sha must equal main HEAD for live publish: $source_sha != $main_sha"
+            exit 1
+          fi
+          if [[ "${{ github.ref }}" != "refs/heads/main" ]]; then
+            echo "::error::Live publish must run from main branch (ref: ${{ github.ref }})"
+            exit 1
+          fi
+          if [[ "${{ github.sha }}" != "$source_sha" ]]; then
+            echo "::error::github.sha does not match source_sha: ${{ github.sha }} != $source_sha"
+            exit 1
+          fi
+          expected_confirmation="PUBLISH v${{ inputs.version }}"
+          if [[ "${{ inputs.publish_confirmation }}" != "$expected_confirmation" ]]; then
+            echo "::error::publish_confirmation must equal: $expected_confirmation"
+            exit 1
+          fi
+          echo "Live-mode guards passed"
+
+      - name: Checkout source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+
+      - name: Validate release notes
+        shell: bash
+        run: |
+          notes_path="${{ inputs.release_notes_path }}"
+          if [[ ! -f "$notes_path" ]]; then
+            echo "::error::Release notes file not found: $notes_path"
+            exit 1
+          fi
+          version="${{ inputs.version }}"
+          if ! head -n 10 "$notes_path" | grep -q "v$version"; then
+            echo "::error::Release notes do not mention v$version"
+            exit 1
+          fi
+          echo "Release notes valid: $notes_path"
+
+      - name: Check tag existence
+        id: tag-check
+        shell: bash
+        run: |
+          tag="v${{ inputs.version }}"
+          if git ls-remote --tags origin "refs/tags/$tag" | grep -q .; then
+            echo "tag_exists=true" >> "$GITHUB_OUTPUT"
+            echo "Tag $tag exists"
+            resolved=$(git ls-remote --tags origin "refs/tags/$tag^{}" | awk '{print $1}')
+            echo "Tag resolves to: ${resolved:-<lightweight or unpeeled>}"
+          else
+            echo "tag_exists=false" >> "$GITHUB_OUTPUT"
+            echo "Tag $tag does not exist"
+          fi
+
+      - name: Check release existence
+        id: release-check
+        shell: bash
+        run: |
+          tag="v${{ inputs.version }}"
+          if gh release view "$tag" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "release_exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release $tag exists"
+          else
+            echo "release_exists=false" >> "$GITHUB_OUTPUT"
+            echo "Release $tag does not exist"
+          fi
+
+      - name: Fail if tag/release already exist (live mode)
+        if: ${{ inputs.dry_run == false }}
+        shell: bash
+        run: |
+          if [[ "${{ steps.tag-check.outputs.tag_exists }}" == "true" ]]; then
+            echo "::error::Tag v${{ inputs.version }} already exists. No overwrite."
+            exit 1
+          fi
+          if [[ "${{ steps.release-check.outputs.release_exists }}" == "true" ]]; then
+            echo "::error::Release v${{ inputs.version }} already exists. No overwrite."
+            exit 1
+          fi
+          echo "No existing tag/release for v${{ inputs.version }}"
+
+  package:
+    name: Package (reusable)
+    needs: preflight
+    permissions:
+      contents: read
+    uses: ./.github/workflows/release-package.yml
+    with:
+      version: ${{ inputs.version }}
+      source_ref: ${{ inputs.source_sha }}
+
+  dry-run-verification:
+    name: Dry Run Verification
+    if: ${{ inputs.dry_run == true }}
+    needs:
+      - preflight
+      - package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Download package artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ needs.package.outputs.artifact_name }}
+          path: release-assets
+
+      - name: Validate package outputs
+        shell: bash
+        run: |
+          if [[ "${{ needs.package.outputs.source_sha }}" != "${{ inputs.source_sha }}" ]]; then
+            echo "::error::Package source SHA mismatch: ${{ needs.package.outputs.source_sha }}"
+            exit 1
+          fi
+          zip_name="${{ needs.package.outputs.zip_name }}"
+          checksum_name="${{ needs.package.outputs.checksum_name }}"
+          if [[ ! -f "release-assets/$zip_name" ]]; then
+            echo "::error::ZIP not found: release-assets/$zip_name"
+            exit 1
+          fi
+          if [[ ! -f "release-assets/$checksum_name" ]]; then
+            echo "::error::Checksum file not found: release-assets/$checksum_name"
+            exit 1
+          fi
+          echo "Package outputs validated"
+
+      - name: Verify checksum
+        shell: bash
+        run: |
+          zip_name="${{ needs.package.outputs.zip_name }}"
+          checksum_name="${{ needs.package.outputs.checksum_name }}"
+          declared_hash="${{ needs.package.outputs.sha256 }}"
+          stored_hash=$(awk '{print $1}' "release-assets/$checksum_name")
+          recalculated_hash=$(sha256sum "release-assets/$zip_name" | awk '{print $1}')
+          if [[ "$declared_hash" != "$stored_hash" || "$declared_hash" != "$recalculated_hash" ]]; then
+            echo "::error::Checksum mismatch: declared=$declared_hash stored=$stored_hash recalc=$recalculated_hash"
+            exit 1
+          fi
+          echo "Checksum verified (3-way match)"
+
+      - name: Validate ZIP contents
+        shell: bash
+        run: |
+          zip_name="${{ needs.package.outputs.zip_name }}"
+          list=$(unzip -l "release-assets/$zip_name")
+          for required in "Cattech.Optimizer.Pro.UI.exe" "LibreHardwareMonitorLib.dll" "config/herramientas.json" "README.md" "LICENSE"; do
+            if ! echo "$list" | grep -q "$required"; then
+              echo "::error::ZIP missing entry: $required"
+              exit 1
+            fi
+          done
+          if echo "$list" | grep -qi "smartctl.exe"; then
+            echo "::error::ZIP contains smartctl.exe"
+            exit 1
+          fi
+          if echo "$list" | grep -qE " (data|logs|backups|reports)/"; then
+            echo "::error::ZIP contains personal/runtime directories"
+            exit 1
+          fi
+          echo "ZIP contents validated"
+
+      - name: Dry run summary
+        shell: bash
+        run: |
+          {
+            echo "## CATTECH Release — DRY RUN"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Version | v${{ inputs.version }} |"
+            echo "| Source SHA | ${{ inputs.source_sha }} |"
+            echo "| Main SHA actual | ${{ needs.preflight.outputs.main_sha }} |"
+            echo "| Tag existente | ${{ needs.preflight.outputs.tag_exists }} |"
+            echo "| Release existente | ${{ needs.preflight.outputs.release_exists }} |"
+            echo "| Package artifact | ${{ needs.package.outputs.artifact_name }} |"
+            echo "| ZIP | ${{ needs.package.outputs.zip_name }} |"
+            echo "| SHA-256 | ${{ needs.package.outputs.sha256 }} |"
+            echo "| Release notes | ${{ inputs.release_notes_path }} |"
+            echo "| Package | PASS |"
+            echo "| Write operations | 0 |"
+            echo "| Attestation | SKIPPED |"
+            echo "| Tag | SKIPPED |"
+            echo "| Release | SKIPPED |"
+            echo "| Result | DRY-RUN PASS |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    name: Publish
+    if: ${{ inputs.dry_run == false }}
+    needs:
+      - preflight
+      - package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      attestations: write
+      id-token: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download package artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ needs.package.outputs.artifact_name }}
+          path: release-assets
+
+      - name: Checkout source for release notes
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+
+      - name: Pre-write revalidation
+        shell: bash
+        run: |
+          source_sha="${{ inputs.source_sha }}"
+          main_sha=$(gh api "repos/${{ github.repository }}/commits/main" --jq '.sha')
+          if [[ "$source_sha" != "$main_sha" ]]; then
+            echo "::error::main moved during packaging: $source_sha != $main_sha"
+            exit 1
+          fi
+          if gh release view "v${{ inputs.version }}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "::error::Release v${{ inputs.version }} appeared during packaging"
+            exit 1
+          fi
+          if git ls-remote --tags origin "refs/tags/v${{ inputs.version }}" | grep -q .; then
+            echo "::error::Tag v${{ inputs.version }} appeared during packaging"
+            exit 1
+          fi
+          echo "Pre-write revalidation passed (TOCTOU guard)"
+
+      - name: Verify checksum (publish)
+        shell: bash
+        run: |
+          zip_name="${{ needs.package.outputs.zip_name }}"
+          checksum_name="${{ needs.package.outputs.checksum_name }}"
+          declared_hash="${{ needs.package.outputs.sha256 }}"
+          stored_hash=$(awk '{print $1}' "release-assets/$checksum_name")
+          recalculated_hash=$(sha256sum "release-assets/$zip_name" | awk '{print $1}')
+          if [[ "$declared_hash" != "$stored_hash" || "$declared_hash" != "$recalculated_hash" ]]; then
+            echo "::error::Checksum mismatch before publish"
+            exit 1
+          fi
+          echo "Checksum verified before publish"
+
+      - name: Generate ZIP provenance
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-path: release-assets/${{ needs.package.outputs.zip_name }}
+
+      - name: Verify attestation
+        shell: bash
+        run: |
+          gh attestation verify "release-assets/${{ needs.package.outputs.zip_name }}" \
+            --repo "${{ github.repository }}" \
+            --signer-repo "${{ github.repository }}" \
+            --source-digest "${{ inputs.source_sha }}"
+
+      - name: Create annotated tag
+        shell: bash
+        run: |
+          tag="v${{ inputs.version }}"
+          tag_json=$(gh api "repos/${{ github.repository }}/git/tags" \
+            --method POST \
+            -f tag="$tag" \
+            -f message="CATTECH OPTIMIZER PRO v${{ inputs.version }}" \
+            -f object="${{ inputs.source_sha }}" \
+            -f type="commit")
+          tag_object_sha=$(echo "$tag_json" | jq -r '.sha')
+          echo "Tag object created: $tag_object_sha"
+          gh api "repos/${{ github.repository }}/git/refs" \
+            --method POST \
+            -f ref="refs/tags/$tag" \
+            -f sha="$tag_object_sha"
+          echo "Tag ref created: refs/tags/$tag"
+
+      - name: Verify tag
+        shell: bash
+        run: |
+          tag="v${{ inputs.version }}"
+          resolved=$(git ls-remote --tags origin "refs/tags/$tag^{}" | awk '{print $1}')
+          if [[ "$resolved" != "${{ inputs.source_sha }}" ]]; then
+            echo "::error::Tag $tag does not resolve to source SHA: $resolved"
+            exit 1
+          fi
+          echo "Tag verified: $tag -> $resolved"
+
+      - name: Create GitHub Release
+        shell: bash
+        run: |
+          zip_name="${{ needs.package.outputs.zip_name }}"
+          checksum_name="${{ needs.package.outputs.checksum_name }}"
+          gh release create "v${{ inputs.version }}" \
+            "release-assets/$zip_name" \
+            "release-assets/$checksum_name" \
+            --repo "${{ github.repository }}" \
+            --verify-tag \
+            --title "CATTECH OPTIMIZER PRO v${{ inputs.version }}" \
+            --notes-file "${{ inputs.release_notes_path }}"
+
+      - name: Verify Release
+        shell: bash
+        run: |
+          gh release view "v${{ inputs.version }}" \
+            --repo "${{ github.repository }}" \
+            --json tagName,name,isDraft,isPrerelease,url,assets
+
+      - name: Publish summary
+        shell: bash
+        run: |
+          {
+            echo "## CATTECH Release"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Version | v${{ inputs.version }} |"
+            echo "| Source SHA | ${{ inputs.source_sha }} |"
+            echo "| Package SHA | ${{ needs.package.outputs.source_sha }} |"
+            echo "| ZIP hash | ${{ needs.package.outputs.sha256 }} |"
+            echo "| Attestation | PASS |"
+            echo "| Tag | v${{ inputs.version }} |"
+            echo "| Tag target SHA | ${{ inputs.source_sha }} |"
+            echo "| Release | https://github.com/${{ github.repository }}/releases/tag/v${{ inputs.version }} |"
+            echo "| Assets | ZIP + SHA-256 |"
+            echo "| Result | RELEASE PASS |"
+          } >> "$GITHUB_STEP_SUMMARY"
