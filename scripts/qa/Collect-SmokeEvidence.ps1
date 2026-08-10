@@ -4,9 +4,12 @@
 .DESCRIPTION
     Read-only collector: inspects a CATTECH package (extracted) and general environment facts.
     Never captures PII (username, hostname, IP/MAC, serials, product keys, full user paths).
+    Evidence schema v2: does NOT persist PackagePath, OutputDirectory or raw Label.
+    Timestamps are real UTC. Exit code reflects PackageBaseline (0 = PASS, 1 = FAIL).
     Only reads; writes only its own evidence files under OutputDirectory.
 .PARAMETER PackagePath
     Required. Directory containing the extracted CATTECH package (must include Cattech.Optimizer.Pro.UI.exe).
+    This path is used for validation and local console messages only; it is never persisted.
 .PARAMETER OutputDirectory
     Optional. Evidence output directory. Default: output/qa-smoke.
 .PARAMETER Label
@@ -36,75 +39,53 @@ if (-not [string]::IsNullOrWhiteSpace($Label)) {
     $sanitizedLabel = ($Label -replace '[^a-zA-Z0-9_-]', '-').Trim('-')
 }
 
-$timestamp = Get-Date
-$timestampCompact = $timestamp.ToString("yyyyMMdd-HHmmss")
-$timestampIso = $timestamp.ToString("yyyy-MM-ddTHH:mm:ssZ")
+# Real UTC timestamp
+$timestampUtc = [DateTimeOffset]::UtcNow
+$timestampIso = $timestampUtc.ToString("o")
+$timestampCompact = $timestampUtc.ToString("yyyyMMdd-HHmmss")
 
 $fileBase = if ($sanitizedLabel) { "smoke-evidence-$sanitizedLabel-$timestampCompact" } else { "smoke-evidence-$timestampCompact" }
 
 $evidence = [ordered]@{
-    SchemaVersion = 1
+    SchemaVersion = 2
     CapturedAtIso8601 = $timestampIso
-    Label = $Label
+    Label = $sanitizedLabel
     Package = $null
     Environment = $null
     AutomaticChecks = $null
 }
 
 # ---------------------------------------------------------------
-# Package validation
+# Package validation (path used only locally, never persisted)
 # ---------------------------------------------------------------
 
 $package = [ordered]@{}
-$packagePath = $PackagePath
 
-if (-not (Test-Path -LiteralPath $packagePath -PathType Container)) {
-    Write-Error "PackagePath is not a directory: $packagePath"
+if (-not (Test-Path -LiteralPath $PackagePath -PathType Container)) {
+    Write-Error "PackagePath is not a directory: $PackagePath"
     exit 1
 }
 
-$exePath = Join-Path $packagePath "Cattech.Optimizer.Pro.UI.exe"
+$exePath = Join-Path $PackagePath "Cattech.Optimizer.Pro.UI.exe"
 $exePresent = Test-Path -LiteralPath $exePath -PathType Leaf
-$package.PackagePath = $packagePath
 $package.ExePresent = $exePresent
-$package.PackageValid = $exePresent
 
-if (-not $exePresent) {
-    $package.ValidationReason = "Cattech.Optimizer.Pro.UI.exe not found in package path"
-    $evidence.Package = $package
-    $evidence.AutomaticChecks = [ordered]@{ PackageBaseline = "FAIL" }
-    Write-Error "Cattech.Optimizer.Pro.UI.exe not found in: $packagePath"
-    exit 1
-}
-
-try {
-    $fileInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($exePath)
-    $package.FileVersion = $fileInfo.FileVersion
-    $package.ProductVersion = $fileInfo.ProductVersion
-}
-catch {
-    $package.FileVersion = $null
-    $package.ProductVersion = $null
-}
-
-$exeSha = (Get-FileHash -LiteralPath $exePath -Algorithm SHA256).Hash
-$package.ExeSha256 = $exeSha
-
-$criticalFiles = [ordered]@{
+# Critical files (absolute paths used only for local checks, not persisted)
+$criticalChecks = [ordered]@{
     "Cattech.Optimizer.Pro.UI.exe" = $exePresent
-    "LibreHardwareMonitorLib.dll" = (Test-Path -LiteralPath (Join-Path $packagePath "LibreHardwareMonitorLib.dll") -PathType Leaf)
-    "config/herramientas.json" = (Test-Path -LiteralPath (Join-Path $packagePath "config\herramientas.json") -PathType Leaf)
-    "README.md" = (Test-Path -LiteralPath (Join-Path $packagePath "README.md") -PathType Leaf)
-    "LICENSE" = (Test-Path -LiteralPath (Join-Path $packagePath "LICENSE") -PathType Leaf)
+    "LibreHardwareMonitorLib.dll" = (Test-Path -LiteralPath (Join-Path $PackagePath "LibreHardwareMonitorLib.dll") -PathType Leaf)
+    "config/herramientas.json" = (Test-Path -LiteralPath (Join-Path $PackagePath "config\herramientas.json") -PathType Leaf)
+    "README.md" = (Test-Path -LiteralPath (Join-Path $PackagePath "README.md") -PathType Leaf)
+    "LICENSE" = (Test-Path -LiteralPath (Join-Path $PackagePath "LICENSE") -PathType Leaf)
 }
-$package.CriticalFiles = $criticalFiles
+$package.CriticalFiles = $criticalChecks
 
 # smartctl bundled (expected absent: external dependency)
-$smartctlBundled = @(Get-ChildItem -LiteralPath $packagePath -Recurse -Filter "smartctl.exe" -File -ErrorAction SilentlyContinue).Count -gt 0
+$smartctlBundled = @(Get-ChildItem -LiteralPath $PackagePath -Recurse -Filter "smartctl.exe" -File -ErrorAction SilentlyContinue).Count -gt 0
 $package.SmartctlBundled = $smartctlBundled
 
 # herramientas.json: validity only, never store the configured path value
-$configPath = Join-Path $packagePath "config\herramientas.json"
+$configPath = Join-Path $PackagePath "config\herramientas.json"
 $config = [ordered]@{
     ConfigValid = $false
     SmartctlAutoDetect = $null
@@ -122,6 +103,25 @@ if (Test-Path -LiteralPath $configPath -PathType Leaf) {
     }
 }
 $package.Config = $config
+
+# EXE version and hash (only when present)
+if ($exePresent) {
+    try {
+        $fileInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($exePath)
+        $package.FileVersion = $fileInfo.FileVersion
+        $package.ProductVersion = $fileInfo.ProductVersion
+    }
+    catch {
+        $package.FileVersion = $null
+        $package.ProductVersion = $null
+    }
+    $package.ExeSha256 = (Get-FileHash -LiteralPath $exePath -Algorithm SHA256).Hash
+}
+else {
+    $package.FileVersion = $null
+    $package.ProductVersion = $null
+    $package.ExeSha256 = $null
+}
 
 $evidence.Package = $package
 
@@ -190,22 +190,25 @@ catch {
 $evidence.Environment = $envBlock
 
 # ---------------------------------------------------------------
-# Automatic checks
+# Automatic checks — baseline is PASS only with EXE, all critical
+# files, herramientas.json present AND valid JSON
 # ---------------------------------------------------------------
 
-$checks = [ordered]@{}
-
 $criticalOk = $true
-foreach ($key in @("Cattech.Optimizer.Pro.UI.exe", "LibreHardwareMonitorLib.dll", "config/herramientas.json", "README.md", "LICENSE")) {
-    if (-not $criticalFiles[$key]) { $criticalOk = $false }
+foreach ($key in $criticalChecks.Keys) {
+    if (-not $criticalChecks[$key]) { $criticalOk = $false }
 }
-$checks.PackageBaseline = if ($exePresent -and $config.ConfigValid -and $criticalOk) { "PASS" } else { "FAIL" }
-$checks.SmartctlBundledExpectedAbsent = if ($smartctlBundled) { "UNEXPECTED PRESENT" } else { "PASS" }
 
+$baselinePass = $exePresent -and $criticalOk -and $config.ConfigValid
+$checks = [ordered]@{
+    PackageBaseline = if ($baselinePass) { "PASS" } else { "FAIL" }
+    SmartctlBundledExpectedAbsent = if ($smartctlBundled) { "UNEXPECTED PRESENT" } else { "PASS" }
+}
 $evidence.AutomaticChecks = $checks
 
 # ---------------------------------------------------------------
-# Write evidence (JSON + Markdown)
+# Write evidence (JSON + Markdown) — always when possible,
+# including on FAIL, so diagnostics are preserved
 # ---------------------------------------------------------------
 
 if (-not (Test-Path -LiteralPath $OutputDirectory)) {
@@ -219,7 +222,8 @@ $evidenceJson = $evidence | ConvertTo-Json -Depth 6
 $mdLines = New-Object System.Collections.Generic.List[string]
 $mdLines.Add("# CATTECH Smoke Evidence")
 $mdLines.Add("")
-$mdLines.Add("Captured: $timestampIso")
+$mdLines.Add("Schema: 2")
+$mdLines.Add("Captured UTC: $timestampIso")
 $mdLines.Add("Label: $($evidence.Label)")
 $mdLines.Add("")
 $mdLines.Add("## Package")
@@ -234,8 +238,8 @@ $mdLines.Add("| Config | $(if ($config.ConfigValid) { 'Valida' } else { 'No vali
 $mdLines.Add("")
 $mdLines.Add("### Critical files")
 $mdLines.Add("")
-foreach ($key in $criticalFiles.Keys) {
-    $mdLines.Add("- $key : $(if ($criticalFiles[$key]) { 'Si' } else { 'No' })")
+foreach ($key in $criticalChecks.Keys) {
+    $mdLines.Add("- $key : $(if ($criticalChecks[$key]) { 'Si' } else { 'No' })")
 }
 $mdLines.Add("")
 $mdLines.Add("## Environment")
@@ -267,6 +271,12 @@ $mdPath = Join-Path $OutputDirectory "$fileBase.md"
 Write-Step "Evidence written:"
 Write-Step "  JSON: $jsonPath"
 Write-Step "  MD:   $mdPath"
-Write-Step "Package baseline: $($checks.PackageBaseline) (exit 0)"
+Write-Step "Package baseline: $($checks.PackageBaseline)"
+Write-Step "Exit code: $(if ($baselinePass) { 0 } else { 1 })"
 
-exit 0
+if ($baselinePass) {
+    exit 0
+}
+else {
+    exit 1
+}

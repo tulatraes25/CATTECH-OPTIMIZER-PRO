@@ -6,6 +6,7 @@
 **Windows**: Windows 10/11 (build)
 **Admin smoke**: Sí / No / NO EJECUTADO
 **smartctl**: Disponible / No disponible
+**Evidence schema**: 2
 
 ## Automatic evidence
 

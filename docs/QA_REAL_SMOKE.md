@@ -88,6 +88,15 @@ Genera `output/qa-smoke/smoke-evidence-baseline-v0.2.0-{timestamp}.json` y `.md`
 
 Esperado: exit 0. Revisar el JSON/MD: NO debe contener username, hostname, `C:\Users`, IP, MAC ni seriales.
 
+### Evidencia — schema v2
+
+- SchemaVersion: 2 (v1 persistía `PackagePath` y Label raw; v2 elimina ambas cosas)
+- **NO se persiste** `PackagePath` ni `OutputDirectory` (solo se usan localmente para validación y mensajes de consola)
+- **Label persistido**: versión sanitizada (solo letras/dígitos/`-`/`_`)
+- **Timestamps**: UTC real (ISO 8601 con offset, ej. `2026-08-10T19:45:12.3456789+00:00`); los nombres de archivo derivan del UTC
+- **Exit code**: `0` solo si `PackageBaseline == PASS`; `1` si el baseline falla (EXE ausente, critical file ausente o herramientas.json inválido) — la evidencia se genera antes del exit siempre que sea posible
+- `smartctl` ausente NO produce FAIL (dependencia externa esperada)
+
 ## Paso 3 — Checklist manual (ver docs/QA_SMOKE_RESULT_TEMPLATE.md para registrar)
 
 Cada prueba admite: **PASS / FAIL / N/D / NO EJECUTADO**. No inventar PASS cuando el hardware no existe (batería en desktop → N/D; SPD no disponible → N/D si CATTECH lo maneja correctamente).
@@ -158,6 +167,17 @@ Home · Configuración · Cliente/equipo · Diagnóstico · Programas de inicio 
 - P.3.2: ⏳ pruebas manuales reales por perfil (Desktop / Notebook)
 
 No marcar Desktop PASS / Notebook PASS hasta ejecutarlos realmente.
+
+## Hallazgos conocidos de v0.2.0
+
+### QA-META-001 — Trazabilidad de build del artefacto publicado
+
+- **Release v0.2.0 tag source**: `8d54e8a527f0183314eb1812ffb226f7ac1d5255`
+- **EXE ProductVersion del asset publicado**: `0.2.0+13c0c26...` (metadata SourceRevisionId)
+- **Clasificación**: Low / trazabilidad de build
+- **Impacto**: no se observó impacto funcional
+- **Descripción observable**: el artefacto publicado fue generado en el proceso de release anterior a la automatización actual y su metadata SourceRevisionId no coincide con el commit final etiquetado (no se afirma una causa definitiva)
+- **Nota**: el pipeline P.2 empaqueta `source_ref` explícito; una tarea separada (P.2.3 — provenance guard) exigirá coincidencia de provenance en el pipeline. NO se modifica el tag ni el asset de v0.2.0
 
 ## Matriz P.3.2 (recomendada, para futura ejecución)
 

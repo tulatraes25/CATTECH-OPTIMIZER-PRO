@@ -73,6 +73,8 @@ Cambios posteriores a v0.2.0.
 - Kit de smoke/QA real en Windows: `scripts/qa/Collect-SmokeEvidence.ps1` (collector read-only sin PII), `docs/QA_REAL_SMOKE.md` (protocolo + matriz Desktop/Notebook), `docs/QA_SMOKE_RESULT_TEMPLATE.md` (registro PASS/FAIL/N/D/NO EJECUTADO)
 - Validación del paquete oficial publicado (checksum, versión real del EXE, config, smartctl externo)
 - Acciones destructivas prohibidas durante smoke; corrección documental post-release (S.3.2 completada en V0_2_PLAN y QA_V0_2)
+- Collector de evidencia schema v2: no persiste PackagePath/OutputDirectory/Label raw, timestamps UTC reales, exit code refleja PackageBaseline (0=PASS, 1=FAIL con evidencia preservada)
+- Hallazgo QA-META-001 documentado (trazabilidad de build v0.2.0: ProductVersion `0.2.0+13c0c26...` vs tag `8d54e8a`; Low, sin impacto funcional; P.2.3 endurecerá provenance)
 
 ---
 
