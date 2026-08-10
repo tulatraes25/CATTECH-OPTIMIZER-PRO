@@ -287,22 +287,22 @@ jobs:
           $sourceRef = "${{ inputs.source_ref }}"
           $sourceSha = "${{ steps.source-sha.outputs.source_sha }}"
           $sha = "${{ steps.checksum.outputs.sha256 }}"
-          $summary = @"
-## CATTECH Release Package
-
-| Field | Value |
-|-------|-------|
-| Version | v$version |
-| Source ref | $sourceRef |
-| Source SHA | $sourceSha |
-| Configuration | Release |
-| Runtime | win-x64 |
-| Self-contained | Sí |
-| Tests run #1 | PASS |
-| Tests run #2 | PASS |
-| ZIP | CATTECH-Optimizer-Pro-v$version-win-x64.zip |
-| SHA-256 | $sha |
-| smartctl included | No |
-| GitHub Release | NO — package candidate only |
-"@
-          $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          $lines = @(
+            "## CATTECH Release Package",
+            "",
+            "| Field | Value |",
+            "|-------|-------|",
+            "| Version | v$version |",
+            "| Source ref | $sourceRef |",
+            "| Source SHA | $sourceSha |",
+            "| Configuration | Release |",
+            "| Runtime | win-x64 |",
+            "| Self-contained | Si |",
+            "| Tests run #1 | PASS |",
+            "| Tests run #2 | PASS |",
+            "| ZIP | CATTECH-Optimizer-Pro-v$version-win-x64.zip |",
+            "| SHA-256 | $sha |",
+            "| smartctl included | No |",
+            "| GitHub Release | NO - package candidate only |"
+          )
+          $lines | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
