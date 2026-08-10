@@ -117,4 +117,4 @@
 
 ## Resultado final\n\n- Build Release final: 0 errores\n- Tests Release x2 finales\n- Publish final win-x64 self-contained\n- ZIP CATTECH-Optimizer-Pro-v0.2.0-win-x64.zip + SHA-256\n- ProductVersion/FileVersion del EXE verificados (0.2.0 / 0.2.0.0)\n- Tag v0.2.0 creado\n- GitHub Release: segun disponibilidad de GitHub CLI\n\n## Resultado
 
-**RELEASE GATE: PASS** — sin blockers abiertos. Publicación (tag/release) pendiente de S.3.2 tras verificar el commit en GitHub.
+**RELEASE GATE: PASS** — sin blockers abiertos. v0.2.0 publicada (tag `v0.2.0` → commit `8d54e8a`, GitHub Release creada con ZIP + checksum).

@@ -520,6 +520,10 @@ Ver [AUDITORIA_REFERENCIAS.md](AUDITORIA_REFERENCIAS.md) para detalles completos
 
 Ver [docs/RELEASE_AUTOMATION.md](docs/RELEASE_AUTOMATION.md) para el CI (CATTECH CI) y el workflow reutilizable de release packaging (CATTECH Release Package).
 
+## QA real en Windows
+
+Ver [docs/QA_REAL_SMOKE.md](docs/QA_REAL_SMOKE.md) para el protocolo de smoke testing en equipos reales (P.3).
+
 ---
 
 *Desarrollado con ❤️ para técnicos informáticos*

@@ -124,7 +124,7 @@ Agregar diagnóstico avanzado de discos y hardware, priorizando seguridad, lectu
 | S.1: Exit status + transporte smartctl | — | — | ✅ Implementado |
 | S.2: Semántica de salud SMART / atributos | — | — | ✅ Implementado |
 | S.3.1: Release Gate técnico + QA v0.2 | — | — | ✅ PASS |
-| S.3.2: Versionado 0.2.0 + tag/release | — | — | ⏳ Pendiente |
+| S.3.2: Versionado 0.2.0 + tag/release | — | — | ✅ Completada |
 | **Total Fase B** | **3 semanas** | |
 | **Total v0.2** | **7 semanas** | |
 

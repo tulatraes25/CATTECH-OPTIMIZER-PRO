@@ -69,6 +69,11 @@ Cambios posteriores a v0.2.0.
 - Workflow de publicación controlada (`CATTECH Release`): dry-run seguro por defecto, tag anotado vía API, reutilización del release package, checksums revalidados, build provenance mediante artifact attestation, permisos write limitados al job publish
 - Documentación: `docs/RELEASE_AUTOMATION.md`
 
+### Quality / QA
+- Kit de smoke/QA real en Windows: `scripts/qa/Collect-SmokeEvidence.ps1` (collector read-only sin PII), `docs/QA_REAL_SMOKE.md` (protocolo + matriz Desktop/Notebook), `docs/QA_SMOKE_RESULT_TEMPLATE.md` (registro PASS/FAIL/N/D/NO EJECUTADO)
+- Validación del paquete oficial publicado (checksum, versión real del EXE, config, smartctl externo)
+- Acciones destructivas prohibidas durante smoke; corrección documental post-release (S.3.2 completada en V0_2_PLAN y QA_V0_2)
+
 ---
 
 ## [0.2.0] - 2026-08-09
