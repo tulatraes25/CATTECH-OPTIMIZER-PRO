@@ -230,9 +230,9 @@ jobs:
         run: |
           zip_name="${{ needs.package.outputs.zip_name }}"
           checksum_name="${{ needs.package.outputs.checksum_name }}"
-          declared_hash="${{ needs.package.outputs.sha256 }}"
-          stored_hash=$(awk '{print $1}' "release-assets/$checksum_name")
-          recalculated_hash=$(sha256sum "release-assets/$zip_name" | awk '{print $1}')
+          declared_hash=$(echo "${{ needs.package.outputs.sha256 }}" | tr 'a-f' 'A-F')
+          stored_hash=$(awk '{print $1}' "release-assets/$checksum_name" | tr 'a-f' 'A-F')
+          recalculated_hash=$(sha256sum "release-assets/$zip_name" | awk '{print $1}' | tr 'a-f' 'A-F')
           if [[ "$declared_hash" != "$stored_hash" || "$declared_hash" != "$recalculated_hash" ]]; then
             echo "::error::Checksum mismatch: declared=$declared_hash stored=$stored_hash recalc=$recalculated_hash"
             exit 1
@@ -336,9 +336,9 @@ jobs:
         run: |
           zip_name="${{ needs.package.outputs.zip_name }}"
           checksum_name="${{ needs.package.outputs.checksum_name }}"
-          declared_hash="${{ needs.package.outputs.sha256 }}"
-          stored_hash=$(awk '{print $1}' "release-assets/$checksum_name")
-          recalculated_hash=$(sha256sum "release-assets/$zip_name" | awk '{print $1}')
+          declared_hash=$(echo "${{ needs.package.outputs.sha256 }}" | tr 'a-f' 'A-F')
+          stored_hash=$(awk '{print $1}' "release-assets/$checksum_name" | tr 'a-f' 'A-F')
+          recalculated_hash=$(sha256sum "release-assets/$zip_name" | awk '{print $1}' | tr 'a-f' 'A-F')
           if [[ "$declared_hash" != "$stored_hash" || "$declared_hash" != "$recalculated_hash" ]]; then
             echo "::error::Checksum mismatch before publish"
             exit 1
