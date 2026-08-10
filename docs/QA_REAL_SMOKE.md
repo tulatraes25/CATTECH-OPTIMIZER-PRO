@@ -175,14 +175,14 @@ No marcar Desktop PASS / Notebook PASS hasta ejecutarlos realmente.
 - **Detected on main before v0.2.1**: texto visible corrupto en Configuración, Diagnóstico y Optimización (mojibake)
 - **Impacto**: no estaba incluido en la Release oficial v0.2.0 (regresión introducida durante el commit de corrección XAML SMOKE-B1-001)
 - **Cause**: reescritura de encoding durante el commit de corrección XAML
-- **Estado final esperado**: Fixed on main / pending v0.2.1 smoke verification (textos y emojis restaurados; se conservaron los 6 registros StaticResource corregidos)
+- **Estado final esperado**: Fixed in source prepared for v0.2.1 / pending official v0.2.1 smoke verification (textos y emojis restaurados; se conservaron los 6 registros StaticResource corregidos)
 
 ### SMOKE-B1-001 — Crash XAML al navegar a Cliente/equipo
 
 - **Detected in**: v0.2.0 official release (smoke P.3.2-B1, 2/2 reproducible, sin admin)
 - **Severity**: Blocker
 - **Cause**: `ClientEquipmentView.xaml` usaba `{StaticResource InvertBoolConverter}` sin registrarlo en sus `UserControl.Resources` → `XamlParseException` al instanciar la vista (Event Viewer: .NET Runtime ID 1026)
-- **Fix status**: Fixed on main / pending verification (se corrigió también QuickDiagnosticView, VisualOptimizationView y CompanySettingsView por la misma auditoría; se agregaron smoke tests STA en `tests/.../UI/XamlViewSmokeTests.cs`)
+- **Fix status**: Fixed in source prepared for v0.2.1 / pending verification against official v0.2.1 Release (se corrigió también QuickDiagnosticView, VisualOptimizationView y CompanySettingsView por la misma auditoría; se agregaron smoke tests STA en `tests/.../UI/XamlViewSmokeTests.cs`)
 - **Nota**: la Release oficial v0.2.0 continúa conteniendo el defecto (no se modifica la release histórica); el fix se distribuirá en v0.2.1
 
 ### QA-META-001 — Trazabilidad de build del artefacto publicado

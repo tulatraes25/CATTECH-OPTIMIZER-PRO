@@ -60,22 +60,11 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
-Cambios posteriores a v0.2.0.
+Cambios posteriores a v0.2.1.
 
-### Infrastructure
-- CI de Windows mediante GitHub Actions (`CATTECH CI`): restore/build/tests Release automáticos en push a main, pull requests contra main y ejecución manual
-- Resultados TRX conservados como artifact (`cattech-test-results`, retención 14 días)
-- Workflow reutilizable de release packaging (`CATTECH Release Package`): genera candidates de versión con validación de consistencia (csproj, versiones visibles, semver), doble ejecución de tests, publish win-x64 self-contained, verificación EXE/config/smartctl, ZIP + SHA-256 como artifacts temporales
-- Workflow de publicación controlada (`CATTECH Release`): dry-run seguro por defecto, tag anotado vía API, reutilización del release package, checksums revalidados, build provenance mediante artifact attestation, permisos write limitados al job publish
-- Documentación: `docs/RELEASE_AUTOMATION.md`
+---
 
-### Quality / QA
-- Kit de smoke/QA real en Windows: `scripts/qa/Collect-SmokeEvidence.ps1` (collector read-only sin PII), `docs/QA_REAL_SMOKE.md` (protocolo + matriz Desktop/Notebook), `docs/QA_SMOKE_RESULT_TEMPLATE.md` (registro PASS/FAIL/N/D/NO EJECUTADO)
-- Validación del paquete oficial publicado (checksum, versión real del EXE, config, smartctl externo)
-- Acciones destructivas prohibidas durante smoke; corrección documental post-release (S.3.2 completada en V0_2_PLAN y QA_V0_2)
-- Collector de evidencia schema v2: no persiste PackagePath/OutputDirectory/Label raw, timestamps UTC reales, exit code refleja PackageBaseline (0=PASS, 1=FAIL con evidencia preservada)
-- Hallazgo QA-META-001 documentado (trazabilidad de build v0.2.0: ProductVersion `0.2.0+13c0c26...` vs tag `8d54e8a`; Low, sin impacto funcional; P.2.3 endurecerá provenance)
-- Provenance guard Source SHA ↔ EXE ProductVersion en release packaging: el candidate exige `ProductVersion == {version}+{source_sha}` exacto (comparación exacta, sin StartsWith) y falla antes de empaquetar si la metadata Git no coincide; outputs `product_version`/`file_version` reutilizables; QA-META-001 marcado como mitigado para releases futuras
+## [0.2.1] - 2026-08-10
 
 ### Fixed (SMOKE-B1-001 — XAML StaticResource)
 - Corregido crash al navegar a Cliente/equipo: `ClientEquipmentView.xaml` usaba `{StaticResource InvertBoolConverter}` sin registrarlo en sus Resources → XamlParseException al instanciar la vista (detectado en smoke real v0.2.0, 2/2 reproducible)
@@ -86,6 +75,19 @@ Cambios posteriores a v0.2.0.
 ### Fixed (QA-ENC-001)
 - Corregida regresión de encoding UTF-8 en tres vistas (Configuración, Diagnóstico, Optimización) introducida durante la auditoría XAML del fix SMOKE-B1-001; textos y emojis restaurados sin perder los registros StaticResource corregidos
 - Diferencias vs la base limpia limitadas exclusivamente a los 6 registros de converters (ClientEquipment 1, CompanySettings 2, QuickDiagnostic 1, VisualOptimization 2); sin mojibake restante en los 12 XAML del proyecto
+
+### Quality / QA
+- Smoke tests WPF STA (`XamlViewSmokeTests`): carga de ClientEquipmentView, navegación MainViewModel → Cliente/equipo y carga de las 10 vistas del sidebar
+- 948 tests (0 failed, 0 skipped); CI Windows en cada push a main
+- El smoke real sobre v0.2.0 detectó el blocker SMOKE-B1-001 antes de preparar esta versión
+- Provenance guard del release pipeline: candidate exige `ProductVersion == {version}+{source_sha}` exacto
+
+### Infrastructure
+- CI de Windows mediante GitHub Actions (`CATTECH CI`): restore/build/tests Release automáticos en push a main, pull requests contra main y ejecución manual; resultados TRX conservados como artifact
+- Workflow reutilizable de release packaging (`CATTECH Release Package`): validación de consistencia (csproj, versiones visibles, semver), doble ejecución de tests, publish win-x64 self-contained, verificación EXE/config/smartctl, ZIP + SHA-256 como artifacts temporales
+- Workflow de publicación controlada (`CATTECH Release`): dry-run seguro por defecto, tag anotado vía API, reutilización del release package, checksums revalidados, build provenance mediante artifact attestation, permisos write limitados al job publish
+- Kit de smoke/QA real en Windows: `scripts/qa/Collect-SmokeEvidence.ps1` (collector read-only sin PII, schema v2), `docs/QA_REAL_SMOKE.md`, `docs/QA_SMOKE_RESULT_TEMPLATE.md`
+- Documentación: `docs/RELEASE_AUTOMATION.md`
 
 ---
 
