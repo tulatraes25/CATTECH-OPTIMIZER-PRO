@@ -23,6 +23,18 @@ Workflow reutilizable que genera paquetes Release Candidate. NO publica Releases
 | `version` | string | Sí | Semantic version sin `v` (ej: `0.3.0`) |
 | `source_ref` | string | Sí | Commit, branch o tag a empaquetar (default `main` para dispatch) |
 
+### Provenance guard (P.2.3)
+
+El workflow release-package:
+
+1. resuelve `source_sha` después del checkout (`git rev-parse HEAD`)
+2. construye el EXE
+3. lee el `ProductVersion` real del EXE
+4. exige exactitud: `{version}+{source_sha}` (comparación exacta, sin StartsWith)
+5. falla antes de ZIP/artifact si hay mismatch
+
+Evita publicar un binario construido desde un commit distinto del source/tag pretendido. `product_version` y `file_version` se exponen como outputs reutilizables.
+
 ### Qué valida
 
 - Versión semántica estricta `MAJOR.MINOR.PATCH`

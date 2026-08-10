@@ -75,6 +75,7 @@ Cambios posteriores a v0.2.0.
 - Acciones destructivas prohibidas durante smoke; corrección documental post-release (S.3.2 completada en V0_2_PLAN y QA_V0_2)
 - Collector de evidencia schema v2: no persiste PackagePath/OutputDirectory/Label raw, timestamps UTC reales, exit code refleja PackageBaseline (0=PASS, 1=FAIL con evidencia preservada)
 - Hallazgo QA-META-001 documentado (trazabilidad de build v0.2.0: ProductVersion `0.2.0+13c0c26...` vs tag `8d54e8a`; Low, sin impacto funcional; P.2.3 endurecerá provenance)
+- Provenance guard Source SHA ↔ EXE ProductVersion en release packaging: el candidate exige `ProductVersion == {version}+{source_sha}` exacto (comparación exacta, sin StartsWith) y falla antes de empaquetar si la metadata Git no coincide; outputs `product_version`/`file_version` reutilizables; QA-META-001 marcado como mitigado para releases futuras
 
 ---
 

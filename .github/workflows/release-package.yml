@@ -38,6 +38,12 @@ name: CATTECH Release Package
       source_sha:
         description: "Full SHA of the packaged source"
         value: ${{ jobs.package.outputs.source_sha }}
+      product_version:
+        description: "Real EXE ProductVersion (version+source_sha)"
+        value: ${{ jobs.package.outputs.product_version }}
+      file_version:
+        description: "Real EXE FileVersion (version.0)"
+        value: ${{ jobs.package.outputs.file_version }}
 
 permissions:
   contents: read
@@ -64,6 +70,8 @@ jobs:
       checksum_name: ${{ steps.metadata.outputs.checksum_name }}
       sha256: ${{ steps.checksum.outputs.sha256 }}
       source_sha: ${{ steps.source-sha.outputs.source_sha }}
+      product_version: ${{ steps.exe-version.outputs.product_version }}
+      file_version: ${{ steps.exe-version.outputs.file_version }}
 
     steps:
       - name: Checkout
@@ -198,20 +206,26 @@ jobs:
           Write-Output "README.md and LICENSE added to package root"
 
       - name: Validate EXE version
+        id: exe-version
         shell: pwsh
         run: |
           $version = "${{ inputs.version }}"
+          $sourceSha = "${{ steps.source-sha.outputs.source_sha }}"
           $exe = "${{ github.workspace }}\output\release-package\win-x64\Cattech.Optimizer.Pro.UI.exe"
           $info = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($exe)
           $expectedFileVersion = "$version.0"
           if ($info.FileVersion -ne $expectedFileVersion) {
             throw "EXE FileVersion '$($info.FileVersion)' != '$expectedFileVersion'"
           }
-          if (-not $info.ProductVersion.StartsWith($version)) {
-            throw "EXE ProductVersion '$($info.ProductVersion)' does not start with '$version'"
+          $expectedProductVersion = "$version+$sourceSha"
+          if ($info.ProductVersion -ne $expectedProductVersion) {
+            throw "EXE ProductVersion provenance mismatch. Expected: $expectedProductVersion Actual: $($info.ProductVersion)"
           }
+          Write-Output "product_version=$($info.ProductVersion)" >> $env:GITHUB_OUTPUT
+          Write-Output "file_version=$($info.FileVersion)" >> $env:GITHUB_OUTPUT
+          Write-Output "Expected ProductVersion: $expectedProductVersion"
+          Write-Output "Actual ProductVersion: $($info.ProductVersion)"
           Write-Output "EXE FileVersion: $($info.FileVersion)"
-          Write-Output "EXE ProductVersion: $($info.ProductVersion)"
 
       - name: Create ZIP and checksum
         id: checksum
@@ -296,6 +310,8 @@ jobs:
             "| Version | v$version |",
             "| Source ref | $sourceRef |",
             "| Source SHA | $sourceSha |",
+            "| ProductVersion | ${{ steps.exe-version.outputs.product_version }} |",
+            "| Source provenance | PASS |",
             "| Configuration | Release |",
             "| Runtime | win-x64 |",
             "| Self-contained | Si |",

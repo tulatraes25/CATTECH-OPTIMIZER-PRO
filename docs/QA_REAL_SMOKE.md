@@ -176,8 +176,9 @@ No marcar Desktop PASS / Notebook PASS hasta ejecutarlos realmente.
 - **EXE ProductVersion del asset publicado**: `0.2.0+13c0c26...` (metadata SourceRevisionId)
 - **Clasificación**: Low / trazabilidad de build
 - **Impacto**: no se observó impacto funcional
+- **Estado preventivo**: ✅ mitigado para futuras releases mediante P.2.3 (provenance guard: todo candidate generado por P.2 debe tener `ProductVersion == version + source SHA` completo; falla antes de empaquetar)
 - **Descripción observable**: el artefacto publicado fue generado en el proceso de release anterior a la automatización actual y su metadata SourceRevisionId no coincide con el commit final etiquetado (no se afirma una causa definitiva)
-- **Nota**: el pipeline P.2 empaqueta `source_ref` explícito; una tarea separada (P.2.3 — provenance guard) exigirá coincidencia de provenance en el pipeline. NO se modifica el tag ni el asset de v0.2.0
+- **Nota**: v0.2.0 histórica sigue mostrando `0.2.0+13c0c26...` y NO se modifica; la mitigación aplica a releases futuras. El pipeline P.2 empaqueta `source_ref` explícito (P.2.3 exige coincidencia de provenance)
 
 ## Matriz P.3.2 (recomendada, para futura ejecución)
 
