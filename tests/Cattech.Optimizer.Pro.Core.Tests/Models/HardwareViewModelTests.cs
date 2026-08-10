@@ -634,6 +634,11 @@ public class HardwareViewModelTests
         Assert.True(vm.IsInventoryBusy);
         Assert.False(vm.RefreshInventoryCommand.CanExecute(null));
 
+        // Esperar a que la primera consulta haya comenzado (GetCpuInfoAsync se
+        // ejecuta dentro de Task.Run): evita un race donde el segundo Execute
+        // corre antes de que GetCpuCalls se incremente.
+        await WaitUntilAsync(() => hardware.GetCpuCalls >= 1);
+
         vm.RefreshInventoryCommand.Execute(null);
 
         Assert.Equal(1, hardware.GetCpuCalls);
