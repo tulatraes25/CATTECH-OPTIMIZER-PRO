@@ -64,9 +64,13 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - Corregido estado stale en Informes que podía reutilizar un HTML anterior al exportar PDF después de recargar/cambiar datos (SMOKE-B1R-006)
 - Agregado guard para impedir omisión silenciosa de Cliente/Diagnóstico cuando la UI indica que deben incluirse
 - ExportPdf ahora siempre regenera HTML con el snapshot actual de datos
+- Corregida memoria dedicada de GPU en Inventario usando DXGI en lugar de Win32_VideoController.AdapterRAM (SMOKE-B1R-005)
+- Se evita reportar memoria compartida del sistema como VRAM dedicada
+- N/D cuando no existe correlación fiable entre WMI y DXGI
 
 ### Quality / QA
-- Agregados 6 tests de regresión del pipeline ReportViewModel → HTML → PDF (954 total)
+- Agregados 6 tests de regresión del pipeline ReportViewModel → HTML → PDF
+- Agregados 10 tests para lógica de memoria GPU DXGI y correlación WMI↔DXGI (964 total)
 
 ---
 

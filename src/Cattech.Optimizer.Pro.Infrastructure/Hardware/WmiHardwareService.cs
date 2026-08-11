@@ -243,6 +243,17 @@ public class WmiHardwareService : IHardwareService
     {
         var gpus = new List<GpuInfo>();
 
+        // Obtener memoria dedicada vía DXGI (fuente fiable, sin limitación uint32)
+        List<DxgiGpuMemoryReader.DxgiAdapterInfo> dxgiAdapters;
+        try
+        {
+            dxgiAdapters = DxgiGpuMemoryReader.EnumerateAdapters();
+        }
+        catch
+        {
+            dxgiAdapters = new List<DxgiGpuMemoryReader.DxgiAdapterInfo>();
+        }
+
         try
         {
             using var searcher = new ManagementObjectSearcher("SELECT * FROM Win32_VideoController");
@@ -254,10 +265,19 @@ public class WmiHardwareService : IHardwareService
                     Manufacturer = obj["AdapterCompatibility"]?.ToString() ?? "Unknown"
                 };
 
-                var adapterRam = obj["AdapterRAM"];
-                if (adapterRam != null)
+                // Buscar adaptador DXGI correspondiente por VendorId+DeviceId
+                var pnpDeviceId = obj["PNPDeviceID"]?.ToString() ?? "";
+                var matchedAdapter = MatchDxgiAdapter(dxgiAdapters, pnpDeviceId, gpu.Name);
+
+                if (matchedAdapter != null && !matchedAdapter.IsSoftware)
                 {
-                    gpu.MemoryGB = Math.Round(Convert.ToDouble(adapterRam) / (1024 * 1024 * 1024), 2);
+                    // DXGI DedicatedVideoMemory es la fuente autoritativa
+                    gpu.MemoryGB = Math.Round(matchedAdapter.DedicatedVideoMemoryBytes / (1024.0 * 1024.0 * 1024.0), 2);
+                }
+                else
+                {
+                    // Sin DXGI o adaptador software: MemoryGB queda 0 (UI lo muestra como N/D)
+                    gpu.MemoryGB = 0;
                 }
 
                 gpus.Add(gpu);
@@ -269,6 +289,45 @@ public class WmiHardwareService : IHardwareService
         }
 
         return Task.FromResult(gpus);
+    }
+
+    /// <summary>
+    /// Correlaciona un adaptador DXGI con un controlador WMI por VendorId+DeviceId.
+    /// </summary>
+    private static DxgiGpuMemoryReader.DxgiAdapterInfo? MatchDxgiAdapter(
+        List<DxgiGpuMemoryReader.DxgiAdapterInfo> adapters,
+        string pnpDeviceId,
+        string gpuName)
+    {
+        // Intentar extraer VendorId y DeviceId del PNPDeviceID (formato: ...\VEN_xxxx&DEV_xxxx...)
+        uint? wmiVendorId = null;
+        uint? wmiDeviceId = null;
+
+        var venMatch = System.Text.RegularExpressions.Regex.Match(pnpDeviceId, @"VEN_([0-9A-Fa-f]{4})");
+        if (venMatch.Success) wmiVendorId = Convert.ToUInt32(venMatch.Groups[1].Value, 16);
+
+        var devMatch = System.Text.RegularExpressions.Regex.Match(pnpDeviceId, @"DEV_([0-9A-Fa-f]{4})");
+        if (devMatch.Success) wmiDeviceId = Convert.ToUInt32(devMatch.Groups[1].Value, 16);
+
+        // Correlación primaria: VendorId + DeviceId
+        if (wmiVendorId.HasValue && wmiDeviceId.HasValue)
+        {
+            var match = adapters.FirstOrDefault(a =>
+                a.VendorId == wmiVendorId.Value &&
+                a.DeviceId == wmiDeviceId.Value &&
+                !a.IsSoftware);
+            if (match != null) return match;
+        }
+
+        // Correlación fallback: nombre normalizado (solo si hay exactamente un candidato no-software)
+        var normalizedGpuName = gpuName.Trim().ToLowerInvariant();
+        var candidates = adapters
+            .Where(a => !a.IsSoftware)
+            .Where(a => a.Description.Trim().ToLowerInvariant().Contains(normalizedGpuName)
+                     || normalizedGpuName.Contains(a.Description.Trim().ToLowerInvariant()))
+            .ToList();
+
+        return candidates.Count == 1 ? candidates[0] : null;
     }
 
     /// <inheritdoc/>

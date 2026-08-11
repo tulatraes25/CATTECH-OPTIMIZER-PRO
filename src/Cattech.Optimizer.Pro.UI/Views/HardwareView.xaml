@@ -453,7 +453,7 @@
                                         <DataGrid.Columns>
                                             <DataGridTextColumn Header="GPU" Binding="{Binding Name, Converter={StaticResource EmptyToNd}}" Width="*" />
                                             <DataGridTextColumn Header="Fabricante" Binding="{Binding Manufacturer, Converter={StaticResource EmptyToNd}}" Width="*" />
-                                            <DataGridTextColumn Header="Memoria reportada (GB)" Width="160">
+                                            <DataGridTextColumn Header="Memoria dedicada (GB)" Width="160">
                                                 <DataGridTextColumn.Binding>
                                                     <Binding Path="MemoryGB" Converter="{StaticResource PosNumToNd}" />
                                                 </DataGridTextColumn.Binding>
