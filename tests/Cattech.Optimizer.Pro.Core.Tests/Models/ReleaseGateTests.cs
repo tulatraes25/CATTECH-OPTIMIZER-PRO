@@ -494,4 +494,72 @@ public class ReleaseGateTests
         Assert.DoesNotContain("token", config, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("password", config, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void SourceFiles_NoMojibakeUtf8Encoding()
+    {
+        // Patrones comunes de mojibake (UTF-8 mal recodificado desde Latin-1)
+        // Se construyen con char codes para que este archivo no se detecte a sí mismo
+        var mojibakePatterns = new[]
+        {
+            // á é í ó ú ñ
+            new string(new[] { (char)0xC3, (char)0xA1 }), // Ã¡
+            new string(new[] { (char)0xC3, (char)0xA9 }), // Ã©
+            new string(new[] { (char)0xC3, (char)0xAD }), // Ã­
+            new string(new[] { (char)0xC3, (char)0xB3 }), // Ã³
+            new string(new[] { (char)0xC3, (char)0xBA }), // Ãº
+            new string(new[] { (char)0xC3, (char)0xB1 }), // Ã±
+            // Ó É
+            new string(new[] { (char)0xC3, (char)0x93 }), // Ã"
+            new string(new[] { (char)0xC3, (char)0x89 }), // Ã‰
+            // → ↔ — –
+            new string(new[] { (char)0xC3, (char)0xA2, (char)0xE2, (char)0x80, (char)0x93 }), // â€"
+            new string(new[] { (char)0xC3, (char)0xA2, (char)0xE2, (char)0x80, (char)0x94 }), // â€"
+            new string(new[] { (char)0xC3, (char)0xA2, (char)0xE2, (char)0x80, (char)0xA0 }), // â†'
+            // emoji mojibake
+            new string(new[] { (char)0xC3, (char)0xB0, (char)0xD0, (char)0xB8 }), // ðŸ
+        };
+
+        var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../.."));
+        var extensions = new[] { "*.cs", "*.xaml", "*.md" };
+        var excludeDirs = new[] { "bin", "obj", ".git", "node_modules" };
+
+        var violations = new List<string>();
+
+        foreach (var ext in extensions)
+        {
+            foreach (var file in Directory.EnumerateFiles(repoRoot, ext, SearchOption.AllDirectories))
+            {
+                // Excluir directorios no relevantes y este propio archivo
+                var relativePath = Path.GetRelativePath(repoRoot, file);
+                if (relativePath.EndsWith("ReleaseGateTests.cs"))
+                    continue;
+                if (excludeDirs.Any(d => relativePath.Contains(Path.DirectorySeparatorChar + d + Path.DirectorySeparatorChar)
+                                       || relativePath.StartsWith(d + Path.DirectorySeparatorChar)))
+                    continue;
+
+                string content;
+                try
+                {
+                    content = File.ReadAllText(file);
+                }
+                catch
+                {
+                    continue; // Skip unreadable files
+                }
+
+                foreach (var pattern in mojibakePatterns)
+                {
+                    if (content.Contains(pattern))
+                    {
+                        violations.Add($"{relativePath}: contains mojibake pattern (UTF-8 bytes: {BitConverter.ToString(System.Text.Encoding.UTF8.GetBytes(pattern))})");
+                        break; // One violation per file is enough
+                    }
+                }
+            }
+        }
+
+        Assert.True(violations.Count == 0,
+            $"Found {violations.Count} file(s) with mojibake encoding:\n{string.Join("\n", violations)}");
+    }
 }

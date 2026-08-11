@@ -3,7 +3,7 @@
 namespace Cattech.Optimizer.Pro.Core.Tests.Models;
 
 /// <summary>
-/// Tests para la lÃ³gica de correlaciÃ³n DXGI â†” WMI y cÃ¡lculo de memoria dedicada.
+/// Tests para la lógica de correlación DXGI ↔ WMI y cálculo de memoria dedicada.
 /// No dependen de hardware real: usan el DTO interno DxgiAdapterInfo directamente.
 /// </summary>
 public class DxgiGpuMemoryTests
@@ -130,7 +130,7 @@ public class DxgiGpuMemoryTests
                 IsSoftware: false)
         };
 
-        // Simular correlaciÃ³n por VendorId+DeviceId
+        // Simular correlación por VendorId+DeviceId
         // WMI Intel: VEN_8086&DEV_A7A0
         var intelMatch = adapters.FirstOrDefault(a => a.VendorId == 0x8086 && a.DeviceId == 0xA7A0);
         Assert.NotNull(intelMatch);
@@ -145,7 +145,7 @@ public class DxgiGpuMemoryTests
         Assert.NotEqual(intelMatch.DedicatedVideoMemoryBytes, nvidiaMatch.DedicatedVideoMemoryBytes);
     }
 
-    // ===== TEST G: DXGI unavailable â†’ MemoryGB = 0 =====
+    // ===== TEST G: DXGI unavailable → MemoryGB = 0 =====
 
     [Fact]
     public void DxgiUnavailable_MemoryIsZero()
@@ -169,7 +169,7 @@ public class DxgiGpuMemoryTests
     [Fact]
     public void WmiAdapterRamCapped_DoesNotReplaceDxgi()
     {
-        // Simular: WMI AdapterRAM = 4294967295 (uint32 max â‰ˆ 4 GB)
+        // Simular: WMI AdapterRAM = 4294967295 (uint32 max ≈ 4 GB)
         // DXGI DedicatedVideoMemory = 8 GB
         ulong wmiAdapterRam = 4294967295;
         ulong dxgiDedicated = 8UL * 1024 * 1024 * 1024;
@@ -201,7 +201,7 @@ public class DxgiGpuMemoryTests
                 IsSoftware: false)
         };
 
-        // Sin PNPDeviceID vÃ¡lido â†’ fallback por nombre
+        // Sin PNPDeviceID válido → fallback por nombre
         var normalizedGpuName = "nvidia geforce rtx 4060 laptop gpu";
         var candidates = adapters
             .Where(a => !a.IsSoftware)
@@ -212,7 +212,7 @@ public class DxgiGpuMemoryTests
         Assert.Equal(8UL * 1024 * 1024 * 1024, candidates[0].DedicatedVideoMemoryBytes);
     }
 
-    // ===== TEST J: Name fallback ambiguous â†’ no match =====
+    // ===== TEST J: Name fallback ambiguous → no match =====
 
     [Fact]
     public void NameFallback_Ambiguous_NoMatch()
@@ -239,8 +239,7 @@ public class DxgiGpuMemoryTests
             .Where(a => a.Description.Trim().ToLowerInvariant().Contains(normalizedGpuName))
             .ToList();
 
-        // 2 candidatos â†’ ambiguo â†’ no match seguro
+        // 2 candidatos → ambiguo → no match seguro
         Assert.Equal(2, candidates.Count);
     }
 }
-
