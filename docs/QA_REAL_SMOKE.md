@@ -175,14 +175,14 @@ No marcar Desktop PASS / Notebook PASS hasta ejecutarlos realmente.
 - **Detected on main before v0.2.1**: texto visible corrupto en Configuración, Diagnóstico y Optimización (mojibake)
 - **Impacto**: no estaba incluido en la Release oficial v0.2.0 (regresión introducida durante el commit de corrección XAML SMOKE-B1-001)
 - **Cause**: reescritura de encoding durante el commit de corrección XAML
-- **Estado final esperado**: Fixed in source prepared for v0.2.1 / pending official v0.2.1 smoke verification (textos y emojis restaurados; se conservaron los 6 registros StaticResource corregidos)
+- **Estado final esperado**: ✅ VERIFIED FIXED in official v0.2.1 (P.3.2-B1-RERUN smoke: Configuración, Diagnóstico, Optimización con acentos y emojis correctos; sin mojibake)
 
 ### SMOKE-B1-001 — Crash XAML al navegar a Cliente/equipo
 
 - **Detected in**: v0.2.0 official release (smoke P.3.2-B1, 2/2 reproducible, sin admin)
 - **Severity**: Blocker
 - **Cause**: `ClientEquipmentView.xaml` usaba `{StaticResource InvertBoolConverter}` sin registrarlo en sus `UserControl.Resources` → `XamlParseException` al instanciar la vista (Event Viewer: .NET Runtime ID 1026)
-- **Fix status**: Fixed in source prepared for v0.2.1 / pending verification against official v0.2.1 Release (se corrigió también QuickDiagnosticView, VisualOptimizationView y CompanySettingsView por la misma auditoría; se agregaron smoke tests STA en `tests/.../UI/XamlViewSmokeTests.cs`)
+- **Fix status**: ✅ VERIFIED FIXED in official v0.2.1 (P.3.2-B1-RERUN smoke: Cliente/equipo abre sin crash, navegación completa sin XamlParseException; se corrigió también QuickDiagnosticView, VisualOptimizationView y CompanySettingsView por la misma auditoría; se agregaron smoke tests STA en `tests/.../UI/XamlViewSmokeTests.cs`)
 - **Nota**: la Release oficial v0.2.0 continúa conteniendo el defecto (no se modifica la release histórica); el fix se distribuirá en v0.2.1
 
 ### QA-META-001 — Trazabilidad de build del artefacto publicado
@@ -194,6 +194,15 @@ No marcar Desktop PASS / Notebook PASS hasta ejecutarlos realmente.
 - **Estado preventivo**: ✅ mitigado para futuras releases mediante P.2.3 (provenance guard: todo candidate generado por P.2 debe tener `ProductVersion == version + source SHA` completo; falla antes de empaquetar)
 - **Descripción observable**: el artefacto publicado fue generado en el proceso de release anterior a la automatización actual y su metadata SourceRevisionId no coincide con el commit final etiquetado (no se afirma una causa definitiva)
 - **Nota**: v0.2.0 histórica sigue mostrando `0.2.0+13c0c26...` y NO se modifica; la mitigación aplica a releases futuras. El pipeline P.2 empaqueta `source_ref` explícito (P.2.3 exige coincidencia de provenance)
+
+### SMOKE-B1R-006 — Informe omite Cliente/Diagnóstico (stale report)
+
+- **Detected in**: official v0.2.1 (P.3.2-B1-RERUN smoke, Notebook, sin admin)
+- **Severity**: High
+- **Observed**: UI mostraba Cliente QA/diagnóstico cargados y seleccionados; el HTML generado se llamó "SinCliente..." y no incluyó las secciones de Cliente/Diagnóstico; el PDF heredó el mismo contenido incompleto
+- **Root cause**: `ReportViewModel.LoadDataAsync` no invalidaba `LastReportPath`/`HasGeneratedReport` al recargar datos; `ExportPdfAsync` reutilizaba HTML stale si el archivo existía
+- **Fix status**: ✅ Fixed on main / pending official patch-release verification (invalidación de artifacts stale al recargar datos; ExportPdf regenera siempre HTML con snapshot actual; guards para selecciones nulas; 6 tests de regresión)
+- **Nota**: el fix corrige el pipeline ViewModel → HTML → PDF; SMOKE-B1R-005 (VRAM Inventario 4 GB vs sensores ~8 GB) permanece Medium OPEN como tarea separada
 
 ## Matriz P.3.2 (recomendada, para futura ejecución)
 

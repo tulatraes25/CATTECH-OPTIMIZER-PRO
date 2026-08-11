@@ -311,6 +311,10 @@ public partial class ReportViewModel : ObservableObject
             IncludeSmartTests = false; // Selección manual intencional
 
             StatusText = "Datos cargados";
+
+            // Invalidar artifacts generados previamente para forzar regeneración
+            // con los datos actualmente cargados (fix SMOKE-B1R-006)
+            InvalidateGeneratedArtifacts();
         }
         catch (Exception ex)
         {
@@ -336,6 +340,18 @@ public partial class ReportViewModel : ObservableObject
         try
         {
             var options = await BuildReportOptionsAsync();
+
+            // Validar selecciones obligatorias antes de generar
+            if (options.IncludeClient && options.ServiceReport == null)
+            {
+                ShowError("Seleccioná un cliente/equipo antes de generar el informe.");
+                return;
+            }
+            if (options.IncludeDiagnostic && options.DiagnosticReport == null)
+            {
+                ShowError("Seleccioná un diagnóstico antes de generar el informe.");
+                return;
+            }
 
             var filePath = await _reportService.GenerateHtmlReportAsync(options);
 
@@ -404,21 +420,32 @@ public partial class ReportViewModel : ObservableObject
     [RelayCommand]
     private async Task ExportPdfAsync()
     {
-        // Si no hay HTML generado, generarlo primero con el builder completo
-        if (string.IsNullOrEmpty(LastReportPath) || !File.Exists(LastReportPath))
+        // Siempre regenerar HTML con el snapshot actual de datos (fix SMOKE-B1R-006)
+        // Esto asegura que el PDF refleje las selecciones actuales, no un HTML stale.
+        StatusText = "Generando HTML primero...";
+        try
         {
-            StatusText = "Generando HTML primero...";
-            try
+            var options = await BuildReportOptionsAsync();
+
+            // Validar selecciones obligatorias antes de generar
+            if (options.IncludeClient && options.ServiceReport == null)
             {
-                var options = await BuildReportOptionsAsync();
-                LastReportPath = await _reportService.GenerateHtmlReportAsync(options);
-                HasGeneratedReport = true;
-            }
-            catch (Exception ex)
-            {
-                ShowError($"Error al generar HTML: {ex.Message}");
+                ShowError("Seleccioná un cliente/equipo antes de generar el informe.");
                 return;
             }
+            if (options.IncludeDiagnostic && options.DiagnosticReport == null)
+            {
+                ShowError("Seleccioná un diagnóstico antes de generar el informe.");
+                return;
+            }
+
+            LastReportPath = await _reportService.GenerateHtmlReportAsync(options);
+            HasGeneratedReport = true;
+        }
+        catch (Exception ex)
+        {
+            ShowError($"Error al generar HTML: {ex.Message}");
+            return;
         }
 
         ClearMessages();
@@ -544,6 +571,20 @@ public partial class ReportViewModel : ObservableObject
         IsSuccess = false;
         HasError = false;
         ErrorMessage = string.Empty;
+    }
+
+    /// <summary>
+    /// Invalida los artifacts generados previamente (HTML/PDF) para forzar
+    /// regeneración con los datos actualmente cargados.
+    /// No borra físicamente informes históricos, solo limpia el estado actual.
+    /// </summary>
+    private void InvalidateGeneratedArtifacts()
+    {
+        LastReportPath = string.Empty;
+        HasGeneratedReport = false;
+        LastPdfPath = string.Empty;
+        HasGeneratedPdf = false;
+        PdfStatusText = string.Empty;
     }
 }
 

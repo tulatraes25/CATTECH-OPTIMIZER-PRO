@@ -60,7 +60,13 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
-Cambios posteriores a v0.2.1.
+### Fixed
+- Corregido estado stale en Informes que podía reutilizar un HTML anterior al exportar PDF después de recargar/cambiar datos (SMOKE-B1R-006)
+- Agregado guard para impedir omisión silenciosa de Cliente/Diagnóstico cuando la UI indica que deben incluirse
+- ExportPdf ahora siempre regenera HTML con el snapshot actual de datos
+
+### Quality / QA
+- Agregados 6 tests de regresión del pipeline ReportViewModel → HTML → PDF (954 total)
 
 ---
 
