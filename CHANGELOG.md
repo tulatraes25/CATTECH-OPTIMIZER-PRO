@@ -60,6 +60,12 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+Cambios posteriores a v0.2.2.
+
+---
+
+## [0.2.2] - 2026-08-11
+
 ### Fixed
 - Corregido estado stale en Informes que podía reutilizar un HTML anterior al exportar PDF después de recargar/cambiar datos (SMOKE-B1R-006)
 - Agregado guard para impedir omisión silenciosa de Cliente/Diagnóstico cuando la UI indica que deben incluirse
@@ -70,7 +76,9 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### Quality / QA
 - Agregados 6 tests de regresión del pipeline ReportViewModel → HTML → PDF
-- Agregados 10 tests para lógica de memoria GPU DXGI y correlación WMI↔DXGI (964 total)
+- Agregados 10 tests para lógica de memoria GPU DXGI y correlación WMI↔DXGI
+- Agregado release-gate anti-mojibake UTF-8
+- 965 tests (0 failed, 0 skipped)
 
 ---
 

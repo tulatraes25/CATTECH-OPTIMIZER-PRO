@@ -388,7 +388,7 @@ public class ReleaseGateTests
     }
 
     // =====================
-    // Consistencia de versión v0.2.1 (R.1)
+    // Consistencia de versión v0.2.2 (R.1)
     // =====================
 
     private static string RepoRoot()
@@ -402,13 +402,13 @@ public class ReleaseGateTests
     }
 
     [Fact]
-    public void UiCsproj_Version_Is021()
+    public void UiCsproj_Version_Is022()
     {
         var csproj = ReadRepoFile("src/Cattech.Optimizer.Pro.UI/Cattech.Optimizer.Pro.UI.csproj");
 
-        Assert.Contains("<Version>0.2.1</Version>", csproj);
-        Assert.Contains("<AssemblyVersion>0.2.1.0</AssemblyVersion>", csproj);
-        Assert.Contains("<FileVersion>0.2.1.0</FileVersion>", csproj);
+        Assert.Contains("<Version>0.2.2</Version>", csproj);
+        Assert.Contains("<AssemblyVersion>0.2.2.0</AssemblyVersion>", csproj);
+        Assert.Contains("<FileVersion>0.2.2.0</FileVersion>", csproj);
         Assert.DoesNotContain("<Version>0.1.1</Version>", csproj);
     }
 
@@ -423,38 +423,38 @@ public class ReleaseGateTests
     }
 
     [Fact]
-    public void MainWindow_Shows_021_NoPreRelease()
+    public void MainWindow_Shows_022_NoPreRelease()
     {
         var xaml = ReadRepoFile("src/Cattech.Optimizer.Pro.UI/MainWindow.xaml");
 
-        Assert.Contains("v0.2.1", xaml);
+        Assert.Contains("v0.2.2", xaml);
         Assert.DoesNotContain("pre-release", xaml);
         Assert.DoesNotContain("v0.1.1", xaml);
     }
 
     [Fact]
-    public void Home_Shows_021()
+    public void Home_Shows_022()
     {
         var vm = ReadRepoFile("src/Cattech.Optimizer.Pro.UI/ViewModels/MainViewModel.cs");
 
-        Assert.Contains("CATTECH OPTIMIZER PRO v0.2.1", vm);
+        Assert.Contains("CATTECH OPTIMIZER PRO v0.2.2", vm);
         Assert.DoesNotContain("versión en desarrollo", vm);
     }
 
     [Fact]
-    public void ReportFooter_Shows_021()
+    public void ReportFooter_Shows_022()
     {
         var service = ReadRepoFile("src/Cattech.Optimizer.Pro.Infrastructure/Reports/HtmlReportService.cs");
 
-        Assert.Contains("CATTECH OPTIMIZER PRO v0.2.1", service);
+        Assert.Contains("CATTECH OPTIMIZER PRO v0.2.2", service);
     }
 
     [Fact]
-    public void Readme_Header_Is_021_NotInDevelopment()
+    public void Readme_Header_Is_022_NotInDevelopment()
     {
         var readme = ReadRepoFile("README.md");
 
-        Assert.Contains("**Versión**: v0.2.1", readme);
+        Assert.Contains("**Versión**: v0.2.2", readme);
         Assert.DoesNotContain("en desarrollo — release candidate", readme);
     }
 

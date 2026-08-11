@@ -278,7 +278,7 @@ public partial class MainViewModel : ObservableObject
 
         var version = new TextBlock
         {
-            Text = "CATTECH OPTIMIZER PRO v0.2.1",
+            Text = "CATTECH OPTIMIZER PRO v0.2.2",
             FontSize = 12,
             Foreground = new System.Windows.Media.SolidColorBrush(
                 System.Windows.Media.Color.FromRgb(0x99, 0x99, 0x99))

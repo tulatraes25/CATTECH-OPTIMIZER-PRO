@@ -2,7 +2,7 @@
 
 [![CATTECH CI](https://github.com/tulatraes25/CATTECH-OPTIMIZER-PRO/actions/workflows/ci.yml/badge.svg)](https://github.com/tulatraes25/CATTECH-OPTIMIZER-PRO/actions/workflows/ci.yml)
 
-**Versión**: v0.2.1  
+**Versión**: v0.2.2  
 **Licencia**: MIT  
 **Plataforma**: Windows 10 (1809+) / Windows 11
 
@@ -22,6 +22,16 @@ CATTECH OPTIMIZER PRO es una aplicación de escritorio para Windows diseñada pa
 - **Optimización segura**: Limpieza de temporales, ajustes visuales
 - **Puntos de restauración**: Creación antes de cambios
 - **Informes profesionales**: HTML y PDF con logo personalizado
+
+### Correcciones v0.2.2
+
+- Informes HTML/PDF siempre utilizan el snapshot actual de datos y ya no reutilizan HTML stale
+- Validación para impedir omisión silenciosa de Cliente/Diagnóstico
+- Inventario GPU usa DXGI DedicatedVideoMemory para memoria dedicada correcta en GPUs modernas
+- La memoria compartida del sistema no se presenta como VRAM dedicada
+- Si DXGI no puede correlacionarse de forma fiable, se muestra N/D en vez de un valor potencialmente incorrecto
+- Release-gate para detectar mojibake UTF-8 antes de publicar
+- 965 tests
 
 ### Correcciones v0.2.1
 

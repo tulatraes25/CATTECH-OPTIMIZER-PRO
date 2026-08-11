@@ -201,7 +201,7 @@ No marcar Desktop PASS / Notebook PASS hasta ejecutarlos realmente.
 - **Severity**: High
 - **Observed**: UI mostraba Cliente QA/diagnóstico cargados y seleccionados; el HTML generado se llamó "SinCliente..." y no incluyó las secciones de Cliente/Diagnóstico; el PDF heredó el mismo contenido incompleto
 - **Root cause**: `ReportViewModel.LoadDataAsync` no invalidaba `LastReportPath`/`HasGeneratedReport` al recargar datos; `ExportPdfAsync` reutilizaba HTML stale si el archivo existía
-- **Fix status**: ✅ Fixed on main / pending official patch-release verification (invalidación de artifacts stale al recargar datos; ExportPdf regenera siempre HTML con snapshot actual; guards para selecciones nulas; 6 tests de regresión)
+- **Fix status**: Fixed in source prepared for v0.2.2 / pending official v0.2.2 verification (invalidación de artifacts stale al recargar datos; ExportPdf regenera siempre HTML con snapshot actual; guards para selecciones nulas; 6 tests de regresión)
 
 ### SMOKE-B1R-005 — GPU VRAM Inventario 4 GB vs sensores ~8 GB
 
@@ -209,7 +209,7 @@ No marcar Desktop PASS / Notebook PASS hasta ejecutarlos realmente.
 - **Severity**: Medium
 - **Observed**: RTX 4060 Laptop GPU — Inventario mostraba "Memoria reportada: 4 GB"; telemetría live mostraba GPU Memory Total: ~8188 MB (~8 GB)
 - **Root cause**: `WmiHardwareService.GetGpuInfoAsync()` usaba `Win32_VideoController.AdapterRAM` (uint32, se satura en ~4 GB) como fuente de memoria dedicada
-- **Fix status**: ✅ Fixed on main / pending official v0.2.2 verification (DXGI `DedicatedVideoMemory` como fuente autoritativa; correlación WMI↔DXGI por VendorId+DeviceId; fallback honesto a N/D cuando DXGI no disponible; 10 tests de regresión)
+- **Fix status**: Fixed in source prepared for v0.2.2 / pending official v0.2.2 verification (DXGI `DedicatedVideoMemory` como fuente autoritativa; correlación WMI↔DXGI por VendorId+DeviceId; fallback honesto a N/D cuando DXGI no disponible; 10 tests de regresión)
 
 ## Matriz P.3.2 (recomendada, para futura ejecución)
 
