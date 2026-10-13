@@ -5,6 +5,68 @@ namespace Cattech.Optimizer.Pro.Core.Tests.Models;
 
 public class BugCheckDecoderTests
 {
+    private static string FindRepositoryFile(string path)
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null)
+        {
+            var candidate = Path.Combine(dir.FullName, path);
+            if (File.Exists(candidate))
+                return candidate;
+            dir = dir.Parent;
+        }
+
+        throw new FileNotFoundException("No se encontró el archivo dentro del checkout del repositorio.", path);
+    }
+
+    [Fact]
+    public void PackagedCatalog_IsDeclaredByUiProject()
+    {
+        var project = File.ReadAllText(FindRepositoryFile(
+            "src/Cattech.Optimizer.Pro.UI/Cattech.Optimizer.Pro.UI.csproj"));
+        Assert.Contains("config\\bugcheckcodes.json", project);
+        Assert.Contains("<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>", project);
+    }
+
+    [Fact]
+    public void RealRepositoryCatalog_DecodesRepresentativeCodes()
+    {
+        var catalog = FindRepositoryFile("config/bugcheckcodes.json");
+        var decoder = new BugCheckDecoder(catalog);
+
+        Assert.True(decoder.CatalogAvailable);
+        Assert.Equal("WHEA_UNCORRECTABLE_ERROR", decoder.Decode(0x124).Name);
+        Assert.Equal("DRIVER_POWER_STATE_FAILURE", decoder.Decode(0x9F).Name);
+        Assert.Equal("DPC_WATCHDOG_VIOLATION", decoder.Decode(0x133).Name);
+    }
+
+    [Fact]
+    public void MissingCatalog_DoesNotCrashAndReportsUnavailable()
+    {
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "not-found.json");
+        var decoder = new BugCheckDecoder(path);
+
+        Assert.False(decoder.CatalogAvailable);
+        Assert.False(decoder.Decode(0x124).IsKnown);
+    }
+
+    [Fact]
+    public void CorruptedCatalog_DoesNotCrash()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(path, "{ malformed json");
+            var decoder = new BugCheckDecoder(path);
+            Assert.False(decoder.CatalogAvailable);
+            Assert.False(decoder.Decode(0x124).IsKnown);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     [Fact]
     public void LoadCatalog_DecodesKnownHexCode()
     {

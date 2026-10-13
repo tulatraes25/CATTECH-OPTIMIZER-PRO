@@ -13,6 +13,12 @@ public sealed class BugCheckDecoder : IBugCheckDecoder
 {
     private readonly IReadOnlyDictionary<uint, BugCheckDecodeResult> _catalog;
 
+    /// <summary>
+    /// Indica si el catálogo pudo cargarse. False no significa que el código
+    /// consultado sea desconocido: la fuente local no está disponible.
+    /// </summary>
+    public bool CatalogAvailable { get; }
+
     public BugCheckDecoder(string? catalogPath = null)
     {
         var path = catalogPath ?? Path.Combine(
@@ -20,14 +26,25 @@ public sealed class BugCheckDecoder : IBugCheckDecoder
             "config",
             "bugcheckcodes.json");
 
-        _catalog = File.Exists(path)
-            ? LoadCatalog(File.ReadAllText(path))
-            : new Dictionary<uint, BugCheckDecodeResult>();
+        try
+        {
+            _catalog = File.Exists(path)
+                ? LoadCatalog(File.ReadAllText(path))
+                : new Dictionary<uint, BugCheckDecodeResult>();
+            CatalogAvailable = _catalog.Count > 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            // Fuente inaccesible/corrupta: diagnóstico conservador, nunca crash.
+            _catalog = new Dictionary<uint, BugCheckDecodeResult>();
+            CatalogAvailable = false;
+        }
     }
 
     internal BugCheckDecoder(IReadOnlyDictionary<uint, BugCheckDecodeResult> catalog)
     {
         _catalog = catalog;
+        CatalogAvailable = catalog.Count > 0;
     }
 
     public BugCheckDecodeResult Decode(uint code)
