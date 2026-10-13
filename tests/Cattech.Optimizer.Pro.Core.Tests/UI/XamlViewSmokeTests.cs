@@ -59,6 +59,19 @@ public class XamlViewSmokeTests
     }
 
     [Fact]
+    public void NavigationToBlueScreens_LoadsView_WithoutXamlParseException()
+    {
+        RunOnSta(() =>
+        {
+            var vm = new MainViewModel();
+            vm.NavigateCommand.Execute("BlueScreens");
+
+            Assert.Equal("BlueScreens", vm.CurrentSection);
+            Assert.IsType<CrashEvidenceView>(vm.CurrentView);
+        });
+    }
+
+    [Fact]
     public void AllSidebarViews_LoadOnSta_WithoutXamlParseException()
     {
         var viewFactories = new (string Name, Func<object> Factory)[]
@@ -68,6 +81,7 @@ public class XamlViewSmokeTests
             ("SmartDisk", () => new SmartDiskView()),
             ("Hardware", () => new HardwareView()),
             ("QuickDiagnostic", () => new QuickDiagnosticView()),
+            ("CrashEvidence", () => new CrashEvidenceView()),
             ("StartupAnalysis", () => new StartupAnalysisView()),
             ("TempCleanup", () => new TempCleanupView()),
             ("VisualOptimization", () => new VisualOptimizationView()),

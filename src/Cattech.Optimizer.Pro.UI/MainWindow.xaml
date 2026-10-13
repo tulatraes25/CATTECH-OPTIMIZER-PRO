@@ -118,6 +118,10 @@
                             Command="{Binding NavigateCommand}" 
                             CommandParameter="Diagnostics"
                             Height="45" />
+                    <Button Content="🟦 Pantallas azules"
+                            Command="{Binding NavigateCommand}"
+                            CommandParameter="BlueScreens"
+                            Height="45" />
                     <Button Content="🚀 Programas de inicio" 
                             Command="{Binding NavigateCommand}" 
                             CommandParameter="Startup"

@@ -50,6 +50,9 @@ public partial class MainViewModel : ObservableObject
     private readonly ISmartDiskService _smartDiskService;
     private readonly ISmartTestService _smartTestService;
     private readonly IHardwareSensorService _hardwareSensorService;
+    private readonly ICrashDumpDiscoveryService _crashDumpDiscoveryService;
+    private readonly ICrashEventDiscoveryService _crashEventDiscoveryService;
+    private readonly IBugCheckDecoder _bugCheckDecoder;
 
     // ViewModels de secciones
     private CompanySettingsViewModel? _companySettingsViewModel;
@@ -62,6 +65,7 @@ public partial class MainViewModel : ObservableObject
     private ReportViewModel? _reportViewModel;
     private SmartDiskViewModel? _smartDiskViewModel;
     private HardwareViewModel? _hardwareViewModel;
+    private CrashEvidenceViewModel? _crashEvidenceViewModel;
 
     public MainViewModel()
         : this(new LibreHardwareSensorService())
@@ -85,6 +89,9 @@ public partial class MainViewModel : ObservableObject
         _smartDiskService = new SmartDiskService(_smartctlRunner);
         _smartTestService = new SmartTestService(_smartctlRunner);
         _hardwareSensorService = hardwareSensorService;
+        _crashDumpDiscoveryService = new CrashDumpDiscoveryService();
+        _crashEventDiscoveryService = new CrashEventDiscoveryService();
+        _bugCheckDecoder = new BugCheckDecoder();
         NavigateTo("Home");
     }
 
@@ -113,6 +120,7 @@ public partial class MainViewModel : ObservableObject
             "Hardware" => CreateHardwareView(),
             "SmartDisk" => CreateSmartDiskView(),
             "Diagnostics" => CreateQuickDiagnosticView(),
+            "BlueScreens" => CreateCrashEvidenceView(),
             "TempCleanup" => CreateTempCleanupView(),
             "Optimization" => CreateVisualOptimizationView(),
             "RestorePoint" => CreateRestorePointView(),
@@ -155,6 +163,17 @@ public partial class MainViewModel : ObservableObject
         return new QuickDiagnosticView
         {
             DataContext = _quickDiagnosticViewModel
+        };
+    }
+
+    private object CreateCrashEvidenceView()
+    {
+        _crashEvidenceViewModel ??= new CrashEvidenceViewModel(
+            _crashDumpDiscoveryService, _crashEventDiscoveryService, _bugCheckDecoder);
+
+        return new CrashEvidenceView
+        {
+            DataContext = _crashEvidenceViewModel
         };
     }
 

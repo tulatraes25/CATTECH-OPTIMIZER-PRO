@@ -1,0 +1,65 @@
+<UserControl x:Class="Cattech.Optimizer.Pro.UI.Views.CrashEvidenceView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="28">
+        <StackPanel MaxWidth="1000" HorizontalAlignment="Left">
+            <TextBlock Text="Pantallas azules — evidencia BSOD"
+                       FontSize="25" FontWeight="Bold" Foreground="#222222"
+                       Margin="0,0,0,6" />
+            <TextBlock Text="Consulta sin modificar Windows. No abre ni copia los archivos de volcado."
+                       FontSize="13" Foreground="#555555" TextWrapping="Wrap"
+                       Margin="0,0,0,14" />
+
+            <Button Content="Buscar evidencia (solo lectura)"
+                    Command="{Binding RefreshCommand}"
+                    Padding="16,10" HorizontalAlignment="Left"
+                    Background="#0078D4" Foreground="White"
+                    BorderThickness="0" Cursor="Hand"
+                    Margin="0,0,0,14" />
+            <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap"
+                       FontSize="12" Foreground="#333333" Margin="0,0,0,18" />
+
+            <Border Background="#F2F6FA" CornerRadius="6"
+                    Padding="12" Margin="0,0,0,18">
+                <TextBlock Text="{Binding SummaryText}" FontSize="12"
+                           Foreground="#345068" TextWrapping="Wrap"/>
+            </Border>
+
+            <TextBlock Text="Archivos de volcado" FontSize="19" FontWeight="SemiBold"
+                       Margin="0,0,0,6"/>
+            <TextBlock Text="{Binding DumpStatusText}" Foreground="#555555"
+                       TextWrapping="Wrap" Margin="0,0,0,8"/>
+            <DataGrid ItemsSource="{Binding Dumps}" IsReadOnly="True"
+                      AutoGenerateColumns="False" CanUserAddRows="False"
+                      CanUserDeleteRows="False" Height="185"
+                      HeadersVisibility="Column" Margin="0,0,0,20">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Archivo" Binding="{Binding FileName}" Width="2*" />
+                    <DataGridTextColumn Header="Tamaño (bytes)" Binding="{Binding SizeBytes}" Width="*" />
+                    <DataGridTextColumn Header="Última modificación (UTC)"
+                                        Binding="{Binding LastModifiedUtc, StringFormat='yyyy-MM-dd HH:mm:ss'}"
+                                        Width="2*" />
+                </DataGrid.Columns>
+            </DataGrid>
+
+            <TextBlock Text="Eventos del sistema relacionados con BugCheck"
+                       FontSize="19" FontWeight="SemiBold" Margin="0,0,0,6" />
+            <TextBlock Text="{Binding EventStatusText}" Foreground="#555555"
+                       TextWrapping="Wrap" Margin="0,0,0,8"/>
+            <DataGrid ItemsSource="{Binding Events}" IsReadOnly="True"
+                      AutoGenerateColumns="False" CanUserAddRows="False"
+                      CanUserDeleteRows="False" Height="200"
+                      HeadersVisibility="Column" Margin="0,0,0,20">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Fecha local" Binding="{Binding DateText}" Width="2*" />
+                    <DataGridTextColumn Header="Código" Binding="{Binding Code}" Width="*" />
+                    <DataGridTextColumn Header="Nombre" Binding="{Binding Name}" Width="2*" />
+                    <DataGridTextColumn Header="Fuente" Binding="{Binding Source}" Width="3*" />
+                </DataGrid.Columns>
+            </DataGrid>
+            <TextBlock Text="Un evento de energía no implica por sí solo pantalla azul. La presencia de un módulo o controlador tampoco confirma su responsabilidad. Este panel aún no analiza el contenido de los dumps."
+                       Foreground="#777777" FontSize="12" TextWrapping="Wrap"
+                       Margin="0,0,0,18"/>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
