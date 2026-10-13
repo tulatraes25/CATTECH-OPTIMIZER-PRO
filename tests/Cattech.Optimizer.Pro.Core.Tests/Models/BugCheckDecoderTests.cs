@@ -1,3 +1,4 @@
+using Cattech.Optimizer.Pro.Core.Models.Diagnostics;
 using Cattech.Optimizer.Pro.Infrastructure.Diagnostics;
 
 namespace Cattech.Optimizer.Pro.Core.Tests.Models;
@@ -33,7 +34,7 @@ public class BugCheckDecoderTests
     [Fact]
     public void Decode_UnknownCode_IsHonestAndNonFatal()
     {
-        var decoder = new BugCheckDecoder(new Dictionary<uint, Core.Models.Diagnostics.BugCheckDecodeResult>());
+        var decoder = new BugCheckDecoder(new Dictionary<uint, BugCheckDecodeResult>());
 
         var result = decoder.Decode(0xDEADBEEF);
 
