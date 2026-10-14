@@ -87,7 +87,45 @@ public class TempCleanupService : ITempCleanupService
             StartedAt = DateTime.Now
         };
 
+        ArgumentNullException.ThrowIfNull(targets);
         var selectedTargets = targets.Where(t => t.IsSelected).ToList();
+
+        // All-or-nothing preflight: a forged or stale target must never cause
+        // an unrelated selected folder to be partially deleted first.
+        var rejectedTargets = selectedTargets.Select(target =>
+            (Target: target, Reason: GetTargetRejectionReason(target)))
+            .Where(entry => entry.Reason is not null)
+            .ToArray();
+        if (rejectedTargets.Length > 0)
+        {
+            foreach (var target in selectedTargets)
+            {
+                result.TargetResults.Add(new TargetResult
+                {
+                    TargetId = target.Id,
+                    TargetName = target.DisplayName,
+                    Path = target.Path,
+                    IsSuccess = false
+                });
+            }
+
+            foreach (var rejected in rejectedTargets)
+            {
+                var unsupported = rejected.Target.Id == "RECYCLE_BIN";
+                result.Errors.Add(new CleanupError
+                {
+                    // Do not expose an untrusted absolute path in diagnostics.
+                    FilePath = unsupported ? "RecycleBin" : rejected.Target.Id,
+                    Message = rejected.Reason!,
+                    ErrorType = unsupported ? "UnsupportedOperation" : "UnsafeTarget"
+                });
+            }
+
+            result.FinishedAt = DateTime.Now;
+            result.TechnicianName = await GetTechnicianNameAsync();
+            return result;
+        }
+
         int processedCount = 0;
 
         foreach (var target in selectedTargets)
@@ -206,6 +244,73 @@ public class TempCleanupService : ITempCleanupService
         return summaries;
     }
 
+
+    /// <summary>
+    /// Only exact, previously scanned default targets may be cleaned. Reject
+    /// redirected roots and every reparse-point ancestor. This is a conservative
+    /// preflight, not an atomic guarantee against concurrent link replacement.
+    /// </summary>
+    private static string? GetTargetRejectionReason(TempCleanupTarget target)
+    {
+        if (target.Id == "RECYCLE_BIN")
+            return "La limpieza de la Papelera está deshabilitada por seguridad.";
+
+        if (!OperatingSystem.IsWindows())
+            return "Esta limpieza requiere Windows.";
+
+        if (target.Id is not ("USER_TEMP" or "WINDOWS_TEMP" or "THUMBNAILS"))
+            return "Ubicación de limpieza no autorizada.";
+
+        if (!target.IsScanned || !target.IsAccessible)
+            return "Es necesario escanear y verificar la ubicación antes de limpiar.";
+
+        if (string.IsNullOrWhiteSpace(target.Path) ||
+            !Path.IsPathFullyQualified(target.Path))
+            return "La ruta de limpieza no es absoluta o no es válida.";
+
+        try
+        {
+            var canonical = Path.TrimEndingDirectorySeparator(
+                Path.GetFullPath(target.Path));
+            var allowedTarget = CleanupTargets.GetDefaultTargets().Single(
+                item => item.Id == target.Id);
+            var expected = Path.TrimEndingDirectorySeparator(
+                Path.GetFullPath(allowedTarget.Path));
+            if (!string.Equals(canonical, expected,
+                StringComparison.OrdinalIgnoreCase))
+                return "La ruta no coincide con la ubicación autorizada.";
+
+            var root = Path.TrimEndingDirectorySeparator(
+                Path.GetPathRoot(canonical) ?? string.Empty);
+            if (string.Equals(root, canonical, StringComparison.OrdinalIgnoreCase))
+                return "No se admite limpiar una raíz de volumen.";
+
+            var directory = new DirectoryInfo(canonical);
+            if (!directory.Exists)
+                return "La ubicación ya no existe.";
+
+            // Includes the target itself and every existing parent, so a
+            // junction or symlink cannot redirect a textual allowed path.
+            for (DirectoryInfo? current = directory; current is not null;
+                current = current.Parent)
+            {
+                if (!current.Exists)
+                    return "La ruta contiene un directorio no disponible.";
+
+                if ((current.Attributes & FileAttributes.ReparsePoint) != 0)
+                    return "La ruta contiene un enlace o punto de redirección.";
+            }
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException
+            or IOException or UnauthorizedAccessException
+            or System.Security.SecurityException)
+        {
+            return "No se pudo validar de forma segura la ubicación.";
+        }
+
+        return null;
+    }
+
     // --- Métodos de escaneo ---
 
     private static void ScanFolder(TempCleanupTarget target)
@@ -227,6 +332,8 @@ public class TempCleanupService : ITempCleanupService
             {
                 RecurseSubdirectories = true,
                 IgnoreInaccessible = true,
+                AttributesToSkip = FileAttributes.Hidden | FileAttributes.System |
+                    FileAttributes.ReparsePoint,
                 MaxRecursionDepth = 3
             });
 
@@ -318,6 +425,8 @@ public class TempCleanupService : ITempCleanupService
                 {
                     RecurseSubdirectories = true,
                     IgnoreInaccessible = true,
+                    AttributesToSkip = FileAttributes.Hidden | FileAttributes.System |
+                        FileAttributes.ReparsePoint,
                     MaxRecursionDepth = 3
                 });
             }
@@ -394,6 +503,12 @@ public class TempCleanupService : ITempCleanupService
                 try
                 {
                     var fileInfo = new FileInfo(file);
+                    if ((fileInfo.Attributes & FileAttributes.ReparsePoint) != 0)
+                    {
+                        targetResult.SkippedFiles++;
+                        result.SkippedFiles++;
+                        continue;
+                    }
                     var size = fileInfo.Length;
 
                     fileInfo.Delete();
@@ -436,6 +551,9 @@ public class TempCleanupService : ITempCleanupService
 
     private static bool IsProtectedFile(FileInfo file)
     {
+        if ((file.Attributes & FileAttributes.ReparsePoint) != 0)
+            return true;
+
         var name = file.Name.ToLowerInvariant();
 
         // No borrar archivos de lock, PID, socket
