@@ -55,7 +55,10 @@ public class WmiHardwareService : IHardwareService
     }
 
     /// <inheritdoc/>
-    public Task<SystemInfo> GetSystemInfoAsync()
+    public Task<SystemInfo> GetSystemInfoAsync() => Task.Run(ReadSystemInfo);
+
+    // All blocking WMI/DXGI reads execute off the UI dispatcher thread.
+    private SystemInfo ReadSystemInfo()
     {
         var info = new SystemInfo();
 
@@ -93,11 +96,14 @@ public class WmiHardwareService : IHardwareService
             info.ComputerName = Environment.MachineName;
         }
 
-        return Task.FromResult(info);
+        return info;
     }
 
     /// <inheritdoc/>
-    public Task<CpuInfo> GetCpuInfoAsync()
+    public Task<CpuInfo> GetCpuInfoAsync() => Task.Run(ReadCpuInfo);
+
+    // All blocking WMI/DXGI reads execute off the UI dispatcher thread.
+    private CpuInfo ReadCpuInfo()
     {
         var info = new CpuInfo();
 
@@ -125,11 +131,14 @@ public class WmiHardwareService : IHardwareService
             info.Name = "No detectado";
         }
 
-        return Task.FromResult(info);
+        return info;
     }
 
     /// <inheritdoc/>
-    public Task<MemoryInfo> GetMemoryInfoAsync()
+    public Task<MemoryInfo> GetMemoryInfoAsync() => Task.Run(ReadMemoryInfo);
+
+    // All blocking WMI/DXGI reads execute off the UI dispatcher thread.
+    private MemoryInfo ReadMemoryInfo()
     {
         var info = new MemoryInfo();
 
@@ -158,7 +167,7 @@ public class WmiHardwareService : IHardwareService
             info.AvailableGB = 0;
         }
 
-        return Task.FromResult(info);
+        return info;
     }
 
     private static void BuildModuleInventory(WmiMemorySnapshot snapshot, MemoryInfo info)
@@ -248,7 +257,10 @@ public class WmiHardwareService : IHardwareService
     private static string TrimOrEmpty(string value) => value?.Trim() ?? string.Empty;
 
     /// <inheritdoc/>
-    public Task<List<GpuInfo>> GetGpuInfoAsync()
+    public Task<List<GpuInfo>> GetGpuInfoAsync() => Task.Run(ReadGpuInfo);
+
+    // All blocking WMI/DXGI reads execute off the UI dispatcher thread.
+    private List<GpuInfo> ReadGpuInfo()
     {
         var gpus = new List<GpuInfo>();
 
@@ -297,7 +309,7 @@ public class WmiHardwareService : IHardwareService
             // Retornar lista vacía en caso de error
         }
 
-        return Task.FromResult(gpus);
+        return gpus;
     }
 
     /// <summary>
@@ -340,19 +352,22 @@ public class WmiHardwareService : IHardwareService
     }
 
     /// <inheritdoc/>
-    public Task<List<DiskInfo>> GetDiskInfoAsync()
+    public Task<List<DiskInfo>> GetDiskInfoAsync() => Task.Run(ReadDiskInfo);
+
+    // All blocking WMI/DXGI reads execute off the UI dispatcher thread.
+    private List<DiskInfo> ReadDiskInfo()
     {
         try
         {
             if (!OperatingSystem.IsWindows())
-                return Task.FromResult(new List<DiskInfo>());
+                return new List<DiskInfo>();
 
             var snapshots = _diskTopologyReader.Read();
             // The actual Windows installation root decides which volume is
             // the system volume, NEVER the first disk returned by WMI.
             var systemRoot = Path.GetPathRoot(Environment.SystemDirectory);
             var result = DiskTopologyMapper.Map(snapshots, systemRoot);
-            return Task.FromResult(result);
+            return result;
         }
         catch (Exception ex) when (ex is ManagementException
             or System.Runtime.InteropServices.COMException
@@ -361,12 +376,15 @@ public class WmiHardwareService : IHardwareService
         {
             // Unable to establish trustworthy relations: return no inferred
             // physical/logical mapping. Do not fabricate a full disk.
-            return Task.FromResult(new List<DiskInfo>());
+            return new List<DiskInfo>();
         }
     }
 
     /// <inheritdoc/>
-    public Task<MotherboardInfo> GetMotherboardInfoAsync()
+    public Task<MotherboardInfo> GetMotherboardInfoAsync() => Task.Run(ReadMotherboardInfo);
+
+    // All blocking WMI/DXGI reads execute off the UI dispatcher thread.
+    private MotherboardInfo ReadMotherboardInfo()
     {
         var info = new MotherboardInfo();
 
@@ -406,6 +424,6 @@ public class WmiHardwareService : IHardwareService
             info.Manufacturer = "No detectado";
         }
 
-        return Task.FromResult(info);
+        return info;
     }
 }
