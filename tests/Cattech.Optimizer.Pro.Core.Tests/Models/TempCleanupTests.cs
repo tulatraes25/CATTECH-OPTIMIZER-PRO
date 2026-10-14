@@ -252,6 +252,85 @@ public class TempCleanupTests
         }
     }
 
+
+    [Fact]
+    public async Task FolderCleanup_VanishedSyntheticLocation_MustReportFailure()
+    {
+        var missing = Path.Combine(Path.GetTempPath(),
+            "cattech-missing-folder-" + Guid.NewGuid().ToString("N"));
+        Assert.False(Directory.Exists(missing));
+        var target = new TempCleanupTarget { Id = "USER_TEMP", Path = missing };
+        var summary = new TargetResult { TargetId = target.Id };
+        var result = new TempCleanupResult();
+
+        // This internal test path is nonexistent; no files are touched.
+        await new TempCleanupService().CleanFolderAsync(target, summary, result);
+
+        Assert.False(summary.IsSuccess);
+        Assert.Equal(0, result.DeletedFiles);
+        Assert.Equal(0, result.DeletedBytes);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("MissingTarget", error.ErrorType);
+        Assert.Equal("USER_TEMP", error.FilePath);
+        Assert.DoesNotContain(missing, error.Message);
+        Assert.False(result.IsSuccess);
+    }
+
+    [Fact]
+    public void ThumbnailCleanup_VanishedSyntheticLocation_MustReportFailure()
+    {
+        var missing = Path.Combine(Path.GetTempPath(),
+            "cattech-missing-thumbs-" + Guid.NewGuid().ToString("N"));
+        Assert.False(Directory.Exists(missing));
+        var target = new TempCleanupTarget { Id = "THUMBNAILS", Path = missing };
+        var summary = new TargetResult { TargetId = target.Id };
+        var result = new TempCleanupResult();
+
+        // Not the real Windows thumbnail location; it never existed.
+        TempCleanupService.CleanThumbnailsFolder(target, summary, result);
+
+        Assert.False(summary.IsSuccess);
+        Assert.Equal(0, result.DeletedFiles);
+        Assert.Equal(0, result.DeletedBytes);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("MissingTarget", error.ErrorType);
+        Assert.Equal("THUMBNAILS", error.FilePath);
+        Assert.DoesNotContain(missing, error.Message);
+    }
+
+    [Fact]
+    public async Task FolderCleanup_IsolatedSyntheticFile_AccountsForRemovedBytes()
+    {
+        var root = Path.Combine(Path.GetTempPath(),
+            "cattech-cleanup-synthetic-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var path = Path.Combine(root, "old-synthetic-fixture.tmp");
+        var bytes = new byte[733];
+        await File.WriteAllBytesAsync(path, bytes);
+        File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddMinutes(-5));
+        try
+        {
+            var target = new TempCleanupTarget { Id = "USER_TEMP", Path = root };
+            var summary = new TargetResult { TargetId = target.Id };
+            var result = new TempCleanupResult();
+
+            // Explicitly isolated test fixture only. Not an actual USER_TEMP
+            // selection or CleanupAsync call; never traverses OS temp roots.
+            await new TempCleanupService(root).CleanFolderAsync(target, summary, result);
+
+            Assert.False(File.Exists(path));
+            Assert.Empty(result.Errors);
+            Assert.Equal(1, summary.DeletedFiles);
+            Assert.Equal(733L, summary.DeletedBytes);
+            Assert.Equal(1, result.DeletedFiles);
+            Assert.Equal(733L, result.DeletedBytes);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Fact]
     public void TempCleanupTarget_DefaultValues_AreValid()
     {
