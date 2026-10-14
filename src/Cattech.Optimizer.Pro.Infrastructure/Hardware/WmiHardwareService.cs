@@ -352,9 +352,12 @@ public class WmiHardwareService : IHardwareService
                     disk.TotalGB = Math.Round(Convert.ToDouble(size) / (1024 * 1024 * 1024), 2);
                 }
 
-                // Detectar tipo de medio
-                var mediaType = obj["MediaType"]?.ToString() ?? "";
-                disk.MediaType = mediaType.Contains("SSD") ? "SSD" : "HDD";
+                // Win32_DiskDrive.MediaType can be the generic
+                // "Fixed hard disk media" even for SSDs. Do not equate an
+                // unknown value with rotational HDD.
+                var mediaType = obj["MediaType"]?.ToString();
+                disk.MediaType = DiskMediaClassifier.Classify(
+                    disk.Name, disk.Interface, mediaType);
 
                 disks.Add(disk);
             }

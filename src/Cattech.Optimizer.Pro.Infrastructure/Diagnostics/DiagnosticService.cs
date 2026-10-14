@@ -221,6 +221,12 @@ public class DiagnosticService : IDiagnosticService
         report.RamUsagePercent = Math.Round(hw.Memory.UsagePercent, 1);
     }
 
+    // A migration recommendation requires *positive* HDD evidence.
+    // Unknown, NVMe, SSD, flash, or compound labels must never trigger it.
+    internal static bool ShouldSuggestHddUpgrade(string? classifiedMediaType) =>
+        string.Equals(classifiedMediaType?.Trim(), "HDD",
+            StringComparison.OrdinalIgnoreCase);
+
     private static void FillDiskInfo(DiagnosticReport report, HardwareReport hw)
     {
         var mainDisk = hw.Disks.FirstOrDefault();
@@ -589,8 +595,7 @@ public class DiagnosticService : IDiagnosticService
             });
         }
 
-        if (report.DiskType.Contains("HDD", StringComparison.OrdinalIgnoreCase) ||
-            report.DiskType == "No detectado")
+        if (ShouldSuggestHddUpgrade(report.DiskType))
         {
             alerts.Add(new DiagnosticAlert
             {
