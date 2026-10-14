@@ -167,6 +167,92 @@ public class TempCleanupTests
     }
 
     [Fact]
+    public async Task SaveHistory_ConcurrentIndependentInstances_PreserveAllSnapshots()
+    {
+        const int count = 36;
+        var root = Path.Combine(Path.GetTempPath(),
+            "cattech-cleanup-history-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var timestamp = new DateTime(2026, 10, 14, 10, 0, 0);
+            var records = Enumerable.Range(0, count).Select(i => new TempCleanupResult
+            {
+                Id = $"SYNTH-{i:D3}",
+                StartedAt = timestamp,
+                FinishedAt = timestamp.AddSeconds(1),
+                DeletedFiles = i,
+                TechnicianName = "Synthetic QA"
+            }).ToArray();
+
+            var names = await Task.WhenAll(records.Select(record =>
+                new TempCleanupService(root).SaveResultAsync(record)));
+            Assert.Equal(count, names.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+
+            var dir = Path.Combine(root, "data", "cleanup-results");
+            var files = Directory.GetFiles(dir, "cleanup-result-*.json");
+            Assert.Equal(count, files.Length);
+            var stored = await Task.WhenAll(files.Select(async file =>
+                JsonSerializer.Deserialize<TempCleanupResult>(
+                    await File.ReadAllTextAsync(file), SerializerOptions)));
+            Assert.All(stored, entry => Assert.NotNull(entry));
+            var byId = stored.ToDictionary(item => item!.Id);
+            Assert.Equal(count, byId.Count);
+            foreach (var original in records)
+            {
+                Assert.True(byId.TryGetValue(original.Id, out var persisted));
+                Assert.Equal(original.DeletedFiles, persisted!.DeletedFiles);
+                Assert.Equal(original.TechnicianName, persisted.TechnicianName);
+            }
+
+            Assert.Empty(Directory.GetFiles(dir, ".cattech-cleanup-*.tmp"));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task SaveHistory_RepeatedUntrustedId_NeverOverwritesOldAuditFile()
+    {
+        var root = Path.Combine(Path.GetTempPath(),
+            "cattech-cleanup-history-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var service = new TempCleanupService(root);
+            var record = new TempCleanupResult
+            {
+                Id = "../untrusted/path",
+                StartedAt = new DateTime(2026, 10, 14, 10, 0, 0),
+                FinishedAt = new DateTime(2026, 10, 14, 10, 0, 1),
+                DeletedFiles = 3
+            };
+            var first = await service.SaveResultAsync(record);
+            var dir = Path.Combine(root, "data", "cleanup-results");
+            var firstPath = Path.Combine(dir, first);
+            var original = await File.ReadAllTextAsync(firstPath);
+
+            record.DeletedFiles = 99;
+            var second = await service.SaveResultAsync(record);
+            Assert.NotEqual(first, second);
+            Assert.Equal(first, Path.GetFileName(first));
+            Assert.DoesNotContain("/", first);
+            Assert.DoesNotContain("..", first);
+            Assert.Equal(original, await File.ReadAllTextAsync(firstPath));
+            Assert.Contains("\"deletedFiles\": 99",
+                await File.ReadAllTextAsync(Path.Combine(dir, second)));
+            Assert.Equal(2, Directory.GetFiles(dir, "cleanup-result-*.json").Length);
+            Assert.Empty(Directory.GetFiles(dir, ".cattech-cleanup-*.tmp"));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void TempCleanupTarget_DefaultValues_AreValid()
     {
         var target = new TempCleanupTarget();
