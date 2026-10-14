@@ -927,19 +927,33 @@ public class HtmlReportService : IReportGenerationService
 
     private async Task<List<GeneratedReportInfo>> LoadReportsInfoInternalAsync()
     {
-        if (!File.Exists(_reportsInfoPath))
-            return new List<GeneratedReportInfo>();
-
+        string json;
         try
         {
-            var json = await File.ReadAllTextAsync(_reportsInfoPath);
-            return JsonSerializer.Deserialize<List<GeneratedReportInfo>>(json, SerializerOptions)
-                   ?? new List<GeneratedReportInfo>();
+            // Only a genuinely missing index means there are no previous reports.
+            // Malformed JSON, denied access or I/O errors must never be replaced
+            // with an empty collection: SaveReportInfoAsync would erase history.
+            json = await File.ReadAllTextAsync(_reportsInfoPath).ConfigureAwait(false);
         }
-        catch
+        catch (FileNotFoundException)
         {
             return new List<GeneratedReportInfo>();
         }
+        catch (DirectoryNotFoundException)
+        {
+            return new List<GeneratedReportInfo>();
+        }
+
+        var reports = JsonSerializer.Deserialize<List<GeneratedReportInfo>>(
+            json, SerializerOptions)
+            ?? throw new InvalidDataException(
+                "El índice de informes contiene un valor nulo y se conserva sin cambios.");
+
+        if (reports.Any(report => report is null))
+            throw new InvalidDataException(
+                "El índice de informes contiene entradas nulas y se conserva sin cambios.");
+
+        return reports;
     }
 
     private async Task SaveReportsInfoInternalAsync(List<GeneratedReportInfo> reports)
