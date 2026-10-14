@@ -494,10 +494,17 @@ public class TempCleanupService : ITempCleanupService
                         continue;
                     }
 
-                    // Snapshot the size BEFORE deleting. If metadata fails,
-                    // no file is removed or counted as deleted.
-                    var size = file.Length;
-                    file.Delete();
+                    // The native handle is opened and verified before marking
+                    // that SAME file for deletion. Never delete by pathname
+                    // after the safety checks (TOCTOU vulnerability).
+                    if (!WindowsScopedFileDelete.TryDelete(
+                        target.Path, file.FullName, out var size))
+                    {
+                        targetResult.SkippedFiles++;
+                        result.SkippedFiles++;
+                        continue;
+                    }
+
                     targetResult.DeletedFiles++;
                     targetResult.DeletedBytes += size;
                     result.DeletedFiles++;
@@ -558,16 +565,15 @@ public class TempCleanupService : ITempCleanupService
             {
                 try
                 {
-                    var fileInfo = new FileInfo(file);
-                    if ((fileInfo.Attributes & FileAttributes.ReparsePoint) != 0)
+                    // Cache files use the same handle-scoped safety policy:
+                    // no following junctions, no deleting changed/recent files.
+                    if (!WindowsScopedFileDelete.TryDelete(
+                        target.Path, file, out var size))
                     {
                         targetResult.SkippedFiles++;
                         result.SkippedFiles++;
                         continue;
                     }
-                    var size = fileInfo.Length;
-
-                    fileInfo.Delete();
 
                     targetResult.DeletedFiles++;
                     targetResult.DeletedBytes += size;
