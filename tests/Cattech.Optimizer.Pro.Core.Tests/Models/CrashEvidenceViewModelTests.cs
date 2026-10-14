@@ -60,6 +60,95 @@ public class CrashEvidenceViewModelTests
             };
     }
 
+    private sealed class FakeDumpCheck : IDumpCheckService
+    {
+        public int Calls { get; private set; }
+        public string? ReceivedFile { get; private set; }
+        public bool Confirmed { get; private set; }
+
+        public Task<DumpCheckExecutionResult> VerifyDumpAsync(
+            string dumpFileName, bool technicianConfirmed, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            ReceivedFile = dumpFileName;
+            Confirmed = technicianConfirmed;
+            return Task.FromResult(new DumpCheckExecutionResult
+            {
+                Status = DumpCheckExecutionStatus.Completed,
+                Message = "Comprobación completada.",
+                Summary = new DumpCheckResult
+                {
+                    BugCheckCode = 0x124,
+                    Readability = DumpCheckReadability.ProbablyReadable,
+                    Message = "Comprobación completada."
+                }
+            });
+        }
+    }
+
+    [Fact]
+    public async Task VerifyDump_CannotExecuteOnStartupNorWithoutSelection()
+    {
+        var reader = new FakeDumpCheck();
+        var confirmations = 0;
+        var vm = new CrashEvidenceViewModel(
+            new FakeDumpService(), new FakeEventService(), new FakeDecoder(),
+            reader, _ => { confirmations++; return true; });
+
+        Assert.False(vm.VerifySelectedDumpCommand.CanExecute(null));
+        Assert.Equal(0, reader.Calls);
+        Assert.Equal(0, confirmations);
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        Assert.False(vm.VerifySelectedDumpCommand.CanExecute(null));
+        Assert.Equal(0, reader.Calls);
+        Assert.Equal(0, confirmations);
+    }
+
+    [Fact]
+    public async Task VerifyDump_DeclinedConfirmation_NeverCallsService()
+    {
+        var reader = new FakeDumpCheck();
+        var prompts = 0;
+        var vm = new CrashEvidenceViewModel(
+            new FakeDumpService(), new FakeEventService(), new FakeDecoder(),
+            reader, _ => { prompts++; return false; });
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+        vm.SelectedDump = Assert.Single(vm.Dumps);
+        Assert.True(vm.VerifySelectedDumpCommand.CanExecute(null));
+
+        await vm.VerifySelectedDumpCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, prompts);
+        Assert.Equal(0, reader.Calls);
+        Assert.Contains("cancelada", vm.DumpCheckStatusText);
+    }
+
+    [Fact]
+    public async Task VerifyDump_Approved_UsesSelectedBasenameOnlyAndShowsSafeSummary()
+    {
+        var reader = new FakeDumpCheck();
+        var prompts = 0;
+        var vm = new CrashEvidenceViewModel(
+            new FakeDumpService(), new FakeEventService(), new FakeDecoder(),
+            reader, name => { prompts++; return name == "synthetic.dmp"; });
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+        vm.SelectedDump = Assert.Single(vm.Dumps);
+
+        await vm.VerifySelectedDumpCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, prompts);
+        Assert.Equal(1, reader.Calls);
+        Assert.True(reader.Confirmed);
+        Assert.Equal("synthetic.dmp", reader.ReceivedFile);
+        Assert.Contains("0x00000124", vm.DumpCheckStatusText);
+        Assert.DoesNotContain("C:\\", vm.DumpCheckStatusText);
+        Assert.False(vm.IsBusy);
+    }
+
     [Fact]
     public async Task ViewModel_DoesNotScanUntilUserRequests()
     {

@@ -6,7 +6,7 @@
             <TextBlock Text="Pantallas azules — evidencia BSOD"
                        FontSize="25" FontWeight="Bold" Foreground="#222222"
                        Margin="0,0,0,6" />
-            <TextBlock Text="Consulta sin modificar Windows. No abre ni copia los archivos de volcado."
+            <TextBlock Text="La búsqueda solo lee metadatos. La verificación opcional abre un archivo local mediante DumpChk y requiere confirmación expresa."
                        FontSize="13" Foreground="#555555" TextWrapping="Wrap"
                        Margin="0,0,0,14" />
 
@@ -29,7 +29,9 @@
                        Margin="0,0,0,6"/>
             <TextBlock Text="{Binding DumpStatusText}" Foreground="#555555"
                        TextWrapping="Wrap" Margin="0,0,0,8"/>
-            <DataGrid ItemsSource="{Binding Dumps}" IsReadOnly="True"
+            <DataGrid ItemsSource="{Binding Dumps}"
+                      SelectedItem="{Binding SelectedDump, Mode=TwoWay}"
+                      SelectionMode="Single" IsReadOnly="True"
                       AutoGenerateColumns="False" CanUserAddRows="False"
                       CanUserDeleteRows="False" Height="185"
                       HeadersVisibility="Column" Margin="0,0,0,20">
@@ -41,6 +43,16 @@
                                         Width="2*" />
                 </DataGrid.Columns>
             </DataGrid>
+
+            <Button Content="Verificar dump seleccionado con DumpChk (requiere confirmación)"
+                    Command="{Binding VerifySelectedDumpCommand}"
+                    Padding="14,8" HorizontalAlignment="Left"
+                    Background="#F1F1F1" Foreground="#333333"
+                    BorderBrush="#B8B8B8" BorderThickness="1"
+                    Margin="0,0,0,8" />
+            <TextBlock Text="{Binding DumpCheckStatusText}"
+                       Foreground="#555555" TextWrapping="Wrap"
+                       FontSize="12" Margin="0,0,0,20"/>
 
             <TextBlock Text="Eventos del sistema relacionados con BugCheck"
                        FontSize="19" FontWeight="SemiBold" Margin="0,0,0,6" />
@@ -57,7 +69,7 @@
                     <DataGridTextColumn Header="Fuente" Binding="{Binding Source}" Width="3*" />
                 </DataGrid.Columns>
             </DataGrid>
-            <TextBlock Text="Un evento de energía no implica por sí solo pantalla azul. La presencia de un módulo o controlador tampoco confirma su responsabilidad. Este panel aún no analiza el contenido de los dumps."
+            <TextBlock Text="Un evento de energía no implica por sí solo pantalla azul. La presencia de un módulo o controlador tampoco confirma su responsabilidad. Solo DumpChk opcional analiza un archivo local tras confirmación explícita; el resultado no determina por sí mismo una causa."
                        Foreground="#777777" FontSize="12" TextWrapping="Wrap"
                        Margin="0,0,0,18"/>
         </StackPanel>

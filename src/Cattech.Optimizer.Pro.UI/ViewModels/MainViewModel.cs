@@ -53,6 +53,7 @@ public partial class MainViewModel : ObservableObject
     private readonly ICrashDumpDiscoveryService _crashDumpDiscoveryService;
     private readonly ICrashEventDiscoveryService _crashEventDiscoveryService;
     private readonly IBugCheckDecoder _bugCheckDecoder;
+    private readonly IDumpCheckService _dumpCheckService;
 
     // ViewModels de secciones
     private CompanySettingsViewModel? _companySettingsViewModel;
@@ -92,6 +93,7 @@ public partial class MainViewModel : ObservableObject
         _crashDumpDiscoveryService = new CrashDumpDiscoveryService();
         _crashEventDiscoveryService = new CrashEventDiscoveryService();
         _bugCheckDecoder = new BugCheckDecoder();
+        _dumpCheckService = new DumpCheckService();
         NavigateTo("Home");
     }
 
@@ -169,7 +171,16 @@ public partial class MainViewModel : ObservableObject
     private object CreateCrashEvidenceView()
     {
         _crashEvidenceViewModel ??= new CrashEvidenceViewModel(
-            _crashDumpDiscoveryService, _crashEventDiscoveryService, _bugCheckDecoder);
+            _crashDumpDiscoveryService, _crashEventDiscoveryService, _bugCheckDecoder,
+            _dumpCheckService, fileName => MessageBox.Show(
+                "Se abrirá localmente el archivo de volcado seleccionado mediante DumpChk " +
+                "(Windows Debugging Tools) para comprobar su legibilidad y código BugCheck.\n\n" +
+                $"Archivo: {fileName}\n\n" +
+                "Puede contener datos sensibles; no se subirá ni copiará automáticamente. " +
+                "No se descargarán símbolos ni se reparará Windows.\n\n" +
+                "¿Confirmás expresamente esta comprobación?",
+                "CATTECH — Confirmar DumpChk",
+                MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes);
 
         return new CrashEvidenceView
         {

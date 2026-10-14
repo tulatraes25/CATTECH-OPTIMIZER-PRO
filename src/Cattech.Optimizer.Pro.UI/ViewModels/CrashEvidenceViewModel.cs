@@ -25,6 +25,8 @@ public partial class CrashEvidenceViewModel : ObservableObject
     private readonly ICrashDumpDiscoveryService _dumpDiscovery;
     private readonly ICrashEventDiscoveryService _eventDiscovery;
     private readonly IBugCheckDecoder _decoder;
+    private readonly IDumpCheckService? _dumpCheckService;
+    private readonly Func<string, bool>? _confirmDumpCheck;
 
     [ObservableProperty]
     private bool _isBusy;
@@ -41,17 +43,78 @@ public partial class CrashEvidenceViewModel : ObservableObject
     [ObservableProperty]
     private string _summaryText = "La ausencia de archivos o eventos no demuestra ausencia de fallas.";
 
+    [ObservableProperty]
+    private CrashDumpEntry? _selectedDump;
+
+    [ObservableProperty]
+    private string _dumpCheckStatusText =
+        "Seleccioná un archivo .dmp y confirmá expresamente si querés verificarlo con DumpChk.";
+
     public ObservableCollection<CrashDumpEntry> Dumps { get; } = new();
     public ObservableCollection<CrashEventDisplayItem> Events { get; } = new();
 
     public CrashEvidenceViewModel(
         ICrashDumpDiscoveryService dumpDiscovery,
         ICrashEventDiscoveryService eventDiscovery,
-        IBugCheckDecoder decoder)
+        IBugCheckDecoder decoder,
+        IDumpCheckService? dumpCheckService = null,
+        Func<string, bool>? confirmDumpCheck = null)
     {
         _dumpDiscovery = dumpDiscovery ?? throw new ArgumentNullException(nameof(dumpDiscovery));
         _eventDiscovery = eventDiscovery ?? throw new ArgumentNullException(nameof(eventDiscovery));
         _decoder = decoder ?? throw new ArgumentNullException(nameof(decoder));
+        _dumpCheckService = dumpCheckService;
+        _confirmDumpCheck = confirmDumpCheck;
+    }
+
+    partial void OnSelectedDumpChanged(CrashDumpEntry? value)
+        => VerifySelectedDumpCommand.NotifyCanExecuteChanged();
+
+    partial void OnIsBusyChanged(bool value)
+        => VerifySelectedDumpCommand.NotifyCanExecuteChanged();
+
+    private bool CanVerifySelectedDump()
+        => !IsBusy
+           && SelectedDump != null
+           && _dumpCheckService != null
+           && _confirmDumpCheck != null;
+
+    [RelayCommand(CanExecute = nameof(CanVerifySelectedDump))]
+    private async Task VerifySelectedDumpAsync()
+    {
+        if (!CanVerifySelectedDump())
+            return;
+
+        var fileName = SelectedDump!.FileName;
+
+        // La confirmación ocurre desde una interacción directa del técnico, no
+        // en el constructor, Refresh ni selección automática de un archivo.
+        if (!_confirmDumpCheck!(fileName))
+        {
+            DumpCheckStatusText = "Comprobación cancelada por el técnico. No se ejecutó DumpChk.";
+            return;
+        }
+
+        IsBusy = true;
+        DumpCheckStatusText = "Comprobando archivo seleccionado con DumpChk...";
+        try
+        {
+            var result = await _dumpCheckService!.VerifyDumpAsync(
+                fileName, technicianConfirmed: true);
+
+            DumpCheckStatusText = result.Summary?.BugCheckCode is uint code
+                ? $"{result.Message} Código registrado: 0x{code:X8}. " +
+                  "No se determinó ningún driver culpable."
+                : result.Message;
+        }
+        catch (Exception)
+        {
+            DumpCheckStatusText = "No fue posible comprobar el archivo. No se conservó la salida.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
     }
 
     [RelayCommand]
@@ -68,6 +131,7 @@ public partial class CrashEvidenceViewModel : ObservableObject
             var dumps = await Task.Run(_dumpDiscovery.Discover);
             var events = await Task.Run(_eventDiscovery.Discover);
 
+            SelectedDump = null;
             Dumps.Clear();
             foreach (var dump in dumps.Dumps)
                 Dumps.Add(dump);
@@ -99,6 +163,7 @@ public partial class CrashEvidenceViewModel : ObservableObject
             DumpStatusText = "Consulta incompleta";
             EventStatusText = "Consulta incompleta";
             SummaryText = "No interpretar un resultado incompleto como ausencia de fallas.";
+            SelectedDump = null;
             Dumps.Clear();
             Events.Clear();
         }
