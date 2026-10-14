@@ -13,6 +13,7 @@ public partial class TempCleanupViewModel : ObservableObject
 {
     private readonly ITempCleanupService _cleanupService;
     private List<TempCleanupTarget> _targets = [];
+    private string? _approvedScope;
 
     // --- Estado de la UI ---
 
@@ -33,6 +34,10 @@ public partial class TempCleanupViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _hasScanned;
+
+    // The user must affirm the current selection before any destructive action.
+    [ObservableProperty]
+    private bool _hasCleanupConsent;
 
     [ObservableProperty]
     private bool _hasResult;
@@ -86,14 +91,33 @@ public partial class TempCleanupViewModel : ObservableObject
         _cleanupService = cleanupService;
     }
 
-    // A cleanup command is enabled only after scan, while no operation runs.
-    public bool CanStartCleanup => HasScanned && !IsRunning;
+    public bool CanReviewCleanupConsent =>
+        HasScanned && !IsRunning && SelectedTargetsCount > 0;
 
-    partial void OnHasScannedChanged(bool value) =>
-        OnPropertyChanged(nameof(CanStartCleanup));
+    // Never accept consent for a different scope after a selection/path change.
+    public bool CanStartCleanup => CanReviewCleanupConsent && HasCleanupConsent
+        && _approvedScope == CurrentSelectionScope();
 
-    partial void OnIsRunningChanged(bool value) =>
+    partial void OnHasScannedChanged(bool value) => RefreshConsentAvailability();
+    partial void OnIsRunningChanged(bool value) => RefreshConsentAvailability();
+    partial void OnSelectedTargetsCountChanged(int value) => RefreshConsentAvailability();
+
+    partial void OnHasCleanupConsentChanged(bool value)
+    {
+        _approvedScope = value ? CurrentSelectionScope() : null;
         OnPropertyChanged(nameof(CanStartCleanup));
+    }
+
+    private void RefreshConsentAvailability()
+    {
+        OnPropertyChanged(nameof(CanReviewCleanupConsent));
+        OnPropertyChanged(nameof(CanStartCleanup));
+    }
+
+    private string CurrentSelectionScope() => string.Join("\n", _targets
+        .Where(target => target.IsSelected)
+        .OrderBy(target => target.Id, StringComparer.Ordinal)
+        .Select(target => target.Id + "\0" + target.Path));
 
     /// <summary>
     /// Escanea las ubicaciones de temporales.
@@ -104,6 +128,7 @@ public partial class TempCleanupViewModel : ObservableObject
         if (IsRunning)
             return;
 
+        HasCleanupConsent = false;
         IsRunning = true;
         ClearMessages();
         IsScanning = true;
@@ -159,6 +184,15 @@ public partial class TempCleanupViewModel : ObservableObject
             return;
         }
 
+        // Fail closed when invoked directly, even if XAML incorrectly enables
+        // the button or the approved selection changed after confirmation.
+        if (!CanStartCleanup)
+        {
+            HasCleanupConsent = false;
+            ShowError("Confirmá la limpieza de las ubicaciones seleccionadas antes de borrar.");
+            return;
+        }
+
         IsRunning = true;
         ClearMessages();
         IsCleaning = true;
@@ -207,6 +241,7 @@ public partial class TempCleanupViewModel : ObservableObject
         }
         finally
         {
+            HasCleanupConsent = false; // A second deletion needs fresh approval.
             IsCleaning = false;
             IsRunning = false;
         }
@@ -265,6 +300,7 @@ public partial class TempCleanupViewModel : ObservableObject
 
     private void UpdateSelectedCount()
     {
+        HasCleanupConsent = false;
         SelectedTargetsCount = _targets.Count(t => t.IsSelected);
         var totalBytes = _targets.Where(t => t.IsSelected).Sum(t => t.EstimatedSizeBytes);
         TotalSelectedSize = totalBytes > 1024 * 1024 * 1024
