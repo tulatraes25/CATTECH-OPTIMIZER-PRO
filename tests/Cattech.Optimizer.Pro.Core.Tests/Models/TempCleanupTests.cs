@@ -75,6 +75,97 @@ public class TempCleanupTests
         }
     }
 
+
+    [Theory]
+    [InlineData("USER_TEMP")]
+    [InlineData("WINDOWS_TEMP")]
+    [InlineData("THUMBNAILS")]
+    [InlineData("UNRECOGNIZED")]
+    public async Task Cleanup_ForgedTargetPath_FailsClosed_WithoutTouchingFiles(string id)
+    {
+        var root = Path.Combine(Path.GetTempPath(),
+            "cattech-cleanup-allowlist-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var sentinel = Path.Combine(root, "thumbcache_synthetic.db");
+        const string contents = "KEEP-ME-SYNTHETIC";
+        await File.WriteAllTextAsync(sentinel, contents);
+        try
+        {
+            var service = new TempCleanupService(root);
+            var target = new TempCleanupTarget
+            {
+                Id = id,
+                DisplayName = "Forged target",
+                Path = root,
+                IsSelected = true,
+                IsScanned = true,
+                IsAccessible = true
+            };
+
+            var result = await service.CleanupAsync(new[] { target });
+
+            Assert.False(result.IsSuccess);
+            Assert.Equal(0, result.DeletedFiles);
+            Assert.Equal(0L, result.DeletedBytes);
+            Assert.Equal(contents, await File.ReadAllTextAsync(sentinel));
+            var error = Assert.Single(result.Errors);
+            Assert.Equal("UnsafeTarget", error.ErrorType);
+            Assert.Equal(id, error.FilePath); // No absolute paths in error metadata.
+            var details = Assert.Single(result.TargetResults);
+            Assert.False(details.IsSuccess);
+            Assert.Equal(0, details.DeletedFiles);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Cleanup_InvalidTarget_BlocksEntireBatchBeforeAnyDeletion()
+    {
+        var root = Path.Combine(Path.GetTempPath(),
+            "cattech-cleanup-batch-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var sentinel = Path.Combine(root, "keep-me.txt");
+        await File.WriteAllTextAsync(sentinel, "unchanged");
+        try
+        {
+            var service = new TempCleanupService(root);
+            var targets = new[]
+            {
+                new TempCleanupTarget
+                {
+                    Id = "USER_TEMP",
+                    Path = root,
+                    IsSelected = true,
+                    IsScanned = true,
+                    IsAccessible = true
+                },
+                new TempCleanupTarget
+                {
+                    Id = "RECYCLE_BIN",
+                    Path = root,
+                    IsSelected = true
+                }
+            };
+
+            var result = await service.CleanupAsync(targets);
+
+            Assert.False(result.IsSuccess);
+            Assert.Equal(2, result.Errors.Count);
+            Assert.Equal(2, result.TargetResults.Count);
+            Assert.All(result.TargetResults, item => Assert.False(item.IsSuccess));
+            Assert.Equal(0, result.DeletedFiles);
+            Assert.Equal(0L, result.DeletedBytes);
+            Assert.Equal("unchanged", await File.ReadAllTextAsync(sentinel));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Fact]
     public void TempCleanupTarget_DefaultValues_AreValid()
     {
