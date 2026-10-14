@@ -1,3 +1,5 @@
+using System.ComponentModel;
+
 namespace Cattech.Optimizer.Pro.Core.Models.Cleanup;
 
 /// <summary>
@@ -12,8 +14,14 @@ public enum CleanupRiskLevel
 /// <summary>
 /// Ubicación de archivos temporales que puede ser limpiada.
 /// </summary>
-public class TempCleanupTarget
+public class TempCleanupTarget : INotifyPropertyChanged
 {
+    private bool _isSelected;
+
+    /// <summary>
+    /// Updates the bound CheckBox after bulk selection or safety rejection.
+    /// </summary>
+    public event PropertyChangedEventHandler? PropertyChanged;
     /// <summary>
     /// ID único del target.
     /// </summary>
@@ -47,7 +55,17 @@ public class TempCleanupTarget
     /// <summary>
     /// Si está seleccionado para limpieza.
     /// </summary>
-    public bool IsSelected { get; set; }
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set
+        {
+            if (_isSelected == value)
+                return;
+            _isSelected = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected)));
+        }
+    }
 
     /// <summary>
     /// Tamaño estimado en bytes.
