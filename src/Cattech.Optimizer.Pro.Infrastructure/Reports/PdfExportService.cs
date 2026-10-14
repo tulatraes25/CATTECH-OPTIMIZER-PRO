@@ -22,7 +22,7 @@ public class PdfExportService : IPdfExportService
     }
 
     /// <inheritdoc/>
-    public async Task<PdfExporterInfo> CanExportAsync()
+    public Task<PdfExporterInfo> CanExportAsync()
     {
         var info = new PdfExporterInfo
         {
@@ -32,53 +32,66 @@ public class PdfExportService : IPdfExportService
 
         try
         {
-            var edgePath = await GetEdgeExecutablePathWithWhereAsync();
-
-            if (!string.IsNullOrEmpty(edgePath) && File.Exists(edgePath))
-            {
-                info.IsAvailable = true;
-                info.StatusMessage = "Microsoft Edge detectado. Exportación PDF disponible.";
-            }
-            else
-            {
-                info.IsAvailable = false;
-                info.StatusMessage = "Microsoft Edge no detectado. Se requiere Edge para exportar PDF.";
-            }
+            var edgePath = FindEdgeExecutablePath();
+            info.IsAvailable = edgePath is not null;
+            info.StatusMessage = info.IsAvailable
+                ? "Microsoft Edge detectado. Exportación PDF disponible."
+                : "Microsoft Edge no detectado. Se requiere Edge para exportar PDF.";
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             info.IsAvailable = false;
-            info.StatusMessage = $"Error al verificar: {ex.Message}";
+            info.StatusMessage = "No se pudo verificar la instalación de Microsoft Edge.";
         }
 
-        return info;
+        return Task.FromResult(info);
     }
 
     /// <inheritdoc/>
     public async Task<bool> ExportHtmlToPdfAsync(string htmlPath, string outputPdfPath)
     {
-        if (!File.Exists(htmlPath))
-            throw new FileNotFoundException($"No se encontró el archivo HTML: {htmlPath}");
+        ArgumentException.ThrowIfNullOrWhiteSpace(htmlPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(outputPdfPath);
 
-        // Crear directorio de salida
-        var outputDir = Path.GetDirectoryName(outputPdfPath);
-        if (!string.IsNullOrEmpty(outputDir) && !Directory.Exists(outputDir))
-        {
-            Directory.CreateDirectory(outputDir);
-        }
+        var fullHtmlPath = Path.GetFullPath(htmlPath);
+        if (!File.Exists(fullHtmlPath))
+            throw new FileNotFoundException("No se encontró el archivo HTML solicitado.", fullHtmlPath);
 
-        var edgePath = await GetEdgeExecutablePathWithWhereAsync();
+        var fullOutputPath = Path.GetFullPath(outputPdfPath);
+        var outputDir = Path.GetDirectoryName(fullOutputPath)
+            ?? throw new ArgumentException("Ruta de destino PDF inválida.", nameof(outputPdfPath));
+        Directory.CreateDirectory(outputDir);
 
-        if (string.IsNullOrEmpty(edgePath) || !File.Exists(edgePath))
-        {
+        // Only use Edge from a known installation directory. Never launch a
+        // same-named executable found in the current directory or PATH.
+        var edgePath = FindEdgeExecutablePath();
+        if (edgePath is null)
             throw new InvalidOperationException(
-                "Microsoft Edge no está instalado. " +
-                "Se requiere Microsoft Edge para exportar PDF. " +
-                "Instale Microsoft Edge o use la exportación HTML.");
-        }
+                "Microsoft Edge no está instalado en una ubicación conocida. " +
+                "Se requiere Edge para exportar PDF; utilice el informe HTML.");
 
-        // Usar Edge en modo headless con --print-to-pdf
-        return await ExportViaEdgeHeadlessAsync(htmlPath, outputPdfPath, edgePath);
+        var token = Guid.NewGuid().ToString("N");
+        var stagedPdfPath = Path.Combine(outputDir, $".cattech-pdf-{token}.pdf");
+        try
+        {
+            if (!await ExportViaEdgeHeadlessAsync(
+                fullHtmlPath, stagedPdfPath, edgePath).ConfigureAwait(false))
+                return false;
+
+            // Atomic same-directory publication, never overwrite an earlier PDF.
+            PublishPdfWithoutOverwrite(stagedPdfPath, fullOutputPath);
+            return true;
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(stagedPdfPath))
+                    File.Delete(stagedPdfPath);
+            }
+            catch (IOException) { /* Preserve the original failure. */ }
+            catch (UnauthorizedAccessException) { /* Preserve the original failure. */ }
+        }
     }
 
     /// <summary>
@@ -86,37 +99,7 @@ public class PdfExportService : IPdfExportService
     /// Busca en rutas comunes y en el PATH del sistema.
     /// </summary>
     public static bool IsEdgeAvailable()
-    {
-        // 1. Buscar en ubicaciones comunes
-        var commonPaths = new[]
-        {
-            @"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
-            @"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-            Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                @"Microsoft\Edge\Application\msedge.exe")
-        };
-
-        if (commonPaths.Any(File.Exists))
-            return true;
-
-        // 2. Buscar en PATH del sistema (método síncrono simple)
-        try
-        {
-            var pathVar = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
-            var pathEntries = pathVar.Split(Path.PathSeparator);
-
-            foreach (var entry in pathEntries)
-            {
-                var candidate = Path.Combine(entry.Trim(), "msedge.exe");
-                if (File.Exists(candidate))
-                    return true;
-            }
-        }
-        catch { }
-
-        return false;
-    }
+        => FindEdgeExecutablePath() is not null;
 
     /// <inheritdoc/>
     public string GetPdfOutputPath(string htmlPath)
@@ -144,51 +127,70 @@ public class PdfExportService : IPdfExportService
 
     // --- Métodos internos ---
 
-    private static async Task<bool> ExportViaEdgeHeadlessAsync(string htmlPath, string outputPdfPath, string edgePath)
+    /// <summary>
+    /// Build isolated Edge arguments without shell quoting or disabling sandbox.
+    /// The file URI is a single argument, even when the path contains spaces.
+    /// </summary>
+    internal static ProcessStartInfo BuildEdgeStartInfo(
+        string edgePath, string htmlPath, string stagedPdfPath)
     {
-        // Convertir ruta a formato file:// URI para Edge
-        var fileUri = new Uri(htmlPath).AbsoluteUri;
+        var start = new ProcessStartInfo
+        {
+            FileName = edgePath,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = false,
+            RedirectStandardError = false
+        };
+        start.ArgumentList.Add("--headless");
+        start.ArgumentList.Add("--disable-gpu");
+        start.ArgumentList.Add("--print-to-pdf=" + stagedPdfPath);
+        start.ArgumentList.Add("--no-pdf-header-footer");
+        start.ArgumentList.Add(new Uri(Path.GetFullPath(htmlPath)).AbsoluteUri);
+        return start;
+    }
 
-        // Usar Edge en modo headless con --print-to-pdf
-        // Nota: --no-pdf-header-footer evita agregar numeración de página predeterminada
-        var arguments = $"--headless --disable-gpu --no-sandbox " +
-                        $"--print-to-pdf=\"{outputPdfPath}\" " +
-                        $"--no-pdf-header-footer " +
-                        $"\"{fileUri}\"";
+    internal static void PublishPdfWithoutOverwrite(string stagedPdfPath, string outputPdfPath)
+        => File.Move(stagedPdfPath, outputPdfPath);
 
+    private static async Task<bool> ExportViaEdgeHeadlessAsync(
+        string htmlPath, string stagedPdfPath, string edgePath)
+    {
         using var process = new Process
         {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = edgePath,
-                Arguments = arguments,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            }
+            StartInfo = BuildEdgeStartInfo(edgePath, htmlPath, stagedPdfPath)
         };
 
-        process.Start();
+        if (!process.Start())
+            return false;
 
-        // Esperar con timeout de 30 segundos
         try
         {
-            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30));
+            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30))
+                .ConfigureAwait(false);
         }
         catch (TimeoutException)
         {
-            try { process.Kill(); } catch { }
+            try
+            {
+                if (!process.HasExited)
+                    process.Kill(entireProcessTree: true);
+                await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5))
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException
+                or System.ComponentModel.Win32Exception or TimeoutException)
+            {
+                // Keep the original timeout while best-effort reaping the child.
+            }
+
             throw new TimeoutException("La exportación a PDF tomó demasiado tiempo (30s).");
         }
 
-        // Verificar que el archivo PDF se creó y tiene cabecera válida
-        if (File.Exists(outputPdfPath))
-        {
-            return await ValidatePdfFileAsync(outputPdfPath);
-        }
+        if (process.ExitCode != 0 || !File.Exists(stagedPdfPath))
+            return false;
 
-        return false;
+        return await ValidatePdfFileAsync(stagedPdfPath).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -215,53 +217,29 @@ public class PdfExportService : IPdfExportService
         }
     }
 
-    private static async Task<string?> GetEdgeExecutablePathWithWhereAsync()
+    private static string? FindEdgeExecutablePath()
     {
-        // 1. Buscar en ubicaciones comunes de Microsoft Edge
-        var commonPaths = new[]
+        // Do not execute where.exe and do not trust executable paths supplied by
+        // the caller's PATH or current directory.
+        var roots = new[]
         {
-            @"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
-            @"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-            Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                @"Microsoft\Edge\Application\msedge.exe")
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)
         };
 
-        foreach (var path in commonPaths)
+        foreach (var root in roots)
         {
-            if (File.Exists(path))
-                return path;
+            if (string.IsNullOrWhiteSpace(root) || !Path.IsPathFullyQualified(root))
+                continue;
+
+            var candidate = Path.Combine(root, "Microsoft", "Edge",
+                "Application", "msedge.exe");
+            if (File.Exists(candidate))
+                return candidate;
         }
-
-        // 2. Intentar encontrar Edge en el PATH via where.exe
-        try
-        {
-            using var process = new Process
-            {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = "where.exe",
-                    Arguments = "msedge.exe",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                }
-            };
-
-            process.Start();
-            var output = await process.StandardOutput.ReadToEndAsync();
-            await process.WaitForExitAsync();
-
-            if (process.ExitCode == 0 && !string.IsNullOrWhiteSpace(output))
-            {
-                var firstLine = output.Split('\n')[0].Trim();
-                if (File.Exists(firstLine))
-                    return firstLine;
-            }
-        }
-        catch { }
 
         return null;
     }
+
 }
