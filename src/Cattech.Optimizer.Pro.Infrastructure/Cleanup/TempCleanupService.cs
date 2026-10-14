@@ -161,13 +161,13 @@ public class TempCleanupService : ITempCleanupService
                     await CleanFolderAsync(target, targetResult, result);
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 targetResult.IsSuccess = false;
                 result.Errors.Add(new CleanupError
                 {
-                    FilePath = target.Path,
-                    Message = ex.Message,
+                    FilePath = target.Id,
+                    Message = "La limpieza de esta ubicación no pudo completarse.",
                     ErrorType = "CleanError"
                 });
             }
@@ -423,12 +423,19 @@ public class TempCleanupService : ITempCleanupService
 
     // --- Métodos de limpieza ---
 
-    private async Task CleanFolderAsync(
+    // Internal only for isolated synthetic fixture regression tests.
+    internal async Task CleanFolderAsync(
         TempCleanupTarget target, TargetResult targetResult, TempCleanupResult result)
     {
         if (!Directory.Exists(target.Path))
         {
-            targetResult.IsSuccess = true;
+            result.Errors.Add(new CleanupError
+            {
+                FilePath = target.Id,
+                Message = "La ubicación de temporales dejó de estar disponible.",
+                ErrorType = "MissingTarget"
+            });
+            targetResult.IsSuccess = false;
             return;
         }
 
@@ -450,15 +457,32 @@ public class TempCleanupService : ITempCleanupService
                     MaxRecursionDepth = 3
                 });
             }
-            catch
+            catch (Exception)
             {
+                result.Errors.Add(new CleanupError
+                {
+                    FilePath = target.Id,
+                    Message = "No se pudo enumerar la ubicación de temporales.",
+                    ErrorType = "EnumerationError"
+                });
+                targetResult.IsSuccess = false;
                 return;
             }
 
             foreach (var file in files)
             {
                 // Timeout de 30 segundos por ubicación
-                if (sw.ElapsedMilliseconds > 30000) break;
+                if (sw.ElapsedMilliseconds > 30000)
+                {
+                    result.Errors.Add(new CleanupError
+                    {
+                        FilePath = target.Id,
+                        Message = "Se alcanzó el límite de tiempo; la limpieza quedó incompleta.",
+                        ErrorType = "IncompleteCleanup"
+                    });
+                    targetResult.IsSuccess = false;
+                    break;
+                }
 
                 try
                 {
@@ -470,12 +494,14 @@ public class TempCleanupService : ITempCleanupService
                         continue;
                     }
 
-                    // Intentar borrar
+                    // Snapshot the size BEFORE deleting. If metadata fails,
+                    // no file is removed or counted as deleted.
+                    var size = file.Length;
                     file.Delete();
                     targetResult.DeletedFiles++;
-                    targetResult.DeletedBytes += file.Length;
+                    targetResult.DeletedBytes += size;
                     result.DeletedFiles++;
-                    result.DeletedBytes += file.Length;
+                    result.DeletedBytes += size;
                 }
                 catch (IOException)
                 {
@@ -489,19 +515,19 @@ public class TempCleanupService : ITempCleanupService
                     result.FailedFiles++;
                     result.Errors.Add(new CleanupError
                     {
-                        FilePath = file.FullName,
-                        Message = "Acceso denegado",
+                        FilePath = target.Id,
+                        Message = "Acceso denegado a un archivo temporal.",
                         ErrorType = "AccessDenied"
                     });
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
                     targetResult.FailedFiles++;
                     result.FailedFiles++;
                     result.Errors.Add(new CleanupError
                     {
-                        FilePath = file.FullName,
-                        Message = ex.Message,
+                        FilePath = target.Id,
+                        Message = "No se pudo limpiar un archivo temporal.",
                         ErrorType = "Error"
                     });
                 }
@@ -509,10 +535,20 @@ public class TempCleanupService : ITempCleanupService
         });
     }
 
-    private static void CleanThumbnailsFolder(
+    internal static void CleanThumbnailsFolder(
         TempCleanupTarget target, TargetResult targetResult, TempCleanupResult result)
     {
-        if (!Directory.Exists(target.Path)) return;
+        if (!Directory.Exists(target.Path))
+        {
+            result.Errors.Add(new CleanupError
+            {
+                FilePath = target.Id,
+                Message = "La carpeta de miniaturas dejó de estar disponible.",
+                ErrorType = "MissingTarget"
+            });
+            targetResult.IsSuccess = false;
+            return;
+        }
 
         try
         {
@@ -543,27 +579,28 @@ public class TempCleanupService : ITempCleanupService
                     targetResult.SkippedFiles++;
                     result.SkippedFiles++;
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
                     targetResult.FailedFiles++;
                     result.FailedFiles++;
                     result.Errors.Add(new CleanupError
                     {
-                        FilePath = file,
-                        Message = ex.Message,
+                        FilePath = target.Id,
+                        Message = "No se pudo limpiar un archivo de miniaturas.",
                         ErrorType = "Error"
                     });
                 }
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             result.Errors.Add(new CleanupError
             {
-                FilePath = target.Path,
-                Message = ex.Message,
+                FilePath = target.Id,
+                Message = "No se pudo enumerar o limpiar la caché de miniaturas.",
                 ErrorType = "CleanError"
             });
+            targetResult.IsSuccess = false;
         }
     }
 
