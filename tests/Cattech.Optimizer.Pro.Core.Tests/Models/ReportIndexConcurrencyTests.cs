@@ -6,6 +6,45 @@ namespace Cattech.Optimizer.Pro.Core.Tests.Models;
 
 public sealed class ReportIndexConcurrencyTests
 {
+
+    [Theory]
+    [InlineData("{not-json")]
+    [InlineData("null")]
+    [InlineData("{}")]
+    [InlineData("[null]")]
+    [InlineData("")]
+    public async Task InvalidIndex_FailsClosed_WithoutReplacingContents(string invalidJson)
+    {
+        var root = Path.Combine(Path.GetTempPath(),
+            "cattech-index-corrupt-" + Guid.NewGuid().ToString("N"));
+        var indexDir = Path.Combine(root, "reports", "html");
+        Directory.CreateDirectory(indexDir);
+        var indexPath = Path.Combine(indexDir, "reports-info.json");
+        await File.WriteAllTextAsync(indexPath, invalidJson);
+        try
+        {
+            var service = new HtmlReportService(root);
+            var error = await Record.ExceptionAsync(() =>
+                service.SaveReportInfoAsync(new GeneratedReportInfo
+                {
+                    ClientName = "Synthetic QA",
+                    HtmlPath = "test-new.html"
+                }));
+            Assert.True(error is JsonException or InvalidDataException,
+                $"Unexpected status: {error?.GetType().Name ?? "none"}");
+
+            Assert.Equal(invalidJson, await File.ReadAllTextAsync(indexPath));
+            Assert.Empty(Directory.GetFiles(indexDir, ".cattech-index-*.tmp"));
+
+            var listError = await Record.ExceptionAsync(
+                () => service.ListGeneratedReportsAsync());
+            Assert.True(listError is JsonException or InvalidDataException);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
     [Fact]
     public async Task ConcurrentWritersAcrossInstances_RetainEveryMetadataEntry()
     {
