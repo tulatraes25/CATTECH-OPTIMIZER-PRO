@@ -96,7 +96,7 @@ public class PdfExportService : IPdfExportService
 
     /// <summary>
     /// Verifica si Microsoft Edge está disponible de forma síncrona.
-    /// Busca en rutas comunes y en el PATH del sistema.
+    /// Busca únicamente en directorios de instalación conocidos.
     /// </summary>
     public static bool IsEdgeAvailable()
         => FindEdgeExecutablePath() is not null;
@@ -194,22 +194,32 @@ public class PdfExportService : IPdfExportService
     }
 
     /// <summary>
-    /// Valida que un archivo PDF tenga cabecera válida (%PDF).
+    /// Basic PDF envelope/truncation guard (header + terminal EOF marker).
+    /// This does NOT replace a full structural PDF parser or visual Edge QA.
     /// </summary>
     public static async Task<bool> ValidatePdfFileAsync(string pdfPath)
     {
         try
         {
-            using var stream = new FileStream(pdfPath, FileMode.Open, FileAccess.Read);
-            var buffer = new byte[5];
+            await using var stream = new FileStream(pdfPath, FileMode.Open,
+                FileAccess.Read, FileShare.Read, 8192, useAsync: true);
+            if (stream.Length < 12)
+                return false;
 
-            if (await stream.ReadAsync(buffer.AsMemory(0, 5)) >= 5)
-            {
-                var header = Encoding.ASCII.GetString(buffer);
-                return header.StartsWith("%PDF");
-            }
+            var header = new byte[5];
+            await stream.ReadExactlyAsync(header.AsMemory()).ConfigureAwait(false);
+            if (Encoding.ASCII.GetString(header) != "%PDF-")
+                return false;
 
-            return false;
+            // A truncated export can retain its PDF header; require a final
+            // %%EOF marker near the end, with only whitespace afterwards.
+            var tailSize = (int)Math.Min(4096L, stream.Length);
+            stream.Seek(-tailSize, SeekOrigin.End);
+            var tail = new byte[tailSize];
+            await stream.ReadExactlyAsync(tail.AsMemory()).ConfigureAwait(false);
+            var trailer = Encoding.ASCII.GetString(tail);
+            var end = trailer.LastIndexOf("%%EOF", StringComparison.Ordinal);
+            return end >= 0 && trailer.AsSpan(end + 5).Trim().IsEmpty;
         }
         catch
         {
