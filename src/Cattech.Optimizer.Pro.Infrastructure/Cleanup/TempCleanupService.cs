@@ -189,21 +189,41 @@ public class TempCleanupService : ITempCleanupService
     /// <inheritdoc/>
     public async Task<string> SaveResultAsync(TempCleanupResult result)
     {
+        ArgumentNullException.ThrowIfNull(result);
         EnsureDirectoryExists(_resultsDirectory);
 
-        var fileName = $"cleanup-result-{result.StartedAt:yyyyMMdd-HHmmss}.json";
+        // A second-resolution timestamp, even combined with a model-supplied
+        // ID, is not a unique or safe audit-file identity across instances.
+        var token = Guid.NewGuid().ToString("N");
+        var fileName = $"cleanup-result-{result.StartedAt:yyyyMMdd-HHmmss}-{token}.json";
         var filePath = Path.Combine(_resultsDirectory, fileName);
-
-        if (File.Exists(filePath))
-        {
-            fileName = $"cleanup-result-{result.StartedAt:yyyyMMdd-HHmmss}-{result.Id}.json";
-            filePath = Path.Combine(_resultsDirectory, fileName);
-        }
-
+        var staging = Path.Combine(_resultsDirectory, $".cattech-cleanup-{token}.tmp");
         var json = JsonSerializer.Serialize(result, SerializerOptions);
-        await File.WriteAllTextAsync(filePath, json);
 
-        return fileName;
+        try
+        {
+            // Write first to an OS-exclusive temporary file. Never publish
+            // half-written JSON or replace an earlier technician audit.
+            await using (var stream = new FileStream(staging, FileMode.CreateNew,
+                FileAccess.Write, FileShare.None, 8192, useAsync: true))
+            await using (var writer = new StreamWriter(stream, System.Text.Encoding.UTF8))
+            {
+                await writer.WriteAsync(json).ConfigureAwait(false);
+            }
+
+            File.Move(staging, filePath); // No-overwrite on the same filesystem.
+            return fileName;
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(staging))
+                    File.Delete(staging);
+            }
+            catch (IOException) { /* Preserve the original error. */ }
+            catch (UnauthorizedAccessException) { /* Preserve the original error. */ }
+        }
     }
 
     /// <inheritdoc/>
