@@ -671,6 +671,24 @@ public class HardwareViewModelTests
     }
 
     [Fact]
+    public async Task InventoryErrors_DoNotLeakProviderPaths()
+    {
+        var hardware = InventoryService();
+        hardware.ThrowOnCpu = new IOException(
+            @"C:\Users\SyntheticPrivateUser\secret-device.log");
+        var vm = CreateViewModel(new FakeHardwareSensorService(), hardware);
+
+        await vm.RefreshInventoryCommand.ExecuteAsync(null);
+
+        Assert.Equal("Inventario parcial", vm.InventoryStatusText);
+        var error = Assert.Single(vm.InventoryErrors);
+        Assert.Contains("CPU:", error);
+        Assert.DoesNotContain("SyntheticPrivateUser", error);
+        Assert.DoesNotContain("secret-device", error);
+        Assert.Equal(2, vm.Gpus.Count);
+    }
+
+    [Fact]
     public async Task GpuError_DoesNotBlockRam()
     {
         var hardware = InventoryService();
