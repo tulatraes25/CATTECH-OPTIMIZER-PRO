@@ -17,10 +17,12 @@ public class HtmlReportService : IReportGenerationService
     private readonly string _baseDirectory;
     private readonly string _reportsDirectory;
     private readonly string _reportsInfoPath;
+    private readonly string _reportsIndexLeasePath;
 
-    // Protects the shared report index across all service instances in this process.
-    // Cross-process coordination is not provided by this semaphore.
-    private static readonly SemaphoreSlim ReportsIndexGate = new(1, 1);
+    // The exclusive OS file handle serializes every process using this directory.
+    // Unlike deleting a lock file, retaining a small permanent marker avoids
+    // unlink races. A terminated process releases the handle automatically.
+    private static readonly TimeSpan ReportsIndexLeaseTimeout = TimeSpan.FromSeconds(15);
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -33,6 +35,7 @@ public class HtmlReportService : IReportGenerationService
         _baseDirectory = baseDirectory ?? AppDomain.CurrentDomain.BaseDirectory;
         _reportsDirectory = Path.Combine(_baseDirectory, "reports", "html");
         _reportsInfoPath = Path.Combine(_reportsDirectory, "reports-info.json");
+        _reportsIndexLeasePath = Path.Combine(_reportsDirectory, ".cattech-index.lock");
     }
 
     /// <inheritdoc/>
@@ -85,24 +88,31 @@ public class HtmlReportService : IReportGenerationService
     public async Task SaveReportInfoAsync(GeneratedReportInfo info)
     {
         ArgumentNullException.ThrowIfNull(info);
-        await ReportsIndexGate.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            // One logical read-modify-atomic-replace operation for all instances.
-            var reports = await LoadReportsInfoInternalAsync().ConfigureAwait(false);
-            reports.Add(info);
-            await SaveReportsInfoInternalAsync(reports).ConfigureAwait(false);
-        }
-        finally
-        {
-            ReportsIndexGate.Release();
-        }
+        EnsureDirectoryExists(_reportsDirectory);
+
+        // Keep the lease open for the ENTIRE read-modify-publish transaction.
+        // A lock file on the same volume protects against independent CATTECH
+        // processes, as well as multiple service instances within one process.
+        await using var lease = await AcquireIndexLeaseAsync(
+            _reportsIndexLeasePath, ReportsIndexLeaseTimeout).ConfigureAwait(false);
+
+        var reports = await LoadReportsInfoInternalAsync().ConfigureAwait(false);
+        reports.Add(info);
+        await SaveReportsInfoInternalAsync(reports).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task<List<GeneratedReportInfo>> ListGeneratedReportsAsync(int maxResults = 20)
     {
-        var reports = await LoadReportsInfoInternalAsync();
+        if (!Directory.Exists(_reportsDirectory))
+            return new List<GeneratedReportInfo>();
+
+        // Readers use the same lease to avoid transient sharing violations
+        // while another process atomically replaces the published index.
+        await using var lease = await AcquireIndexLeaseAsync(
+            _reportsIndexLeasePath, ReportsIndexLeaseTimeout).ConfigureAwait(false);
+
+        var reports = await LoadReportsInfoInternalAsync().ConfigureAwait(false);
         return reports.OrderByDescending(r => r.CreatedAt).Take(maxResults).ToList();
     }
 
@@ -982,6 +992,38 @@ public class HtmlReportService : IReportGenerationService
             }
             catch (IOException) { /* Preserve original exception. */ }
             catch (UnauthorizedAccessException) { /* Preserve original exception. */ }
+        }
+    }
+
+
+    /// <summary>
+    /// Acquire a filesystem-level exclusive lease, safe across Windows processes.
+    /// Re-opening an abandoned marker succeeds after an OS-terminated process.
+    /// Only Windows sharing/lock violations are retried; other I/O failures
+    /// remain visible rather than being misclassified as contention.
+    /// </summary>
+    internal static async Task<FileStream> AcquireIndexLeaseAsync(
+        string leasePath, TimeSpan timeout)
+    {
+        if (timeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(timeout));
+
+        var watch = Stopwatch.StartNew();
+        while (true)
+        {
+            try
+            {
+                return new FileStream(leasePath, FileMode.OpenOrCreate,
+                    FileAccess.ReadWrite, FileShare.None, 1, FileOptions.None);
+            }
+            catch (IOException ex) when ((ex.HResult & 0xFFFF) is 32 or 33)
+            {
+                if (watch.Elapsed >= timeout)
+                    throw new TimeoutException(
+                        "El índice de informes está en uso por otro proceso. No se modificó.", ex);
+
+                await Task.Delay(TimeSpan.FromMilliseconds(35)).ConfigureAwait(false);
+            }
         }
     }
 
