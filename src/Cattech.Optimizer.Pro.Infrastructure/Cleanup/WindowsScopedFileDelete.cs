@@ -5,10 +5,11 @@ using Microsoft.Win32.SafeHandles;
 namespace Cattech.Optimizer.Pro.Infrastructure.Cleanup;
 
 /// <summary>
-/// Windows-only, identity-preserving deletion experiment for isolated fixtures.
+/// Windows-only, handle-verified deletion used by the development cleanup.
 /// A candidate is opened with DELETE permission, verified using THAT handle,
-/// then marked for disposition on the SAME handle. It is not wired to cleanup
-/// operations until platform tests and an independent security review pass.
+/// then marked for disposition on the SAME handle.
+/// CI tests cover isolated fixtures; independent review and release/hardware
+/// qualification remain mandatory before use on customer computers.
 /// </summary>
 internal static class WindowsScopedFileDelete
 {

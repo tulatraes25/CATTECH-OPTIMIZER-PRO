@@ -108,11 +108,63 @@ public class TempCleanupTarget : INotifyPropertyChanged
 /// </summary>
 public static class CleanupTargets
 {
+    /// <summary>
+    /// TEMP/TMP can redirect Path.GetTempPath. Automatic cleanup requires
+    /// the independent OS-known per-user LocalApplicationData\Temp location.
+    /// Custom temporary roots need separate security design and approval.
+    /// </summary>
+    public static bool IsTrustedUserTempPath(string? candidate)
+    {
+        var known = Environment.GetFolderPath(
+            Environment.SpecialFolder.LocalApplicationData);
+        return OperatingSystem.IsWindows()
+            && !string.IsNullOrWhiteSpace(known)
+            && IsExactTrustedPath(candidate, Path.Combine(known, "Temp"));
+    }
+
+    /// <summary>
+    /// Determine the actual Windows installation folder, not hardcoded C:\.
+    /// </summary>
+    public static bool IsTrustedWindowsTempPath(string? candidate)
+    {
+        var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        return OperatingSystem.IsWindows()
+            && !string.IsNullOrWhiteSpace(windows)
+            && IsExactTrustedPath(candidate, Path.Combine(windows, "Temp"));
+    }
+
+    private static bool IsExactTrustedPath(string? candidate, string expected)
+    {
+        if (string.IsNullOrWhiteSpace(candidate)
+            || candidate.StartsWith(@"\\", StringComparison.Ordinal)
+            || expected.StartsWith(@"\\", StringComparison.Ordinal))
+            return false;
+
+        try
+        {
+            if (!Path.IsPathFullyQualified(candidate)
+                || !Path.IsPathFullyQualified(expected))
+                return false;
+
+            return string.Equals(
+                Path.TrimEndingDirectorySeparator(Path.GetFullPath(candidate)),
+                Path.TrimEndingDirectorySeparator(Path.GetFullPath(expected)),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is ArgumentException
+            or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+    }
+
     public static List<TempCleanupTarget> GetDefaultTargets()
     {
-        var tempPath = Path.GetTempPath();
-        var userTemp = Path.GetFullPath(tempPath);
-        var windowsTemp = @"C:\Windows\Temp";
+        var userTemp = Path.GetFullPath(Path.GetTempPath());
+        var windowsRoot = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        var windowsTemp = string.IsNullOrWhiteSpace(windowsRoot)
+            ? string.Empty : Path.Combine(windowsRoot, "Temp");
+        var userTempIsTrusted = IsTrustedUserTempPath(userTemp);
 
         return
         [
@@ -124,8 +176,10 @@ public static class CleanupTargets
                 Description = "Archivos temporales creados por aplicaciones del usuario. Generalmente seguro de limpiar.",
                 IsSystemLocation = false,
                 IsOptional = false,
-                IsSelected = true,
-                RiskLevel = CleanupRiskLevel.Low
+                IsSelected = userTempIsTrusted,
+                RiskLevel = CleanupRiskLevel.Low,
+                ScanNotes = userTempIsTrusted ? string.Empty
+                    : "No disponible: la carpeta TEMP no coincide con el perfil local."
             },
             new TempCleanupTarget
             {

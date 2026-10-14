@@ -62,6 +62,19 @@ public class TempCleanupService : ITempCleanupService
                 target.EstimatedSizeBytes = 0;
                 target.EstimatedFileCount = 0;
             }
+            else if ((target.Id == "USER_TEMP"
+                    && !CleanupTargets.IsTrustedUserTempPath(target.Path))
+                || (target.Id == "WINDOWS_TEMP"
+                    && !CleanupTargets.IsTrustedWindowsTempPath(target.Path)))
+            {
+                // A redirected environment-dependent target must not even be scanned.
+                target.IsAccessible = false;
+                target.IsSelected = false;
+                target.IsScanned = true;
+                target.ScanNotes = "No disponible: la ruta TEMP no es una carpeta autorizada.";
+                target.EstimatedSizeBytes = 0;
+                target.EstimatedFileCount = 0;
+            }
             else if (target.Id == "THUMBNAILS")
             {
                 ScanThumbnailsFolder(target);
@@ -280,6 +293,15 @@ public class TempCleanupService : ITempCleanupService
 
         if (target.Id is not ("USER_TEMP" or "WINDOWS_TEMP" or "THUMBNAILS"))
             return "Ubicación de limpieza no autorizada.";
+
+        // Defend against a forged scan and an environment redirect: these
+        // roots must match independent Windows known-folder locations.
+        if (target.Id == "USER_TEMP"
+            && !CleanupTargets.IsTrustedUserTempPath(target.Path))
+            return "La carpeta TEMP no coincide con el perfil local autorizado.";
+        if (target.Id == "WINDOWS_TEMP"
+            && !CleanupTargets.IsTrustedWindowsTempPath(target.Path))
+            return "La carpeta TEMP del sistema no coincide con Windows.";
 
         if (!target.IsScanned || !target.IsAccessible)
             return "Es necesario escanear y verificar la ubicación antes de limpiar.";

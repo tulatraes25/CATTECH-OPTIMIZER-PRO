@@ -426,14 +426,47 @@ public class TempCleanupTests
     }
 
     [Fact]
-    public void CleanupTargets_UserTemp_IsSelectedByDefault()
+    public void CleanupTargets_UserTemp_AutoSelectsOnlyTrustedKnownFolder()
     {
-        var targets = CleanupTargets.GetDefaultTargets();
-        var userTemp = targets.First(t => t.Id == "USER_TEMP");
+        var userTemp = CleanupTargets.GetDefaultTargets().Single(t => t.Id == "USER_TEMP");
 
-        Assert.True(userTemp.IsSelected);
+        Assert.Equal(CleanupTargets.IsTrustedUserTempPath(userTemp.Path),
+            userTemp.IsSelected);
         Assert.False(userTemp.IsSystemLocation);
         Assert.Equal(CleanupRiskLevel.Low, userTemp.RiskLevel);
+        if (!userTemp.IsSelected)
+            Assert.Contains("No disponible", userTemp.ScanNotes);
+    }
+
+    [Fact]
+    public void CleanupTargets_RejectsRedirectedUserTempAndSubdirectories()
+    {
+        var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (!OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(local))
+            return;
+
+        var knownTemp = Path.Combine(local, "Temp");
+        Assert.True(CleanupTargets.IsTrustedUserTempPath(knownTemp));
+        Assert.False(CleanupTargets.IsTrustedUserTempPath(
+            Path.Combine(local, "Documents")));
+        Assert.False(CleanupTargets.IsTrustedUserTempPath(
+            Path.Combine(knownTemp, "redirected")));
+        Assert.False(CleanupTargets.IsTrustedUserTempPath(
+            Path.GetPathRoot(knownTemp)));
+    }
+
+    [Fact]
+    public void CleanupTargets_SystemTemp_FollowsActualWindowsInstallation()
+    {
+        var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        if (!OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(windows))
+            return;
+
+        var target = CleanupTargets.GetDefaultTargets().Single(t => t.Id == "WINDOWS_TEMP");
+        Assert.Equal(Path.Combine(windows, "Temp"), target.Path);
+        Assert.True(CleanupTargets.IsTrustedWindowsTempPath(target.Path));
+        Assert.False(CleanupTargets.IsTrustedWindowsTempPath(
+            Path.Combine(windows, "System32")));
     }
 
     [Fact]
