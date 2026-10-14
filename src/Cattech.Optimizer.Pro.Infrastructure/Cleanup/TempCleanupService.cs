@@ -53,9 +53,12 @@ public class TempCleanupService : ITempCleanupService
             // Verificar accesibilidad
             if (target.Id == "RECYCLE_BIN")
             {
-                target.IsAccessible = true;
+                // Disable until a scoped Shell operation and its explicit
+                // confirmation have passed dedicated safety review.
+                target.IsAccessible = false;
+                target.IsSelected = false;
                 target.IsScanned = true;
-                target.ScanNotes = "Opcional: solo limpiar si está seguro";
+                target.ScanNotes = "No disponible: la limpieza segura de Papelera no está implementada.";
                 target.EstimatedSizeBytes = 0;
                 target.EstimatedFileCount = 0;
             }
@@ -96,11 +99,20 @@ public class TempCleanupService : ITempCleanupService
                 Path = target.Path
             };
 
+            var errorsBeforeTarget = result.Errors.Count;
             try
             {
                 if (target.Id == "RECYCLE_BIN")
                 {
-                    await CleanRecycleBinAsync(targetResult, result);
+                    // Defensive server-side check: reject selected targets even
+                    // if a caller bypasses the disabled checkbox in the UI.
+                    // No commands, Shell API, or filesystem mutations.
+                    result.Errors.Add(new CleanupError
+                    {
+                        FilePath = "RecycleBin",
+                        Message = "La limpieza de la Papelera está deshabilitada por seguridad.",
+                        ErrorType = "UnsupportedOperation"
+                    });
                 }
                 else if (target.Id == "THUMBNAILS")
                 {
@@ -122,7 +134,8 @@ public class TempCleanupService : ITempCleanupService
                 });
             }
 
-            targetResult.IsSuccess = targetResult.FailedFiles == 0;
+            targetResult.IsSuccess = targetResult.FailedFiles == 0
+                && result.Errors.Count == errorsBeforeTarget;
             result.TargetResults.Add(targetResult);
 
             processedCount++;
@@ -413,56 +426,6 @@ public class TempCleanupService : ITempCleanupService
             result.Errors.Add(new CleanupError
             {
                 FilePath = target.Path,
-                Message = ex.Message,
-                ErrorType = "CleanError"
-            });
-        }
-    }
-
-    private static async Task CleanRecycleBinAsync(TargetResult targetResult, TempCleanupResult result)
-    {
-        try
-        {
-            // Usar Shell32 para vaciar papelera de reciclaje
-            await Task.Run(() =>
-            {
-                var shellType = Type.GetTypeFromProgID("Shell.Application");
-                if (shellType != null)
-                {
-                    var shell = Activator.CreateInstance(shellType);
-                    if (shell != null)
-                    {
-                        dynamic shellApp = shell;
-                        shellApp.NameSpace(0xA); // 0x0A = Recycle Bin
-                        // No hay forma directa de vaciar con Shell32, usar comando
-                        System.Runtime.InteropServices.Marshal.ReleaseComObject(shell);
-                    }
-                }
-            });
-
-            // Alternativa: usar comando shell
-            var process = Process.Start(new ProcessStartInfo
-            {
-                FileName = "cmd.exe",
-                Arguments = "/c echo Y | rd /s C:\\$Recycle.Bin",
-                WindowStyle = ProcessWindowStyle.Hidden,
-                CreateNoWindow = true,
-                UseShellExecute = false
-            });
-
-            if (process != null)
-            {
-                await process.WaitForExitAsync();
-                targetResult.IsSuccess = true;
-                targetResult.DeletedFiles = 1; // Estimado
-            }
-        }
-        catch (Exception ex)
-        {
-            targetResult.FailedFiles++;
-            result.Errors.Add(new CleanupError
-            {
-                FilePath = "RecycleBin",
                 Message = ex.Message,
                 ErrorType = "CleanError"
             });
