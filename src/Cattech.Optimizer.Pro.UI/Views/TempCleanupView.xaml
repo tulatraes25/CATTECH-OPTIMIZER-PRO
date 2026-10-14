@@ -32,7 +32,7 @@
         <!-- Row 0: Título -->
         <StackPanel Grid.Row="0" Margin="0,0,0,10">
             <TextBlock Text="Limpieza Segura de Temporales" FontSize="26" FontWeight="Bold" Foreground="#1B1B1B" />
-            <TextBlock Text="Escaneá y limpiá archivos temporales seguros. No se tocan datos personales ni carpetas sensibles." FontSize="13" Foreground="#666" Margin="0,5,0,0" />
+            <TextBlock Text="Revisá cuidadosamente las ubicaciones seleccionadas: los temporales pueden contener datos de aplicaciones." FontSize="13" Foreground="#666" Margin="0,5,0,0" />
         </StackPanel>
 
         <!-- Row 1: Mensajes -->
@@ -90,11 +90,17 @@
             </StackPanel>
         </Grid>
 
-        <!-- Row 3: Barra de progreso -->
-        <ProgressBar Grid.Row="3" Value="{Binding ProgressPercent}" Maximum="100"
-                     Height="6" Margin="0,0,0,10"
-                     Background="#E0E0E0" Foreground="#0078D4"
-                     Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}" />
+        <!-- Row 3: Confirmación explícita y progreso -->
+        <StackPanel Grid.Row="3" Margin="0,0,0,10">
+            <CheckBox Content="Confirmo que deseo eliminar los archivos temporales seleccionados. Esta acción puede ser irreversible y no crea una copia de seguridad."
+                      IsChecked="{Binding HasCleanupConsent, Mode=TwoWay}"
+                      IsEnabled="{Binding CanReviewCleanupConsent}"
+                      FontSize="12" FontWeight="SemiBold" Foreground="#A13B24"
+                      Margin="0,0,0,8" />
+            <ProgressBar Value="{Binding ProgressPercent}" Maximum="100"
+                         Height="6" Background="#E0E0E0" Foreground="#0078D4"
+                         Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}" />
+        </StackPanel>
 
         <!-- Row 4: Contenido principal -->
         <Grid Grid.Row="4">
