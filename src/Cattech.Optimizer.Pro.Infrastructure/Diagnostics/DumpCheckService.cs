@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Security;
 using Cattech.Optimizer.Pro.Core.Interfaces;
 using Cattech.Optimizer.Pro.Core.Models.Diagnostics;
@@ -16,6 +17,7 @@ public sealed class DumpCheckService : IDumpCheckService
     private readonly Func<string, bool> _exists;
     private readonly Func<string, FileAttributes> _attributes;
     private readonly bool _isWindows;
+    private readonly IDumpCheckFileGuard _fileGuard;
 
     public DumpCheckService()
         : this(
@@ -30,7 +32,8 @@ public sealed class DumpCheckService : IDumpCheckService
         string dumpDirectory,
         Func<string, bool> exists,
         Func<string, FileAttributes> attributes,
-        bool isWindows)
+        bool isWindows,
+        IDumpCheckFileGuard? fileGuard = null)
     {
         _locator = locator ?? throw new ArgumentNullException(nameof(locator));
         _runner = runner ?? throw new ArgumentNullException(nameof(runner));
@@ -38,6 +41,7 @@ public sealed class DumpCheckService : IDumpCheckService
         _exists = exists ?? throw new ArgumentNullException(nameof(exists));
         _attributes = attributes ?? throw new ArgumentNullException(nameof(attributes));
         _isWindows = isWindows;
+        _fileGuard = fileGuard ?? new WindowsDumpCheckFileGuard();
     }
 
     public async Task<DumpCheckExecutionResult> VerifyDumpAsync(
@@ -61,7 +65,8 @@ public sealed class DumpCheckService : IDumpCheckService
 
         try
         {
-            if ((_attributes(dumpPath) & FileAttributes.ReparsePoint) != 0)
+            if ((_attributes(_dumpDirectory) & FileAttributes.ReparsePoint) != 0
+                || (_attributes(dumpPath) & FileAttributes.ReparsePoint) != 0)
                 return Result(DumpCheckExecutionStatus.InvalidFileName,
                     "No se permiten enlaces o reparse points.");
         }
@@ -75,19 +80,44 @@ public sealed class DumpCheckService : IDumpCheckService
             return Result(DumpCheckExecutionStatus.ToolUnavailable,
                 "DumpChk no está instalado en una ubicación conocida del Windows SDK.");
 
-        DumpCheckProcessResult output;
+        IDisposable? lease;
         try
         {
-            output = await _runner.RunAsync(
-                toolPath, dumpPath, TimeSpan.FromSeconds(60), cancellationToken).ConfigureAwait(false);
+            lease = _fileGuard.TryAcquire(_dumpDirectory, dumpPath);
         }
-        catch (OperationCanceledException)
+        catch (Win32Exception ex) when (ex.NativeErrorCode is 2 or 3)
         {
-            return Result(DumpCheckExecutionStatus.Cancelled, "La consulta fue cancelada.");
+            return Result(DumpCheckExecutionStatus.DumpMissing,
+                "El minidump dejo de estar disponible antes de abrirlo.");
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+            or SecurityException or Win32Exception)
         {
-            return Result(DumpCheckExecutionStatus.Failed, "No pudo iniciarse o completarse DumpChk.");
+            return Result(DumpCheckExecutionStatus.AccessDenied,
+                "No se pudo bloquear y comprobar la identidad del minidump.");
+        }
+
+        if (lease is null)
+            return Result(DumpCheckExecutionStatus.InvalidFileName,
+                "La ruta del minidump no coincide con un archivo regular autorizado.");
+
+        DumpCheckProcessResult output;
+        // Keep both Windows handles alive for the entire external invocation.
+        using (lease)
+        {
+            try
+            {
+                output = await _runner.RunAsync(
+                    toolPath, dumpPath, TimeSpan.FromSeconds(60), cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return Result(DumpCheckExecutionStatus.Cancelled, "La consulta fue cancelada.");
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+            {
+                return Result(DumpCheckExecutionStatus.Failed, "No pudo iniciarse o completarse DumpChk.");
+            }
         }
 
         if (output.Cancelled)
