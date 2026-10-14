@@ -14,6 +14,9 @@ public partial class ClientEquipmentViewModel : ObservableObject
     private readonly IServiceReportService _reportService;
     private readonly ISettingsService _settingsService;
     private readonly IHardwareService _hardwareService;
+    private bool _detectedDiskFreeKnown;
+    private double _detectedSystemVolumeCapacityGb;
+    private double _detectedSystemVolumeFreeGb;
 
     // --- Campos del formulario: Cliente ---
 
@@ -146,6 +149,13 @@ public partial class ClientEquipmentViewModel : ObservableObject
         ClearMessages();
         IsDetecting = true;
         DetectionStatus = "Detectando...";
+        _detectedDiskFreeKnown = false;
+        _detectedSystemVolumeCapacityGb = 0;
+        _detectedSystemVolumeFreeGb = 0;
+        DetectedDisk = "No detectado";
+        DetectedDiskCapacity = "No disponible";
+        DetectedDiskFree = "No disponible";
+        DetectedDiskType = "No determinado";
 
         try
         {
@@ -166,20 +176,29 @@ public partial class ClientEquipmentViewModel : ObservableObject
                 ? $"{report.Memory.TotalGB} GB"
                 : "No disponible";
 
-            // Disco principal
-            var mainDisk = report.Disks.FirstOrDefault();
+            // Disco del volumen del sistema: no asumir primer disco WMI.
+            _detectedDiskFreeKnown = false;
+            var candidates = report.Disks.Where(d => d.VolumeAssociationsVerified &&
+                d.Volumes.Count(v => v.IsSystemVolume) == 1).ToArray();
+            var mainDisk = candidates.Length == 1 ? candidates[0] : null;
             if (mainDisk != null)
             {
+                var volume = mainDisk.SystemVolume!;
                 DetectedDisk = mainDisk.Name;
-                DetectedDiskCapacity = mainDisk.TotalGB > 0
-                    ? $"{mainDisk.TotalGB} GB"
+                DetectedDiskCapacity = volume.CapacityGB.HasValue
+                    ? $"{volume.CapacityGB.Value:F2} GB"
                     : "No disponible";
-                DetectedDiskFree = mainDisk.FreeGB > 0
-                    ? $"{mainDisk.FreeGB} GB"
+                DetectedDiskFree = volume.FreeGB.HasValue
+                    ? $"{volume.FreeGB.Value:F2} GB"
                     : "No disponible";
-                DetectedDiskType = !string.IsNullOrEmpty(mainDisk.MediaType)
-                    ? mainDisk.MediaType
-                    : "No detectado";
+                DetectedDiskType = string.IsNullOrWhiteSpace(mainDisk.MediaType)
+                    ? "No determinado" : mainDisk.MediaType;
+                _detectedDiskFreeKnown = volume.FreePercent.HasValue;
+                if (_detectedDiskFreeKnown)
+                {
+                    _detectedSystemVolumeCapacityGb = volume.CapacityGB!.Value;
+                    _detectedSystemVolumeFreeGb = volume.FreeGB!.Value;
+                }
             }
             else
             {
@@ -316,8 +335,11 @@ public partial class ClientEquipmentViewModel : ObservableObject
                 Processor = DetectedProcessor,
                 RamTotalGB = ParseRamGB(DetectedRam),
                 PrimaryDisk = DetectedDisk,
-                DiskCapacityGB = ParseDiskGB(DetectedDiskCapacity),
-                DiskFreeGB = ParseDiskGB(DetectedDiskFree),
+                DiskCapacityGB = _detectedDiskFreeKnown
+                    ? _detectedSystemVolumeCapacityGb : 0,
+                DiskFreeGB = _detectedDiskFreeKnown
+                    ? _detectedSystemVolumeFreeGb : 0,
+                DiskFreeSpaceKnown = _detectedDiskFreeKnown,
                 DiskType = DetectedDiskType,
                 ComputerName = DetectedComputerName,
                 CurrentUser = DetectedUser,

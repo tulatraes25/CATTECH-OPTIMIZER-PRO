@@ -10,15 +10,24 @@ namespace Cattech.Optimizer.Pro.Infrastructure.Hardware;
 public class WmiHardwareService : IHardwareService
 {
     private readonly IWmiMemoryReader _memoryReader;
+    private readonly IDiskTopologyReader _diskTopologyReader;
 
     public WmiHardwareService()
-        : this(new WmiMemoryReader())
+        : this(new WmiMemoryReader(), new WmiDiskTopologyReader())
     {
     }
 
     internal WmiHardwareService(IWmiMemoryReader memoryReader)
+        : this(memoryReader, new WmiDiskTopologyReader())
     {
-        _memoryReader = memoryReader;
+    }
+
+    internal WmiHardwareService(
+        IWmiMemoryReader memoryReader, IDiskTopologyReader diskTopologyReader)
+    {
+        _memoryReader = memoryReader ?? throw new ArgumentNullException(nameof(memoryReader));
+        _diskTopologyReader = diskTopologyReader ??
+            throw new ArgumentNullException(nameof(diskTopologyReader));
     }
     /// <inheritdoc/>
     public async Task<HardwareReport> GetHardwareReportAsync()
@@ -333,60 +342,27 @@ public class WmiHardwareService : IHardwareService
     /// <inheritdoc/>
     public Task<List<DiskInfo>> GetDiskInfoAsync()
     {
-        var disks = new List<DiskInfo>();
-
         try
         {
-            using var searcher = new ManagementObjectSearcher("SELECT * FROM Win32_DiskDrive");
-            foreach (var obj in searcher.Get())
-            {
-                var disk = new DiskInfo
-                {
-                    Name = obj["Model"]?.ToString() ?? "Unknown",
-                    Interface = obj["InterfaceType"]?.ToString() ?? "Unknown"
-                };
+            if (!OperatingSystem.IsWindows())
+                return Task.FromResult(new List<DiskInfo>());
 
-                var size = obj["Size"];
-                if (size != null)
-                {
-                    disk.TotalGB = Math.Round(Convert.ToDouble(size) / (1024 * 1024 * 1024), 2);
-                }
-
-                // Win32_DiskDrive.MediaType can be the generic
-                // "Fixed hard disk media" even for SSDs. Do not equate an
-                // unknown value with rotational HDD.
-                var mediaType = obj["MediaType"]?.ToString();
-                disk.MediaType = DiskMediaClassifier.Classify(
-                    disk.Name, disk.Interface, mediaType);
-
-                disks.Add(disk);
-            }
-
-            // Asignar letras de unidad y espacio libre desde Win32_LogicalDisk
-            using var logicalSearcher = new ManagementObjectSearcher("SELECT * FROM Win32_LogicalDisk WHERE DriveType=3");
-            foreach (var obj in logicalSearcher.Get())
-            {
-                var letter = obj["DeviceID"]?.ToString() ?? "";
-                var existingDisk = disks.FirstOrDefault(d => string.IsNullOrEmpty(d.DriveLetter));
-
-                if (existingDisk != null)
-                {
-                    existingDisk.DriveLetter = letter;
-
-                    var freeSpace = obj["FreeSpace"];
-                    if (freeSpace != null)
-                    {
-                        existingDisk.FreeGB = Math.Round(Convert.ToDouble(freeSpace) / (1024 * 1024 * 1024), 2);
-                    }
-                }
-            }
+            var snapshots = _diskTopologyReader.Read();
+            // The actual Windows installation root decides which volume is
+            // the system volume, NEVER the first disk returned by WMI.
+            var systemRoot = Path.GetPathRoot(Environment.SystemDirectory);
+            var result = DiskTopologyMapper.Map(snapshots, systemRoot);
+            return Task.FromResult(result);
         }
-        catch
+        catch (Exception ex) when (ex is ManagementException
+            or System.Runtime.InteropServices.COMException
+            or UnauthorizedAccessException or System.Security.SecurityException
+            or IOException or InvalidOperationException)
         {
-            // Retornar lista vacía en caso de error
+            // Unable to establish trustworthy relations: return no inferred
+            // physical/logical mapping. Do not fabricate a full disk.
+            return Task.FromResult(new List<DiskInfo>());
         }
-
-        return Task.FromResult(disks);
     }
 
     /// <inheritdoc/>

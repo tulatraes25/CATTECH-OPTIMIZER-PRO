@@ -235,6 +235,10 @@ public class HtmlReportService : IReportGenerationService
     private string BuildEquipmentSection(ReportGenerationOptions options)
     {
         var equip = options.ServiceReport!.Equipment;
+        var capacityText = equip.DiskFreeSpaceKnown && equip.DiskCapacityGB > 0
+            ? $"{equip.DiskCapacityGB:F1} GB" : "N/D";
+        var freeText = equip.DiskFreeSpaceKnown && equip.DiskCapacityGB > 0
+            ? $"{equip.DiskFreeGB:F1} GB" : "N/D";
         return $@"
 <div class='section'>
     <h2 class='section-title'>Datos del Equipo</h2>
@@ -245,7 +249,7 @@ public class HtmlReportService : IReportGenerationService
         <tr><td class='label'>SO:</td><td>{EscapeHtml(equip.OperatingSystem)}</td><td class='label'>Edición:</td><td>{EscapeHtml(equip.WindowsEdition)}</td></tr>
         <tr><td class='label'>Arquitectura:</td><td>{EscapeHtml(equip.Architecture)}</td><td class='label'>Procesador:</td><td>{EscapeHtml(equip.Processor)}</td></tr>
         <tr><td class='label'>RAM:</td><td>{equip.RamTotalGB} GB</td><td class='label'>Disco:</td><td>{EscapeHtml(equip.PrimaryDisk)} ({EscapeHtml(equip.DiskType)})</td></tr>
-        <tr><td class='label'>Capacidad:</td><td>{equip.DiskCapacityGB:F1} GB</td><td class='label'>Libre:</td><td>{equip.DiskFreeGB:F1} GB</td></tr>
+        <tr><td class='label'>Volumen del sistema:</td><td>{capacityText}</td><td class='label'>Libre:</td><td>{freeText}</td></tr>
         <tr><td class='label'>Motivo:</td><td colspan='3'>{EscapeHtml(equip.ServiceReason)}</td></tr>
     </table>
 </div>";
@@ -254,6 +258,8 @@ public class HtmlReportService : IReportGenerationService
     private string BuildDiagnosticSection(ReportGenerationOptions options)
     {
         var diag = options.DiagnosticReport!;
+        var diskFreeText = diag.DiskFreeSpaceKnown && diag.DiskCapacityGB > 0
+            ? $"{diag.DiskFreeGB:F1} GB ({diag.DiskFreePercent}%)" : "N/D";
         var alertsHtml = "";
 
         if (diag.Alerts.Count > 0)
@@ -281,7 +287,7 @@ public class HtmlReportService : IReportGenerationService
     <table>
         <tr><td class='label'>SO:</td><td>{EscapeHtml(diag.OsName)}</td><td class='label'>Edición:</td><td>{EscapeHtml(diag.WindowsEdition)}</td></tr>
         <tr><td class='label'>CPU:</td><td>{EscapeHtml(diag.Processor)} ({diag.CpuCores} núcleos)</td><td class='label'>RAM:</td><td>{diag.RamTotalGB} GB ({diag.RamUsagePercent}% uso)</td></tr>
-        <tr><td class='label'>Disco:</td><td>{EscapeHtml(diag.PrimaryDiskName)} ({EscapeHtml(diag.DiskType)})</td><td class='label'>Espacio libre:</td><td>{diag.DiskFreeGB:F1} GB ({diag.DiskFreePercent}%)</td></tr>
+        <tr><td class='label'>Disco del sistema:</td><td>{EscapeHtml(diag.PrimaryDiskName)} ({EscapeHtml(diag.DiskType)})</td><td class='label'>Espacio libre:</td><td>{diskFreeText}</td></tr>
         <tr><td class='label'>Inicio:</td><td>{diag.Startup.TotalCount} programas ({diag.Startup.ThirdPartyCount} de terceros)</td><td class='label'>Temporales:</td><td>{diag.TempFiles.TotalSizeGB} GB</td></tr>
         <tr><td class='label'>Antivirus:</td><td>{EscapeHtml(diag.Security.AntivirusName)}</td><td class='label'>Firewall:</td><td>{(diag.Security.FirewallActive ? "Activo" : "Inactivo")}</td></tr>
         <tr><td class='label'>Windows Update:</td><td colspan='3'>{EscapeHtml(diag.Security.WindowsUpdateStatus)}</td></tr>

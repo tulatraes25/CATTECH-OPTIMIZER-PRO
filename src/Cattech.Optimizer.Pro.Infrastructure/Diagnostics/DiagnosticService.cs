@@ -227,18 +227,38 @@ public class DiagnosticService : IDiagnosticService
         string.Equals(classifiedMediaType?.Trim(), "HDD",
             StringComparison.OrdinalIgnoreCase);
 
-    private static void FillDiskInfo(DiagnosticReport report, HardwareReport hw)
+    internal static void FillDiskInfo(DiagnosticReport report, HardwareReport hw)
     {
-        var mainDisk = hw.Disks.FirstOrDefault();
-        if (mainDisk != null)
+        report.PrimaryDiskName = "No detectado";
+        report.DiskType = "No determinado";
+        report.DiskCapacityGB = 0;
+        report.DiskFreeGB = 0;
+        report.DiskFreePercent = 0;
+        report.DiskFreeSpaceKnown = false;
+        report.SystemVolumeLetter = string.Empty;
+
+        // There must be exactly one proven relationship to the real Windows
+        // system volume. Never pick the first physical disk in WMI output.
+        var matches = hw.Disks.Where(d => d.VolumeAssociationsVerified &&
+            d.Volumes.Count(v => v.IsSystemVolume) == 1).ToArray();
+        if (matches.Length != 1)
+            return;
+
+        var disk = matches[0];
+        var volume = disk.SystemVolume!;
+        report.PrimaryDiskName = disk.Name;
+        report.DiskType = string.IsNullOrWhiteSpace(disk.MediaType)
+            ? "No determinado" : disk.MediaType;
+        report.SystemVolumeLetter = volume.DriveLetter;
+
+        if (volume.CapacityGB.HasValue)
+            report.DiskCapacityGB = volume.CapacityGB.Value;
+
+        if (volume.FreeGB.HasValue && volume.FreePercent.HasValue)
         {
-            report.PrimaryDiskName = mainDisk.Name;
-            report.DiskType = !string.IsNullOrEmpty(mainDisk.MediaType) ? mainDisk.MediaType : "No detectado";
-            report.DiskCapacityGB = mainDisk.TotalGB;
-            report.DiskFreeGB = mainDisk.FreeGB;
-            report.DiskFreePercent = mainDisk.TotalGB > 0
-                ? Math.Round((mainDisk.FreeGB / mainDisk.TotalGB) * 100, 1)
-                : 0;
+            report.DiskFreeGB = volume.FreeGB.Value;
+            report.DiskFreePercent = Math.Round(volume.FreePercent.Value, 1);
+            report.DiskFreeSpaceKnown = true;
         }
     }
 
@@ -546,7 +566,7 @@ public class DiagnosticService : IDiagnosticService
 
     // --- Generación de alertas ---
 
-    private static List<DiagnosticAlert> GenerateAlerts(DiagnosticReport report)
+    internal static List<DiagnosticAlert> GenerateAlerts(DiagnosticReport report)
     {
         var alerts = new List<DiagnosticAlert>();
 
@@ -573,7 +593,8 @@ public class DiagnosticService : IDiagnosticService
         }
 
         // Disco
-        if (report.DiskFreePercent > 0 && report.DiskFreePercent < 15)
+        if (report.DiskFreeSpaceKnown && report.DiskFreeGB > 0 &&
+            report.DiskFreePercent < 15)
         {
             alerts.Add(new DiagnosticAlert
             {
@@ -584,7 +605,8 @@ public class DiagnosticService : IDiagnosticService
             });
         }
 
-        if (report.DiskCapacityGB > 0 && report.DiskFreeGB <= 0)
+        if (report.DiskFreeSpaceKnown && report.DiskCapacityGB > 0 &&
+            report.DiskFreeGB == 0)
         {
             alerts.Add(new DiagnosticAlert
             {
