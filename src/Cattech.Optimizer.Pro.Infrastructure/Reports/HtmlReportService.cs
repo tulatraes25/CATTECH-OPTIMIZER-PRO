@@ -42,12 +42,39 @@ public class HtmlReportService : IReportGenerationService
         var clientName = options.ServiceReport?.Client?.Name ?? "SinCliente";
         var safeName = SanitizeFileName(clientName);
         var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
-        var fileName = $"Informe_Tecnico_CATTECH_{safeName}_{timestamp}.html";
+        // A timestamp rounded to seconds is NOT a unique report identity.
+        // A GUID distinguishes concurrent exports, while File.Move guarantees
+        // that an existing final report is never silently overwritten.
+        var id = Guid.NewGuid().ToString("N");
+        var fileName = $"Informe_Tecnico_CATTECH_{safeName}_{timestamp}_{id}.html";
         var filePath = Path.Combine(_reportsDirectory, fileName);
+        var stagedPath = Path.Combine(_reportsDirectory, $".cattech-report-{id}.tmp");
 
-        await File.WriteAllTextAsync(filePath, html, Encoding.UTF8);
+        try
+        {
+            // Stage with OS-enforced create-new semantics: no shared scratch
+            // filename, even if several reports are generated concurrently.
+            await using (var stream = new FileStream(stagedPath, FileMode.CreateNew,
+                FileAccess.Write, FileShare.None, 8192, useAsync: true))
+            await using (var writer = new StreamWriter(stream, Encoding.UTF8))
+            {
+                await writer.WriteAsync(html);
+            }
 
-        return filePath;
+            File.Move(stagedPath, filePath); // No overwrite; same directory/filesystem.
+            return filePath;
+        }
+        finally
+        {
+            // No partial HTML is published if the staging write failed.
+            try
+            {
+                if (File.Exists(stagedPath))
+                    File.Delete(stagedPath);
+            }
+            catch (IOException) { /* Best-effort cleanup, preserve original error. */ }
+            catch (UnauthorizedAccessException) { /* Preserve original error. */ }
+        }
     }
 
     /// <inheritdoc/>
@@ -872,7 +899,16 @@ public class HtmlReportService : IReportGenerationService
     private static string SanitizeFileName(string name)
     {
         var invalid = Path.GetInvalidFileNameChars();
-        return new string(name.Where(c => !invalid.Contains(c)).ToArray());
+        var clean = new string(name.Where(c => !invalid.Contains(c) && !char.IsControl(c))
+            .ToArray()).Trim().Trim('.');
+        if (string.IsNullOrWhiteSpace(clean))
+            return "SinCliente";
+
+        // Limit by Unicode grapheme, rather than splitting a surrogate pair.
+        var text = new System.Globalization.StringInfo(clean);
+        return text.LengthInTextElements > 48
+            ? text.SubstringByTextElements(0, 48)
+            : clean;
     }
 
     private async Task<List<GeneratedReportInfo>> LoadReportsInfoInternalAsync()
