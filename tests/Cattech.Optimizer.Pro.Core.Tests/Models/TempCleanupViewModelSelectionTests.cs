@@ -194,6 +194,98 @@ public sealed class TempCleanupViewModelSelectionTests
         Assert.Equal(2, service.ScanCalls);
     }
 
+
+    [Fact]
+    public async Task SkippedFiles_AreShownAsWarnings_NotFullSuccess()
+    {
+        var target = Target("USER_TEMP");
+        target.IsSelected = true;
+        var fake = new SyntheticCleanupService(target);
+        var record = new TempCleanupResult
+        {
+            StartedAt = DateTime.Now.AddSeconds(-2),
+            FinishedAt = DateTime.Now,
+            SkippedFiles = 2
+        };
+        fake.PendingCleanup = new TaskCompletionSource<TempCleanupResult>();
+        fake.PendingCleanup.SetResult(record);
+        var vm = new TempCleanupViewModel(fake);
+        await vm.ScanCommand.ExecuteAsync(null);
+        vm.HasCleanupConsent = true;
+
+        await vm.CleanupCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, fake.CleanupCalls);
+        Assert.Equal(1, fake.SaveCalls);
+        Assert.True(vm.HasResult);
+        Assert.False(vm.IsSuccess);
+        Assert.False(vm.HasError); // Skips only; no critical error.
+        Assert.Equal("Limpieza completada con advertencias", vm.StatusText);
+        Assert.Contains("2 omitidos", vm.ResultSummary);
+    }
+
+    [Fact]
+    public async Task ReportedCleanupErrors_AreDisplayedAsIncomplete()
+    {
+        var target = Target("USER_TEMP");
+        target.IsSelected = true;
+        var fake = new SyntheticCleanupService(target);
+        var record = new TempCleanupResult
+        {
+            StartedAt = DateTime.Now.AddSeconds(-2),
+            FinishedAt = DateTime.Now
+        };
+        record.Errors.Add(new CleanupError
+        {
+            FilePath = "USER_TEMP", Message = "Synthetic", ErrorType = "Test"
+        });
+        fake.PendingCleanup = new TaskCompletionSource<TempCleanupResult>();
+        fake.PendingCleanup.SetResult(record);
+        var vm = new TempCleanupViewModel(fake);
+        await vm.ScanCommand.ExecuteAsync(null);
+        vm.HasCleanupConsent = true;
+
+        await vm.CleanupCommand.ExecuteAsync(null);
+
+        Assert.True(vm.HasResult);
+        Assert.False(vm.IsSuccess);
+        Assert.True(vm.HasError);
+        Assert.Equal("Limpieza incompleta", vm.StatusText);
+        Assert.Contains("revisá los errores", vm.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task FailedAuditSave_KeepsActualDeletionResultVisible()
+    {
+        var target = Target("USER_TEMP");
+        target.IsSelected = true;
+        var fake = new SyntheticCleanupService(target) { ThrowOnSave = true };
+        fake.PendingCleanup = new TaskCompletionSource<TempCleanupResult>();
+        fake.PendingCleanup.SetResult(new TempCleanupResult
+        {
+            StartedAt = DateTime.Now.AddSeconds(-2),
+            FinishedAt = DateTime.Now,
+            DeletedFiles = 3,
+            DeletedBytes = 512
+        });
+        var vm = new TempCleanupViewModel(fake);
+        await vm.ScanCommand.ExecuteAsync(null);
+        vm.HasCleanupConsent = true;
+
+        await vm.CleanupCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, fake.CleanupCalls);
+        Assert.Equal(1, fake.SaveCalls);
+        Assert.True(vm.HasResult);
+        Assert.Equal(3, vm.ResultDeletedFiles);
+        Assert.True(vm.HasError);
+        Assert.False(vm.IsSuccess);
+        Assert.Equal("Limpieza ejecutada; registro no guardado", vm.StatusText);
+        Assert.Contains("NO pudo guardarse", vm.ResultSummary);
+        Assert.Contains("no se pudo guardar su historial", vm.ErrorMessage);
+        Assert.DoesNotContain("PRIVATE", vm.ErrorMessage);
+    }
+
     [Fact]
     public void CleanupXaml_UsesBooleanEnabledBinding()
     {
@@ -230,6 +322,8 @@ public sealed class TempCleanupViewModelSelectionTests
 
         public int ScanCalls { get; private set; }
         public int CleanupCalls { get; private set; }
+        public int SaveCalls { get; private set; }
+        public bool ThrowOnSave { get; set; }
         public TaskCompletionSource<TempCleanupResult>? PendingCleanup { get; set; }
 
         public Task<List<TempCleanupTarget>> ScanAsync(IProgress<int>? progress = null)
@@ -250,7 +344,12 @@ public sealed class TempCleanupViewModelSelectionTests
         }
 
         public Task<string> SaveResultAsync(TempCleanupResult result)
-            => Task.FromResult("synthetic.json");
+        {
+            SaveCalls++;
+            if (ThrowOnSave)
+                throw new IOException(@"Synthetic PRIVATE path C:\Users\PRIVATE\audit.json");
+            return Task.FromResult("synthetic.json");
+        }
 
         public Task<List<TempCleanupResultSummary>> ListResultsAsync(int maxResults = 20)
             => Task.FromResult(new List<TempCleanupResultSummary>());
