@@ -17,6 +17,7 @@ public partial class ClientEquipmentViewModel : ObservableObject
     private bool _detectedDiskFreeKnown;
     private double _detectedSystemVolumeCapacityGb;
     private double _detectedSystemVolumeFreeGb;
+    private int _hardwareDetectionGeneration;
 
     // --- Campos del formulario: Cliente ---
 
@@ -146,6 +147,8 @@ public partial class ClientEquipmentViewModel : ObservableObject
     [RelayCommand]
     private async Task DetectHardwareAsync()
     {
+        // A later NewRecord invalidates this pending response.
+        var generation = ++_hardwareDetectionGeneration;
         ClearMessages();
         IsDetecting = true;
         DetectionStatus = "Detectando...";
@@ -160,6 +163,8 @@ public partial class ClientEquipmentViewModel : ObservableObject
         try
         {
             var report = await _hardwareService.GetHardwareReportAsync();
+            if (generation != _hardwareDetectionGeneration)
+                return; // A newer record owns the form; discard old data.
 
             // Sistema operativo
             DetectedOS = report.System.OsName;
@@ -214,14 +219,18 @@ public partial class ClientEquipmentViewModel : ObservableObject
             DetectionStatus = "Detectado correctamente";
             HasDetectedData = true;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            DetectionStatus = "Error al detectar";
-            ShowError($"Error durante la detección: {ex.Message}");
+            if (generation == _hardwareDetectionGeneration)
+            {
+                DetectionStatus = "Error al detectar";
+                ShowError("No se pudo completar la detección de hardware.");
+            }
         }
         finally
         {
-            IsDetecting = false;
+            if (generation == _hardwareDetectionGeneration)
+                IsDetecting = false;
         }
     }
 
@@ -260,6 +269,14 @@ public partial class ClientEquipmentViewModel : ObservableObject
     [RelayCommand]
     private void NewRecord()
     {
+        // Invalidate outstanding async detection before touching bound fields.
+        ++_hardwareDetectionGeneration;
+        _detectedDiskFreeKnown = false;
+        _detectedSystemVolumeCapacityGb = 0;
+        _detectedSystemVolumeFreeGb = 0;
+        WindowsVersion = string.Empty;
+        IsDetecting = false;
+
         // Cliente
         ClientName = string.Empty;
         ClientPhone = string.Empty;
@@ -372,7 +389,7 @@ public partial class ClientEquipmentViewModel : ObservableObject
         return ParseRamGB(diskText); // Mismo formato
     }
 
-    private string? WindowsVersion { get; set; }
+    private string WindowsVersion { get; set; } = string.Empty;
 
     private string? Validate()
     {
