@@ -18,6 +18,10 @@ public class HtmlReportService : IReportGenerationService
     private readonly string _reportsDirectory;
     private readonly string _reportsInfoPath;
 
+    // Protects the shared report index across all service instances in this process.
+    // Cross-process coordination is not provided by this semaphore.
+    private static readonly SemaphoreSlim ReportsIndexGate = new(1, 1);
+
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         WriteIndented = true,
@@ -80,9 +84,19 @@ public class HtmlReportService : IReportGenerationService
     /// <inheritdoc/>
     public async Task SaveReportInfoAsync(GeneratedReportInfo info)
     {
-        var reports = await LoadReportsInfoInternalAsync();
-        reports.Add(info);
-        await SaveReportsInfoInternalAsync(reports);
+        ArgumentNullException.ThrowIfNull(info);
+        await ReportsIndexGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            // One logical read-modify-atomic-replace operation for all instances.
+            var reports = await LoadReportsInfoInternalAsync().ConfigureAwait(false);
+            reports.Add(info);
+            await SaveReportsInfoInternalAsync(reports).ConfigureAwait(false);
+        }
+        finally
+        {
+            ReportsIndexGate.Release();
+        }
     }
 
     /// <inheritdoc/>
@@ -932,7 +946,29 @@ public class HtmlReportService : IReportGenerationService
     {
         EnsureDirectoryExists(_reportsDirectory);
         var json = JsonSerializer.Serialize(reports, SerializerOptions);
-        await File.WriteAllTextAsync(_reportsInfoPath, json);
+        var staging = Path.Combine(_reportsDirectory,
+            ".cattech-index-" + Guid.NewGuid().ToString("N") + ".tmp");
+        try
+        {
+            // Write complete JSON to a uniquely named file before publication.
+            await using (var stream = new FileStream(staging, FileMode.CreateNew,
+                FileAccess.Write, FileShare.None, 8192, useAsync: true))
+            await using (var writer = new StreamWriter(stream, Encoding.UTF8))
+            {
+                await writer.WriteAsync(json).ConfigureAwait(false);
+            }
+            File.Move(staging, _reportsInfoPath, overwrite: true);
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(staging))
+                    File.Delete(staging);
+            }
+            catch (IOException) { /* Preserve original exception. */ }
+            catch (UnauthorizedAccessException) { /* Preserve original exception. */ }
+        }
     }
 
     private static void EnsureDirectoryExists(string path)
