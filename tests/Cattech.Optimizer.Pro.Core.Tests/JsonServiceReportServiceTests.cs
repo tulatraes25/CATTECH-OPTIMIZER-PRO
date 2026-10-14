@@ -25,12 +25,23 @@ public class JsonServiceReportServiceTests : IDisposable
         var files = Directory.GetFiles(dir, "service-report-*.json");
         Assert.Equal(count, files.Length);
 
+        // The persisted JSON uses camelCase. Deserializing without matching
+        // options silently creates default objects (new IDs, empty client names).
+        var options = new System.Text.Json.JsonSerializerOptions
+        {
+            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase
+        };
         var stored = await Task.WhenAll(files.Select(async file =>
             System.Text.Json.JsonSerializer.Deserialize<ServiceReport>(
-                await File.ReadAllTextAsync(file))));
+                await File.ReadAllTextAsync(file), options)));
         Assert.All(stored, record => Assert.NotNull(record));
-        Assert.Equal(count, stored.Select(record => record!.Id).Distinct().Count());
-        Assert.Equal(count, stored.Select(record => record!.Client.Name).Distinct().Count());
+        var byId = stored.ToDictionary(record => record!.Id);
+        Assert.Equal(count, byId.Count);
+        foreach (var original in records)
+        {
+            Assert.True(byId.TryGetValue(original.Id, out var recovered));
+            Assert.Equal(original.Client.Name, recovered!.Client.Name);
+        }
         Assert.Empty(Directory.GetFiles(dir, ".cattech-service-*.tmp"));
     }
 
