@@ -71,15 +71,17 @@
             <Button Grid.Column="2" Content="🧹 Limpiar seleccionados"
                     Command="{Binding CleanupCommand}" Padding="16,8" FontSize="12" FontWeight="SemiBold"
                     Background="#E53935" Foreground="White" BorderThickness="0"
-                    IsEnabled="{Binding HasScanned, Converter={StaticResource BoolToVis}}" />
+                    IsEnabled="{Binding CanStartCleanup}" />
 
             <Button Grid.Column="4" Content="Seleccionar bajos riesgo"
                     Command="{Binding SelectAllLowRiskCommand}" Padding="12,8" FontSize="11"
-                    Background="#F3F3F3" Foreground="#333" BorderBrush="#CCC" BorderThickness="1" />
+                    Background="#F3F3F3" Foreground="#333" BorderBrush="#CCC" BorderThickness="1"
+                    IsEnabled="{Binding IsRunning, Converter={StaticResource InvertBool}}" />
 
             <Button Grid.Column="6" Content="Limpiar selección"
                     Command="{Binding DeselectAllCommand}" Padding="12,8" FontSize="11"
-                    Background="#F3F3F3" Foreground="#333" BorderBrush="#CCC" BorderThickness="1" />
+                    Background="#F3F3F3" Foreground="#333" BorderBrush="#CCC" BorderThickness="1"
+                    IsEnabled="{Binding IsRunning, Converter={StaticResource InvertBool}}" />
 
             <StackPanel Grid.Column="8" Orientation="Horizontal" VerticalAlignment="Center">
                 <TextBlock Text="{Binding SelectedTargetsCount}" FontSize="14" FontWeight="Bold" Foreground="#333" Margin="0,0,5,0" />
@@ -124,9 +126,26 @@
                                         </Grid.ColumnDefinitions>
 
                                         <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected, Mode=TwoWay}"
-                                                  IsEnabled="{Binding IsAccessible}" VerticalAlignment="Top" Margin="0,2,10,0"
+                                                  VerticalAlignment="Top" Margin="0,2,10,0"
                                                   Command="{Binding DataContext.ToggleTargetCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                  CommandParameter="{Binding}" />
+                                                  CommandParameter="{Binding}">
+                                            <CheckBox.Style>
+                                                <Style TargetType="CheckBox">
+                                                    <Setter Property="IsEnabled" Value="True" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsAccessible}" Value="False">
+                                                            <Setter Property="IsEnabled" Value="False" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding IsScanned}" Value="False">
+                                                            <Setter Property="IsEnabled" Value="False" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding DataContext.IsRunning, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
+                                                            <Setter Property="IsEnabled" Value="False" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </CheckBox.Style>
+                                        </CheckBox>
 
                                         <StackPanel Grid.Column="1">
                                             <Grid>
