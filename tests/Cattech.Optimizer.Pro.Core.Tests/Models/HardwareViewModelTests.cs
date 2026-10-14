@@ -1586,9 +1586,11 @@ public class HardwareViewModelTests
             }
         });
 
+        thread.IsBackground = true; // A stuck WPF STA test must not pin the runner.
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
-        thread.Join(TimeSpan.FromSeconds(15));
+        Assert.True(thread.Join(TimeSpan.FromSeconds(15)),
+            "Hardware navigation STA test did not terminate within 15 seconds.");
 
         if (failure != null)
         {
@@ -1602,10 +1604,10 @@ public class HardwareViewModelTests
         var mainVm = new MainViewModel(service);
 
         mainVm.NavigateCommand.Execute("Hardware");
-        var hardwareVm = ((HardwareView)mainVm.CurrentView).DataContext as HardwareViewModel;
-        Assert.NotNull(hardwareVm);
+        var hardwareView = Assert.IsType<HardwareView>(mainVm.CurrentView);
+        var hardwareVm = Assert.IsType<HardwareViewModel>(hardwareView.DataContext);
 
-        hardwareVm!.StartMonitoringCommand.Execute(null);
+        hardwareVm.StartMonitoringCommand.Execute(null);
         WaitUntilSync(() => service.LastStreamToken != default);
         Assert.True(hardwareVm.IsMonitoring);
 
@@ -2264,9 +2266,11 @@ public class HardwareViewModelTests
             }
         });
 
+        thread.IsBackground = true;
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
-        thread.Join(TimeSpan.FromSeconds(20));
+        Assert.True(thread.Join(TimeSpan.FromSeconds(20)),
+            "Hardware return navigation STA test did not terminate within 20 seconds.");
 
         if (failure != null)
         {
@@ -2280,10 +2284,10 @@ public class HardwareViewModelTests
         var mainVm = new MainViewModel(service);
 
         mainVm.NavigateCommand.Execute("Hardware");
-        var firstVm = ((HardwareView)mainVm.CurrentView).DataContext as HardwareViewModel;
-        Assert.NotNull(firstVm);
+        var firstView = Assert.IsType<HardwareView>(mainVm.CurrentView);
+        var firstVm = Assert.IsType<HardwareViewModel>(firstView.DataContext);
 
-        firstVm!.StartMonitoringCommand.Execute(null);
+        firstVm.StartMonitoringCommand.Execute(null);
         WaitUntilSync(() => service.LastStreamToken != default);
         firstVm.StopMonitoringCommand.Execute(null);
         WaitUntilSync(() => !firstVm.IsMonitoring);
