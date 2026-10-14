@@ -116,6 +116,19 @@ public sealed class ReportIndexInterprocessTests
         if (string.IsNullOrWhiteSpace(root))
             return;
 
+        if (Environment.GetEnvironmentVariable("CATTECH_INDEX_CHILD_MODE") == "hold")
+        {
+            var indexDir = Path.Combine(root, "reports", "html");
+            Directory.CreateDirectory(indexDir);
+            await using var lease = await HtmlReportService.AcquireIndexLeaseAsync(
+                Path.Combine(indexDir, ".cattech-index.lock"),
+                TimeSpan.FromSeconds(10));
+
+            await File.WriteAllTextAsync(Path.Combine(root, "lease-held"), "held");
+            await Task.Delay(TimeSpan.FromMinutes(2)); // Parent terminates this testhost.
+            return;
+        }
+
         var worker = Environment.GetEnvironmentVariable(ChildIdVariable);
         Assert.True(worker is "A" or "B");
         var count = int.Parse(Environment.GetEnvironmentVariable(ChildCountVariable)!);
@@ -138,6 +151,74 @@ public sealed class ReportIndexInterprocessTests
                 ClientName = $"Synthetic-{worker}-{i:D3}",
                 HtmlPath = $"synthetic-{worker}-{i:D3}.html"
             });
+        }
+    }
+
+    [Fact]
+    public async Task KilledChildProcess_ReleasesLeaseWithoutDeletingMarker()
+    {
+        if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable(ChildRootVariable)))
+            return;
+
+        Assert.True(OperatingSystem.IsWindows(), "Windows OS lease regression.");
+        var root = NewRoot();
+        Process? child = null;
+        try
+        {
+            child = StartChildWorker(root, "H", holdLease: true);
+            var output = child.StandardOutput.ReadToEndAsync();
+            var error = child.StandardError.ReadToEndAsync();
+
+            var marker = Path.Combine(root, "lease-held");
+            var watch = Stopwatch.StartNew();
+            while (!File.Exists(marker))
+            {
+                Assert.False(child.HasExited,
+                    $"Lease-holder testhost exited before acquiring its lease. " +
+                    $"{await output} {await error}");
+                if (watch.Elapsed > TimeSpan.FromSeconds(30))
+                    throw new TimeoutException("Child did not acquire its lease.");
+                await Task.Delay(40);
+            }
+
+            var leasePath = Path.Combine(root, "reports", "html", ".cattech-index.lock");
+            await Assert.ThrowsAsync<TimeoutException>(
+                () => HtmlReportService.AcquireIndexLeaseAsync(
+                    leasePath, TimeSpan.FromMilliseconds(180)));
+
+            child.Kill(entireProcessTree: true);
+            await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+            var service = new HtmlReportService(root);
+            await service.SaveReportInfoAsync(new GeneratedReportInfo
+            {
+                Id = "RECOVERED-AFTER-KILL",
+                ClientName = "Synthetic",
+                HtmlPath = "after-kill.html"
+            }).WaitAsync(TimeSpan.FromSeconds(7));
+
+            Assert.True(File.Exists(leasePath),
+                "The durable marker must remain; deleting it would introduce a lock race.");
+            var records = await service.ListGeneratedReportsAsync();
+            Assert.Single(records);
+            Assert.Equal("RECOVERED-AFTER-KILL", records[0].Id);
+        }
+        finally
+        {
+            if (child is not null)
+            {
+                try
+                {
+                    if (!child.HasExited)
+                        child.Kill(entireProcessTree: true);
+                    await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+                }
+                catch (InvalidOperationException) { }
+                catch (TimeoutException) { }
+                finally { child.Dispose(); }
+            }
+
+            Directory.Delete(root, recursive: true);
         }
     }
 
@@ -251,7 +332,7 @@ public sealed class ReportIndexInterprocessTests
         return root;
     }
 
-    private static Process StartChildWorker(string root, string id)
+    private static Process StartChildWorker(string root, string id, bool holdLease = false)
     {
         var start = new ProcessStartInfo
         {
@@ -269,6 +350,7 @@ public sealed class ReportIndexInterprocessTests
         start.Environment[ChildRootVariable] = root;
         start.Environment[ChildIdVariable] = id;
         start.Environment[ChildCountVariable] = RecordsPerChild.ToString();
+        start.Environment["CATTECH_INDEX_CHILD_MODE"] = holdLease ? "hold" : "write";
         return Process.Start(start)
             ?? throw new InvalidOperationException("Unable to start synthetic child testhost.");
     }
