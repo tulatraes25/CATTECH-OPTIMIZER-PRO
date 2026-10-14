@@ -33,6 +33,7 @@
         <StackPanel Grid.Row="0" Margin="0,0,0,10">
             <TextBlock Text="Limpieza Segura de Temporales" FontSize="26" FontWeight="Bold" Foreground="#1B1B1B" />
             <TextBlock Text="Revisá cuidadosamente las ubicaciones seleccionadas: los temporales pueden contener datos de aplicaciones." FontSize="13" Foreground="#666" Margin="0,5,0,0" />
+            <TextBlock Text="{Binding StatusText}" FontSize="12" FontWeight="SemiBold" Foreground="#555" Margin="0,6,0,0" />
         </StackPanel>
 
         <!-- Row 1: Mensajes -->
@@ -274,10 +275,10 @@
                             <StackPanel>
                                 <TextBlock Text="⚠️ Notas de seguridad" FontSize="11" FontWeight="SemiBold"
                                            Foreground="#E65100" Margin="0,0,0,4" />
-                                <TextBlock Text="• No se eliminan archivos bloqueados o en uso" FontSize="10" Foreground="#666" />
-                                <TextBlock Text="• No se tocan Descargas, Documentos ni Escritorio" FontSize="10" Foreground="#666" />
-                                <TextBlock Text="• No se eliminan perfiles de navegador" FontSize="10" Foreground="#666" />
-                                <TextBlock Text="• Se omite Papelera si no fue seleccionada" FontSize="10" Foreground="#666" />
+                                <TextBlock Text="• Solo se autorizan ubicaciones temporales predefinidas y escaneadas." FontSize="10" Foreground="#666" />
+                                <TextBlock Text="• Los archivos temporales pueden contener datos útiles de aplicaciones." FontSize="10" Foreground="#666" />
+                                <TextBlock Text="• La Papelera está deshabilitada por seguridad." FontSize="10" Foreground="#666" />
+                                <TextBlock Text="• No se crea respaldo; la validación de enlaces no elimina todos los riesgos." FontSize="10" Foreground="#666" />
                             </StackPanel>
                         </Border>
                     </StackPanel>
