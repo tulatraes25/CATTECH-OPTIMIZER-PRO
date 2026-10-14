@@ -188,11 +188,15 @@ public sealed class DiskTopologyMapperTests
     [InlineData(0, 0)]
     [InlineData(300, 301)]
     public void UnknownOrImpossibleCapacityCannotBeMistakenForFull(
-        ulong? size, ulong? free)
+        int? size, int? free)
     {
+        // InlineData integers are Int32. Convert explicitly to the raw
+        // UInt64 byte/capacity representation used by WMI records.
+        ulong? sizeGiB = size.HasValue ? (ulong)size.Value : null;
+        ulong? freeGiB = free.HasValue ? (ulong)free.Value : null;
         var disk = Assert.Single(DiskTopologyMapper.Map(new[]
         {
-            Disk("Disk", "SATA", true, Vol("C:", size, free))
+            Disk("Disk", "SATA", true, Vol("C:", sizeGiB, freeGiB))
         }, "C:"));
         Assert.False(disk.HasVerifiedSystemVolumeMetrics);
         Assert.Null(disk.SystemVolume!.FreeGB);
