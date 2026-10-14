@@ -75,6 +75,9 @@ public sealed class TempCleanupViewModelSelectionTests
         var service = new SyntheticCleanupService(target);
         var vm = new TempCleanupViewModel(service);
         await vm.ScanCommand.ExecuteAsync(null);
+        Assert.False(vm.CanStartCleanup);
+        Assert.True(vm.CanReviewCleanupConsent);
+        vm.HasCleanupConsent = true;
         Assert.True(vm.CanStartCleanup);
 
         var changed = new List<string?>();
@@ -107,8 +110,88 @@ public sealed class TempCleanupViewModelSelectionTests
 
         Assert.False(vm.IsRunning);
         Assert.False(vm.IsCleaning);
-        Assert.True(vm.CanStartCleanup);
+        Assert.False(vm.HasCleanupConsent);
+        Assert.False(vm.CanStartCleanup);
+        Assert.True(vm.CanReviewCleanupConsent);
         Assert.Contains(nameof(vm.CanStartCleanup), changed);
+    }
+
+
+    [Fact]
+    public async Task DirectCleanupCommand_WithoutConsent_NeverCallsService()
+    {
+        var target = Target("USER_TEMP");
+        target.IsSelected = true;
+        var service = new SyntheticCleanupService(target);
+        var vm = new TempCleanupViewModel(service);
+        await vm.ScanCommand.ExecuteAsync(null);
+
+        Assert.False(vm.HasCleanupConsent);
+        Assert.False(vm.CanStartCleanup);
+        await vm.CleanupCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, service.CleanupCalls);
+        Assert.True(vm.HasError);
+        Assert.Contains("Confirmá", vm.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task SelectionChange_InvalidatesPriorApproval()
+    {
+        var first = Target("USER_TEMP");
+        first.IsSelected = true;
+        var second = Target("THUMBNAILS");
+        var service = new SyntheticCleanupService(first, second);
+        var vm = new TempCleanupViewModel(service);
+        await vm.ScanCommand.ExecuteAsync(null);
+
+        vm.HasCleanupConsent = true;
+        Assert.True(vm.CanStartCleanup);
+
+        second.IsSelected = true;
+        vm.ToggleTargetCommand.Execute(second);
+        Assert.False(vm.HasCleanupConsent);
+        Assert.False(vm.CanStartCleanup);
+        await vm.CleanupCommand.ExecuteAsync(null);
+        Assert.Equal(0, service.CleanupCalls);
+    }
+
+    [Fact]
+    public async Task ForgedScopeChange_AfterApproval_RejectsDirectCommand()
+    {
+        var target = Target("USER_TEMP");
+        target.IsSelected = true;
+        var service = new SyntheticCleanupService(target);
+        var vm = new TempCleanupViewModel(service);
+        await vm.ScanCommand.ExecuteAsync(null);
+        vm.HasCleanupConsent = true;
+        Assert.True(vm.CanStartCleanup);
+
+        // Bypass selection controls and rewrite a target after approval.
+        target.Path = "forged-different-root";
+        Assert.False(vm.CanStartCleanup);
+        await vm.CleanupCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, service.CleanupCalls);
+        Assert.False(vm.HasCleanupConsent);
+        Assert.Contains("Confirmá", vm.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task NewScan_ResetsApprovalAndDisablesCleanup()
+    {
+        var target = Target("USER_TEMP");
+        target.IsSelected = true;
+        var service = new SyntheticCleanupService(target);
+        var vm = new TempCleanupViewModel(service);
+        await vm.ScanCommand.ExecuteAsync(null);
+        vm.HasCleanupConsent = true;
+        Assert.True(vm.CanStartCleanup);
+
+        await vm.ScanCommand.ExecuteAsync(null);
+        Assert.False(vm.HasCleanupConsent);
+        Assert.False(vm.CanStartCleanup);
+        Assert.Equal(2, service.ScanCalls);
     }
 
     [Fact]
@@ -123,6 +206,9 @@ public sealed class TempCleanupViewModelSelectionTests
             "IsEnabled=\"{Binding HasScanned, Converter={StaticResource BoolToVis}}\"", xaml);
         Assert.Contains("IsChecked=\"{Binding IsSelected, Mode=TwoWay}\"", xaml);
         Assert.Contains("DataContext.IsRunning", xaml);
+        Assert.Contains("IsChecked=\"{Binding HasCleanupConsent, Mode=TwoWay}\"", xaml);
+        Assert.Contains("IsEnabled=\"{Binding CanReviewCleanupConsent}\"", xaml);
+        Assert.Contains("no crea una copia de seguridad", xaml);
     }
 
     private static TempCleanupTarget Target(string id) => new()
