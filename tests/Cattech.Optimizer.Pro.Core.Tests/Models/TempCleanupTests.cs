@@ -450,6 +450,23 @@ public class TempCleanupTests
     }
 
     [Fact]
+    public void TempCleanupResult_FailedFilesWithoutErrorDetails_IsNotSuccess()
+    {
+        var result = new TempCleanupResult { FailedFiles = 1 };
+        Assert.Empty(result.Errors);
+        Assert.False(result.IsSuccess);
+        Assert.True(result.HasWarnings);
+    }
+
+    [Fact]
+    public void TempCleanupResult_SkippedOnly_IsWarningButNotFailure()
+    {
+        var result = new TempCleanupResult { SkippedFiles = 2 };
+        Assert.True(result.IsSuccess);
+        Assert.True(result.HasWarnings);
+    }
+
+    [Fact]
     public void TempCleanupResult_HasWarnings_WhenFailed()
     {
         var result = new TempCleanupResult { FailedFiles = 2 };
