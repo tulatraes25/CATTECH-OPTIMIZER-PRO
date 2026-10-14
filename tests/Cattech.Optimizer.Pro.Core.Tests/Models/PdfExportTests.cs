@@ -268,11 +268,11 @@ public class PdfExportTests
     }
 
     [Fact]
-    public void PdfExportService_IsAvailable_ViaCanExport()
+    public async Task PdfExportService_IsAvailable_ViaCanExport()
     {
         // Test que el servicio existe y CanExport no lanza excepción
         var service = new PdfExportService();
-        var info = service.CanExportAsync().Result;
+        var info = await service.CanExportAsync();
 
         Assert.NotNull(info);
         Assert.IsType<PdfExporterInfo>(info);
@@ -304,12 +304,12 @@ public class PdfExportTests
     }
 
     [Fact]
-    public void PdfExporterInfo_EdgeDetection_MatchesIsAvailable()
+    public async Task PdfExporterInfo_EdgeDetection_MatchesIsAvailable()
     {
         // Verificar que CanExportAsync es consistente con IsEdgeAvailable
         var service = new PdfExportService();
         var syncResult = PdfExportService.IsEdgeAvailable();
-        var asyncResult = service.CanExportAsync().Result.IsAvailable;
+        var asyncResult = (await service.CanExportAsync()).IsAvailable;
 
         Assert.Equal(syncResult, asyncResult);
     }
