@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Cattech.Optimizer.Pro.Core.Interfaces;
 using Cattech.Optimizer.Pro.Core.Models.Cleanup;
+using Cattech.Optimizer.Pro.Infrastructure.Cleanup;
 
 namespace Cattech.Optimizer.Pro.Core.Tests.Models;
 
@@ -12,6 +13,67 @@ public class TempCleanupTests
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
     };
+
+
+    [Fact]
+    public async Task Scan_RecycleBin_IsExplicitlyUnavailable()
+    {
+        // Scan-only test: no cleanup is ever requested or performed.
+        var service = new TempCleanupService();
+        var targets = await service.ScanAsync();
+        var recycleBin = Assert.Single(targets, target => target.Id == "RECYCLE_BIN");
+
+        Assert.True(recycleBin.IsScanned);
+        Assert.False(recycleBin.IsAccessible);
+        Assert.False(recycleBin.IsSelected);
+        Assert.Equal(0, recycleBin.EstimatedSizeBytes);
+        Assert.Equal(0, recycleBin.EstimatedFileCount);
+        Assert.Contains("No disponible", recycleBin.ScanNotes);
+    }
+
+    [Fact]
+    public async Task Cleanup_DirectRecycleBinSelection_FailsClosed_WithoutDeletingAnyFile()
+    {
+        // Deliberately bypass UI selection/accessibility state. The service
+        // must reject a selected RECYCLE_BIN target with no OS mutation.
+        var root = Path.Combine(Path.GetTempPath(),
+            "cattech-recycle-denied-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var sentinel = Path.Combine(root, "keep-me.txt");
+        const string original = "SYNTHETIC-DO-NOT-DELETE";
+        await File.WriteAllTextAsync(sentinel, original);
+        try
+        {
+            var service = new TempCleanupService(root);
+            var target = new TempCleanupTarget
+            {
+                Id = "RECYCLE_BIN",
+                DisplayName = "Papelera sintética",
+                Path = root,
+                IsSelected = true,
+                IsAccessible = true
+            };
+
+            var result = await service.CleanupAsync(new[] { target });
+
+            Assert.False(result.IsSuccess);
+            Assert.Equal(0, result.DeletedFiles);
+            Assert.Equal(0L, result.DeletedBytes);
+            Assert.Equal(0, result.FailedFiles); // Rejected target, not a deleted file.
+            var error = Assert.Single(result.Errors);
+            Assert.Equal("UnsupportedOperation", error.ErrorType);
+            Assert.Contains("deshabilitada", error.Message);
+            var details = Assert.Single(result.TargetResults);
+            Assert.False(details.IsSuccess);
+            Assert.Equal(0, details.DeletedFiles);
+            Assert.Equal(0L, details.DeletedBytes);
+            Assert.Equal(original, await File.ReadAllTextAsync(sentinel));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
 
     [Fact]
     public void TempCleanupTarget_DefaultValues_AreValid()
