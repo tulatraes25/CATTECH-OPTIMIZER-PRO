@@ -86,12 +86,25 @@ public partial class TempCleanupViewModel : ObservableObject
         _cleanupService = cleanupService;
     }
 
+    // A cleanup command is enabled only after scan, while no operation runs.
+    public bool CanStartCleanup => HasScanned && !IsRunning;
+
+    partial void OnHasScannedChanged(bool value) =>
+        OnPropertyChanged(nameof(CanStartCleanup));
+
+    partial void OnIsRunningChanged(bool value) =>
+        OnPropertyChanged(nameof(CanStartCleanup));
+
     /// <summary>
     /// Escanea las ubicaciones de temporales.
     /// </summary>
     [RelayCommand]
     private async Task ScanAsync()
     {
+        if (IsRunning)
+            return;
+
+        IsRunning = true;
         ClearMessages();
         IsScanning = true;
         HasScanned = false;
@@ -130,6 +143,15 @@ public partial class TempCleanupViewModel : ObservableObject
     [RelayCommand]
     private async Task CleanupAsync()
     {
+        if (IsRunning)
+            return;
+
+        if (!HasScanned)
+        {
+            ShowError("Primero escaneá las ubicaciones antes de limpiar.");
+            return;
+        }
+
         var selected = _targets.Where(t => t.IsSelected).ToList();
         if (selected.Count == 0)
         {
@@ -137,6 +159,7 @@ public partial class TempCleanupViewModel : ObservableObject
             return;
         }
 
+        IsRunning = true;
         ClearMessages();
         IsCleaning = true;
         StatusText = "Limpiando...";
@@ -190,13 +213,18 @@ public partial class TempCleanupViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Selecciona/deselecciona un target.
+    /// Reacts to a CheckBox selection change. The TwoWay binding has already
+    /// assigned IsSelected; inverting it again would silently undo the click.
     /// </summary>
     [RelayCommand]
     private void ToggleTarget(TempCleanupTarget? target)
     {
-        if (target == null) return;
-        target.IsSelected = !target.IsSelected;
+        if (target is null || IsRunning)
+            return;
+
+        if (!target.IsScanned || !target.IsAccessible || target.Id == "RECYCLE_BIN")
+            target.IsSelected = false;
+
         UpdateSelectedCount();
     }
 
@@ -206,9 +234,16 @@ public partial class TempCleanupViewModel : ObservableObject
     [RelayCommand]
     private void SelectAllLowRisk()
     {
+        if (IsRunning || !HasScanned)
+            return;
+
         foreach (var target in _targets)
         {
-            if (target.IsAccessible && target.RiskLevel == CleanupRiskLevel.Low)
+            // Even if a system target is categorized Low, it must require
+            // a deliberate manual selection, never a bulk low-risk action.
+            if (target.IsScanned && target.IsAccessible && !target.IsSystemLocation
+                && target.RiskLevel == CleanupRiskLevel.Low
+                && target.Id != "RECYCLE_BIN")
                 target.IsSelected = true;
         }
         UpdateSelectedCount();
@@ -220,6 +255,9 @@ public partial class TempCleanupViewModel : ObservableObject
     [RelayCommand]
     private void DeselectAll()
     {
+        if (IsRunning)
+            return;
+
         foreach (var target in _targets)
             target.IsSelected = false;
         UpdateSelectedCount();
