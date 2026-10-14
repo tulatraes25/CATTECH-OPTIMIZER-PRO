@@ -332,6 +332,62 @@ public class TempCleanupTests
     }
 
     [Fact]
+    public async Task FolderCleanup_RecentSyntheticFile_IsNotRemovedOrCounted()
+    {
+        var root = Path.Combine(Path.GetTempPath(),
+            "cattech-recent-fixture-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var file = Path.Combine(root, "recent-synthetic.txt");
+            File.WriteAllText(file, "PRESERVE-RECENT");
+            File.SetLastWriteTimeUtc(file, DateTime.UtcNow);
+
+            var target = new TempCleanupTarget { Id = "USER_TEMP", Path = root };
+            var summary = new TargetResult { TargetId = target.Id };
+            var result = new TempCleanupResult();
+
+            await new TempCleanupService(root).CleanFolderAsync(target, summary, result);
+
+            Assert.Equal("PRESERVE-RECENT", File.ReadAllText(file));
+            Assert.Equal(0, summary.DeletedFiles);
+            Assert.Equal(0L, summary.DeletedBytes);
+            Assert.Equal(1, summary.SkippedFiles);
+            Assert.Equal(0, result.DeletedFiles);
+            Assert.Equal(1, result.SkippedFiles);
+            Assert.Empty(result.Errors);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void ThumbnailCleanup_OldSyntheticCache_UsesVerifiedHandle()
+    {
+        var root = Path.Combine(Path.GetTempPath(),
+            "cattech-thumbs-fixture-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var file = Path.Combine(root, "thumbcache_fixture.db");
+            File.WriteAllBytes(file, new byte[461]);
+            File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddMinutes(-5));
+            var target = new TempCleanupTarget { Id = "THUMBNAILS", Path = root };
+            var summary = new TargetResult { TargetId = target.Id };
+            var result = new TempCleanupResult();
+
+            TempCleanupService.CleanThumbnailsFolder(target, summary, result);
+
+            Assert.False(File.Exists(file));
+            Assert.Equal(1, summary.DeletedFiles);
+            Assert.Equal(461L, summary.DeletedBytes);
+            Assert.Equal(1, result.DeletedFiles);
+            Assert.Equal(461L, result.DeletedBytes);
+            Assert.Empty(result.Errors);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
     public void TempCleanupTarget_DefaultValues_AreValid()
     {
         var target = new TempCleanupTarget();
