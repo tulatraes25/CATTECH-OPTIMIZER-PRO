@@ -72,6 +72,18 @@ public class XamlViewSmokeTests
     }
 
     [Fact]
+    public void NavigationToRepairCenter_LoadsView_WithoutXamlParseException()
+    {
+        RunOnSta(() =>
+        {
+            var vm = new MainViewModel();
+            vm.NavigateCommand.Execute("RepairCenter");
+            Assert.Equal("RepairCenter", vm.CurrentSection);
+            Assert.IsType<RepairCenterView>(vm.CurrentView);
+        });
+    }
+
+    [Fact]
     public void AllSidebarViews_LoadOnSta_WithoutXamlParseException()
     {
         var viewFactories = new (string Name, Func<object> Factory)[]
@@ -82,6 +94,7 @@ public class XamlViewSmokeTests
             ("Hardware", () => new HardwareView()),
             ("QuickDiagnostic", () => new QuickDiagnosticView()),
             ("CrashEvidence", () => new CrashEvidenceView()),
+            ("RepairCenter", () => new RepairCenterView()),
             ("StartupAnalysis", () => new StartupAnalysisView()),
             ("TempCleanup", () => new TempCleanupView()),
             ("VisualOptimization", () => new VisualOptimizationView()),

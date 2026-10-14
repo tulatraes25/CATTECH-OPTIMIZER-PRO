@@ -122,6 +122,10 @@
                             Command="{Binding NavigateCommand}"
                             CommandParameter="BlueScreens"
                             Height="45" />
+                    <Button Content="🛠️ Reparaciones (vista previa)"
+                            Command="{Binding NavigateCommand}"
+                            CommandParameter="RepairCenter"
+                            Height="45" />
                     <Button Content="🚀 Programas de inicio" 
                             Command="{Binding NavigateCommand}" 
                             CommandParameter="Startup"

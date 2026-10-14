@@ -8,6 +8,7 @@ using Cattech.Optimizer.Pro.Infrastructure.Data;
 using Cattech.Optimizer.Pro.Infrastructure.Diagnostics;
 using Cattech.Optimizer.Pro.Infrastructure.Hardware;
 using Cattech.Optimizer.Pro.Infrastructure.Reports;
+using Cattech.Optimizer.Pro.Infrastructure.Repair;
 using Cattech.Optimizer.Pro.Infrastructure.RestorePoint;
 using Cattech.Optimizer.Pro.Infrastructure.Smart;
 using Cattech.Optimizer.Pro.Infrastructure.Startup;
@@ -54,6 +55,9 @@ public partial class MainViewModel : ObservableObject
     private readonly ICrashEventDiscoveryService _crashEventDiscoveryService;
     private readonly IBugCheckDecoder _bugCheckDecoder;
     private readonly IDumpCheckService _dumpCheckService;
+    private readonly IWindowsUpdateReadinessService _windowsUpdateReadinessService;
+    private readonly ISystemRepairPlanService _systemRepairPlanService;
+    private readonly ISystemRepairPreflightService _systemRepairPreflightService;
 
     // ViewModels de secciones
     private CompanySettingsViewModel? _companySettingsViewModel;
@@ -67,6 +71,7 @@ public partial class MainViewModel : ObservableObject
     private SmartDiskViewModel? _smartDiskViewModel;
     private HardwareViewModel? _hardwareViewModel;
     private CrashEvidenceViewModel? _crashEvidenceViewModel;
+    private RepairCenterViewModel? _repairCenterViewModel;
 
     public MainViewModel()
         : this(new LibreHardwareSensorService())
@@ -94,6 +99,9 @@ public partial class MainViewModel : ObservableObject
         _crashEventDiscoveryService = new CrashEventDiscoveryService();
         _bugCheckDecoder = new BugCheckDecoder();
         _dumpCheckService = new DumpCheckService();
+        _windowsUpdateReadinessService = new WindowsUpdateReadinessService();
+        _systemRepairPlanService = new SystemRepairPlanService();
+        _systemRepairPreflightService = new SystemRepairPreflightService();
         NavigateTo("Home");
     }
 
@@ -123,6 +131,7 @@ public partial class MainViewModel : ObservableObject
             "SmartDisk" => CreateSmartDiskView(),
             "Diagnostics" => CreateQuickDiagnosticView(),
             "BlueScreens" => CreateCrashEvidenceView(),
+            "RepairCenter" => CreateRepairCenterView(),
             "TempCleanup" => CreateTempCleanupView(),
             "Optimization" => CreateVisualOptimizationView(),
             "RestorePoint" => CreateRestorePointView(),
@@ -185,6 +194,18 @@ public partial class MainViewModel : ObservableObject
         return new CrashEvidenceView
         {
             DataContext = _crashEvidenceViewModel
+        };
+    }
+
+    private object CreateRepairCenterView()
+    {
+        _repairCenterViewModel ??= new RepairCenterViewModel(
+            _windowsUpdateReadinessService, _systemRepairPlanService,
+            _systemRepairPreflightService);
+
+        return new RepairCenterView
+        {
+            DataContext = _repairCenterViewModel
         };
     }
 
