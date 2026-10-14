@@ -173,9 +173,12 @@ public sealed class ReportIndexInterprocessTests
             var watch = Stopwatch.StartNew();
             while (!File.Exists(marker))
             {
-                Assert.False(child.HasExited,
-                    $"Lease-holder testhost exited before acquiring its lease. " +
-                    $"{await output} {await error}");
+                // Never await child stdout while it is still alive: readers
+                // complete only after process termination and would deadlock.
+                if (child.HasExited)
+                    throw new InvalidOperationException(
+                        $"Lease-holder testhost exited before acquiring its lease. " +
+                        $"{await output} {await error}");
                 if (watch.Elapsed > TimeSpan.FromSeconds(30))
                     throw new TimeoutException("Child did not acquire its lease.");
                 await Task.Delay(40);
