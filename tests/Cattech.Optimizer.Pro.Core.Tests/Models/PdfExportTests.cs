@@ -140,13 +140,13 @@ public class PdfExportTests
     // === Tests de validación de PDF real ===
 
     [Fact]
-    public async Task ValidatePdfFile_ValidPdf_StartsWithPercentPDF()
+    public async Task ValidatePdfFile_HeaderAndTerminalEof_ReturnsTrue()
     {
         // Crear un archivo PDF válido mínimo
         var tempFile = Path.GetTempFileName();
         try
         {
-            var pdfContent = "%PDF-1.4 test content";
+            var pdfContent = "%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n";
             await File.WriteAllTextAsync(tempFile, pdfContent, Encoding.ASCII);
 
             var isValid = await PdfExportService.ValidatePdfFileAsync(tempFile);
@@ -223,13 +223,13 @@ public class PdfExportTests
     }
 
     [Fact]
-    public async Task ValidatePdfFile_PdfWithValidHeader_ReturnsTrue()
+    public async Task ValidatePdfFile_SecondEnvelopeWithEof_ReturnsTrue()
     {
         var tempFile = Path.GetTempFileName();
         try
         {
             // PDF válido con cabecera correcta
-            var pdfBytes = Encoding.ASCII.GetBytes("%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n");
+            var pdfBytes = Encoding.ASCII.GetBytes("%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n");
             await File.WriteAllBytesAsync(tempFile, pdfBytes);
 
             var isValid = await PdfExportService.ValidatePdfFileAsync(tempFile);
@@ -239,6 +239,24 @@ public class PdfExportTests
         finally
         {
             File.Delete(tempFile);
+        }
+    }
+
+    [Theory]
+    [InlineData("%PDF-1.7\n1 0 obj\n<<>>\nendobj\n")]
+    [InlineData("%PDF-1.7\n%%EOF\nGARBAGE")]
+    [InlineData("%PDF-1.7\n%%EOF\npartial")]
+    public async Task ValidatePdfFile_TruncatedOrTrailingGarbage_ReturnsFalse(string content)
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllTextAsync(path, content, Encoding.ASCII);
+            Assert.False(await PdfExportService.ValidatePdfFileAsync(path));
+        }
+        finally
+        {
+            File.Delete(path);
         }
     }
 
