@@ -363,4 +363,70 @@ public class PdfExportTests
             if (File.Exists(tempPdf)) File.Delete(tempPdf);
         }
     }
+    [Fact]
+    public void EdgeStartInfo_PreservesArgumentBoundaries_AndKeepsSandboxEnabled()
+    {
+        var html = Path.Combine(Path.GetTempPath(), "Synthetic QA & client file.html");
+        var pdf = Path.Combine(Path.GetTempPath(), "Synthetic QA & final.pdf");
+        var start = PdfExportService.BuildEdgeStartInfo(
+            @"C:\Program Files\Microsoft\Edge\Application\msedge.exe", html, pdf);
+
+        Assert.False(start.UseShellExecute);
+        Assert.True(start.CreateNoWindow);
+        Assert.Equal(5, start.ArgumentList.Count);
+        Assert.DoesNotContain("--no-sandbox", start.ArgumentList);
+        Assert.Equal("--print-to-pdf=" + pdf, start.ArgumentList[2]);
+        Assert.Equal(new Uri(Path.GetFullPath(html)).AbsoluteUri,
+            start.ArgumentList[4]);
+    }
+
+    [Fact]
+    public void PublishPdf_ExistingDestination_NeverReplacesPriorContent()
+    {
+        var root = Path.Combine(Path.GetTempPath(),
+            "cattech-pdf-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var staged = Path.Combine(root, "staged.pdf");
+            var existing = Path.Combine(root, "final.pdf");
+            File.WriteAllText(staged, "%PDF-1.7 new");
+            File.WriteAllText(existing, "%PDF-1.7 ORIGINAL");
+
+            Assert.Throws<IOException>(() =>
+                PdfExportService.PublishPdfWithoutOverwrite(staged, existing));
+
+            Assert.Equal("%PDF-1.7 ORIGINAL", File.ReadAllText(existing));
+            Assert.Equal("%PDF-1.7 new", File.ReadAllText(staged));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void PublishPdf_NewDestination_MovesStagedFileWithoutChangingBytes()
+    {
+        var root = Path.Combine(Path.GetTempPath(),
+            "cattech-pdf-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var staged = Path.Combine(root, "staged.pdf");
+            var output = Path.Combine(root, "final.pdf");
+            var contents = new byte[] { 37, 80, 68, 70, 45, 49, 46, 55 };
+            File.WriteAllBytes(staged, contents);
+
+            PdfExportService.PublishPdfWithoutOverwrite(staged, output);
+
+            Assert.False(File.Exists(staged));
+            Assert.Equal(contents, File.ReadAllBytes(output));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
 }
