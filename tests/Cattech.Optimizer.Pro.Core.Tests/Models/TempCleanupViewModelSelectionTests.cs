@@ -303,6 +303,22 @@ public sealed class TempCleanupViewModelSelectionTests
         Assert.Contains("no crea una copia de seguridad", xaml);
     }
 
+
+    [Fact]
+    public void CleanupXaml_ShowsStatusAndHonestSafetyWarnings()
+    {
+        var path = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
+            "../../../../../src/Cattech.Optimizer.Pro.UI/Views/TempCleanupView.xaml"));
+        var xaml = File.ReadAllText(path);
+
+        Assert.NotNull(System.Xml.Linq.XDocument.Parse(xaml).Root);
+        Assert.Contains("Text=\"{Binding StatusText}\"", xaml);
+        Assert.Contains("La Papelera está deshabilitada por seguridad", xaml);
+        Assert.Contains("No se crea respaldo", xaml);
+        Assert.DoesNotContain("Se omite Papelera si no fue seleccionada", xaml);
+        Assert.DoesNotContain("No se eliminan perfiles de navegador", xaml);
+    }
+
     private static TempCleanupTarget Target(string id) => new()
     {
         Id = id,
