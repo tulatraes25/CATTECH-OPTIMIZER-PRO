@@ -195,6 +195,7 @@ public partial class TempCleanupViewModel : ObservableObject
 
         IsRunning = true;
         ClearMessages();
+        HasResult = false;
         IsCleaning = true;
         StatusText = "Limpiando...";
 
@@ -214,30 +215,56 @@ public partial class TempCleanupViewModel : ObservableObject
             foreach (var error in result.Errors)
                 ResultErrors.Add(error);
 
-            if (result.IsSuccess)
+            var fullyCompleted = result.IsSuccess && !result.HasWarnings;
+            if (fullyCompleted)
             {
                 ResultSummary = $"Limpieza completada: {result.DeletedMB} MB liberados, {result.DeletedFiles} archivos eliminados";
                 StatusText = "Limpieza completada";
             }
-            else
+            else if (result.IsSuccess)
             {
                 ResultSummary = $"Limpieza completada con advertencias: {result.DeletedMB} MB liberados, {result.SkippedFiles} omitidos, {result.FailedFiles} con error";
                 StatusText = "Limpieza completada con advertencias";
             }
+            else
+            {
+                ResultSummary = $"Limpieza incompleta: {result.DeletedMB} MB liberados, {result.SkippedFiles} omitidos, {result.FailedFiles} con error";
+                StatusText = "Limpieza incompleta";
+            }
 
             ResultDetails = $"Duración: {result.Duration.TotalSeconds:F1} segundos";
-
             HasResult = true;
-            IsSuccess = result.IsSuccess;
-            HasError = !result.IsSuccess;
 
-            // Guardar resultado
-            await _cleanupService.SaveResultAsync(result);
+            // Distinguish destructive operation outcomes from audit persistence.
+            // A failed SaveResultAsync must never turn a completed deletion
+            // into the misleading message "Error durante la limpieza".
+            try
+            {
+                await _cleanupService.SaveResultAsync(result);
+            }
+            catch (Exception)
+            {
+                ResultSummary += " El registro técnico NO pudo guardarse.";
+                StatusText = "Limpieza ejecutada; registro no guardado";
+                ShowError("La limpieza se ejecutó, pero no se pudo guardar su historial. Conservá los datos del resultado.");
+                return;
+            }
+
+            if (fullyCompleted)
+                ShowSuccess("La limpieza se completó y el registro se guardó.");
+            else if (!result.IsSuccess)
+                ShowError("La limpieza no se completó: revisá los errores y archivos omitidos.");
+            else
+            {
+                // Skipped files are warnings, not a full green success.
+                IsSuccess = false;
+                HasError = false;
+            }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             StatusText = "Error durante la limpieza";
-            ShowError($"Error: {ex.Message}");
+            ShowError("No se pudo completar la limpieza. Revisá el estado del equipo.");
         }
         finally
         {
