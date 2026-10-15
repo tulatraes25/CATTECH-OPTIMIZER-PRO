@@ -389,7 +389,10 @@ public sealed class WindowsScopedFileDeleteTests
             {
                 Assert.False(WindowsScopedFileDelete.TryDelete(root, file, out var bytes));
                 Assert.Equal(0L, bytes);
-                Assert.Equal("KEEP-ACTIVE-WRITER", File.ReadAllText(file));
+                // Do not use File.ReadAllText here: it opens a SECOND handle
+                // with FileShare.Read, incompatible with the held ReadWrite
+                // handle. The persistence assertion belongs after disposal.
+                Assert.True(File.Exists(file));
             }
             Assert.Equal("KEEP-ACTIVE-WRITER", File.ReadAllText(file));
         }
