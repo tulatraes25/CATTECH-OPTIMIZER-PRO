@@ -11,15 +11,20 @@ public class RepairOutcomeEvaluatorTests
     private static readonly Guid AfterId =
         Guid.Parse("66666666-6666-4666-8666-666666666666");
 
+    private static readonly DiagnosticContextId Context =
+        DiagnosticContextId.FromGuid(
+            Guid.Parse("cccccccc-cccc-4ccc-8ccc-cccccccccccc"));
+
     private static RepairOutcomeRule Rule() =>
         new("postcheck", "1", "windows.component.health",
             EvidenceValue.FromText("healthy"));
 
     private static EvidenceRecord Observed(Guid id, string value,
-        DateTimeOffset time, string source = "diagnostic-check") =>
+        DateTimeOffset time, string source = "diagnostic-check",
+        DiagnosticContextId? context = null) =>
         EvidenceRecord.Observed(id, source, "windows.component.health",
             time, EvidenceValue.FromText(value), "synthetic-only",
-            EvidencePrivacyClass.Equipment);
+            EvidencePrivacyClass.Equipment, contextId: context ?? Context);
 
     [Fact]
     public void RecoveredPostcondition_IsObservedImprovementNotCausalProof()
@@ -33,6 +38,7 @@ public class RepairOutcomeEvaluatorTests
         Assert.Equal(BeforeId, result.BeforeEvidenceId);
         Assert.Equal(AfterId, result.AfterEvidenceId);
         Assert.Equal("1", result.RuleVersion);
+        Assert.Equal(Context, result.ContextId);
     }
 
     [Fact]
@@ -63,7 +69,7 @@ public class RepairOutcomeEvaluatorTests
         var missing = EvidenceRecord.Missing(AfterId, "diagnostic-check",
             "windows.component.health", BaselineTime.AddMinutes(30),
             EvidenceAvailability.AccessDenied, "synthetic-only",
-            EvidencePrivacyClass.Equipment, "No access.");
+            EvidencePrivacyClass.Equipment, "No access.", contextId: Context);
         var result = RepairOutcomeEvaluator.Compare(Rule(),
             Observed(BeforeId, "unhealthy", BaselineTime), missing);
 
@@ -103,7 +109,7 @@ public class RepairOutcomeEvaluatorTests
         var post = EvidenceRecord.Observed(AfterId, "diagnostic-check",
             "windows.component.health", BaselineTime.AddMinutes(30),
             EvidenceValue.FromBoolean(true), "synthetic-only",
-            EvidencePrivacyClass.Equipment);
+            EvidencePrivacyClass.Equipment, contextId: Context);
 
         var result = RepairOutcomeEvaluator.Compare(Rule(),
             Observed(BeforeId, "unhealthy", BaselineTime), post);
@@ -120,14 +126,46 @@ public class RepairOutcomeEvaluatorTests
             EvidenceValue.FromText(privateMarker));
         var before = EvidenceRecord.Observed(BeforeId, "fixture", "private.marker",
             BaselineTime, EvidenceValue.FromText("not-ready"), "synthetic",
-            EvidencePrivacyClass.Sensitive);
+            EvidencePrivacyClass.Sensitive, contextId: Context);
         var after = EvidenceRecord.Observed(AfterId, "fixture", "private.marker",
             BaselineTime.AddMinutes(30), EvidenceValue.FromText(privateMarker),
-            "synthetic", EvidencePrivacyClass.Sensitive);
+            "synthetic", EvidencePrivacyClass.Sensitive, contextId: Context);
         var result = RepairOutcomeEvaluator.Compare(rule, before, after);
 
         Assert.Equal(RepairOutcomeStatus.ObservedImprovement, result.Status);
         Assert.DoesNotContain(privateMarker,
             System.Text.Json.JsonSerializer.Serialize(result));
     }
+
+    [Fact]
+    public void CrossEquipmentIdenticalSourceAndFact_NeverClaimImprovement()
+    {
+        var other = DiagnosticContextId.FromGuid(
+            Guid.Parse("dddddddd-dddd-4ddd-8ddd-dddddddddddd"));
+
+        var result = RepairOutcomeEvaluator.Compare(Rule(),
+            Observed(BeforeId, "unhealthy", BaselineTime),
+            Observed(AfterId, "healthy", BaselineTime.AddMinutes(30),
+                context: other));
+
+        Assert.Equal(RepairOutcomeStatus.Indeterminate, result.Status);
+        Assert.Equal(RepairOutcomeReason.ContextMismatch, result.Reason);
+        Assert.False(result.ContextId.IsBound);
+    }
+
+    [Fact]
+    public void LegacyUnknownContext_ReturnsIndeterminateEvenWhenValuesMatch()
+    {
+        var legacy = EvidenceRecord.Observed(AfterId, "diagnostic-check",
+            "windows.component.health", BaselineTime.AddMinutes(30),
+            EvidenceValue.FromText("healthy"), "old-fixture",
+            EvidencePrivacyClass.Equipment);
+
+        var result = RepairOutcomeEvaluator.Compare(Rule(),
+            Observed(BeforeId, "unhealthy", BaselineTime), legacy);
+
+        Assert.Equal(RepairOutcomeStatus.Indeterminate, result.Status);
+        Assert.Equal(RepairOutcomeReason.ContextMismatch, result.Reason);
+    }
+
 }
