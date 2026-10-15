@@ -46,3 +46,36 @@ No se agregan claves privadas al código ni se inventan certificados. La autenti
 ## Próximo slice
 
 EE-05B: revisión adversarial de datos derivados sensibles, correlación de casos entre exportaciones y UI de revisión/consentimiento; realizar QA con equipos Windows reales **antes** de declarar el pasaporte apto para clientes. Mantener `main`/releases intactos.
+
+
+## EE-05B — Componente WPF de revisión y consentimiento (experimental)
+
+La vista `TechnicalPassportReviewView` y su `TechnicalPassportReviewViewModel` aceptan
+un `TechnicalPassportArtifact` ya preparado. No recolectan datos del dispositivo,
+no crean expedientes, no inventan contenido de prueba y **no están registrados en
+`MainViewModel`**, porque todavía falta el adaptador seguro de diagnósticos reales.
+
+El técnico puede revisar el JSON exacto y su digest. Dos confirmaciones independientes,
+inicialmente desmarcadas, son obligatorias: haber revisado el contenido y consentir
+la copia **al portapapeles de Windows**. La orden de copia vuelve a verificar
+el consentimiento y el digest, copia una sola vez por instancia y revoca las
+confirmaciones tras el éxito. Un fallo de portapapeles no se informa como éxito
+ni filtra mensajes de excepción. No hay envío de red ni almacenamiento en disco.
+
+**Alcance explícito de consentimiento:** solo la copia manual de este snapshot;
+no autoriza correo, nube, impresión, otro archivo ni otra exportación. Un nuevo
+snapshot requiere otra instancia y confirmaciones nuevas. Copiar al portapapeles
+puede exponer el JSON a otras aplicaciones; la interfaz lo informa.
+
+**Límite importante:** esto es una defensa del flujo de interfaz propuesto, no
+un control global de seguridad. La API Core `TechnicalPassportBuilder.Build`
+todavía expone el JSON en memoria a sus consumidores. Todo futuro comando de
+guardar, subir o compartir deberá implementar autorización explícita propia y
+garantizar que el contenido revisado es **exactamente** el que se emitirá. Hasta
+conectar los proveedores reales, no corresponde presentar esta pantalla como
+funcionalidad terminada de la aplicación.
+
+**Pruebas:** confirmar que abrir una vista no copia nada; impedir copias con
+una sola casilla; inhabilitar después de copia; preservar bytes exactos; rechazar
+capturas de snapshots nuevos sin autorización; tratar errores del portapapeles
+sin falsos positivos. La QA interactiva WPF queda pendiente.
