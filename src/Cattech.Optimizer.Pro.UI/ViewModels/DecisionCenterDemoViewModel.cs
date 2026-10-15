@@ -28,6 +28,34 @@ public partial class DecisionCenterDemoViewModel : ObservableObject
     [ObservableProperty]
     private DecisionCenterSummary _summary = null!;
 
+    [ObservableProperty]
+    private DecisionExplanation _explanation = null!;
+
+    [ObservableProperty]
+    private bool _isClientView;
+
+    // The audience switch reuses the already-evaluated summary. It does
+    // not recollect observations or change case identity.
+    partial void OnIsClientViewChanged(bool value) => RefreshExplanation();
+    partial void OnSummaryChanged(DecisionCenterSummary value) => RefreshExplanation();
+
+    private void RefreshExplanation()
+    {
+        if (Summary is null)
+            return;
+
+        Explanation = DecisionExplanationBuilder.Build(
+            Summary, IsClientView
+                ? DecisionAudience.Client
+                : DecisionAudience.Technician);
+    }
+
+    [RelayCommand]
+    private void ShowTechnicianExplanation() => IsClientView = false;
+
+    [RelayCommand]
+    private void ShowClientExplanation() => IsClientView = true;
+
     public string DemoNotice =>
         "DEMO CON DATOS FICTICIOS — no inspecciona este equipo. " +
         "No realiza reparaciones, guarda archivos ni transmite información.";
