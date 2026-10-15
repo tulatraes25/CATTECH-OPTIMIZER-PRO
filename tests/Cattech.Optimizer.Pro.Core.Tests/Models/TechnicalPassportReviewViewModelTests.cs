@@ -5,16 +5,19 @@ namespace Cattech.Optimizer.Pro.Core.Tests.Models;
 
 public class TechnicalPassportReviewViewModelTests
 {
+    private static readonly DiagnosticContextId Context =
+        new(Guid.Parse("99999999-9999-4999-8999-999999999999"));
+
     private static TechnicalPassportArtifact NewPassport(string observation = "healthy")
     {
         var issued = new DateTimeOffset(2026, 10, 15, 12, 0, 0, TimeSpan.Zero);
         var evidence = EvidenceRecord.Observed(
-            Guid.Parse("10101010-1010-4010-8010-101010101010"),
+            Guid.Parse("10101010-1010-4010-8010-101010101010"), Context,
             "synthetic", "windows.health", issued.AddMinutes(-10),
             EvidenceValue.FromText(observation), "synthetic-test-only",
             EvidencePrivacyClass.Equipment);
 
-        return TechnicalPassportBuilder.Build(
+        return TechnicalPassportBuilder.Build(Context, 
             Guid.Parse("20202020-2020-4020-8020-202020202020"), issued,
             new[] { evidence }, Array.Empty<DiagnosticAssessment>(),
             Array.Empty<RepairOutcomeAssessment>());
