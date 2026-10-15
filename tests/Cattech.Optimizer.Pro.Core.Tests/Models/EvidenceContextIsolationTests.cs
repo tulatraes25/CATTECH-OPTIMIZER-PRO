@@ -8,6 +8,9 @@ namespace Cattech.Optimizer.Pro.Core.Tests.Models;
 /// </summary>
 public class EvidenceContextIsolationTests
 {
+    private static readonly DiagnosticSubjectId Subject =
+        new(Guid.Parse("77777777-7777-4777-8777-777777777777"));
+
     private static readonly DiagnosticContextId CaseA =
         new(Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"));
     private static readonly DiagnosticContextId CaseB =
@@ -24,14 +27,14 @@ public class EvidenceContextIsolationTests
     private static EvidenceRecord Fact(
         Guid id, DiagnosticContextId context, string value,
         DateTimeOffset? observed = null) =>
-        EvidenceRecord.Observed(id, context, "same-provider", "health",
+        EvidenceRecord.Observed(id, context, Subject, "same-provider", "health",
             observed ?? AsOf.AddMinutes(-30), EvidenceValue.FromText(value),
             "synthetic-only", EvidencePrivacyClass.Equipment);
 
     private static DiagnosticRule Rule() => new(
         "rule", "1", "Check one synthetic health fact",
         "Another value would refute the expected fact.",
-        new[] { new EvidenceExpectation("health", EvidenceValue.FromText("healthy")) });
+        new[] { new EvidenceExpectation(Subject, "health", EvidenceValue.FromText("healthy")) });
 
     private static RepairOutcomeRule OutcomeRule() =>
         new("after", "1", "health", EvidenceValue.FromText("healthy"));
@@ -52,12 +55,12 @@ public class EvidenceContextIsolationTests
     public void ObservedAndMissingFacts_RejectDefaultContext()
     {
         Assert.Throws<ArgumentException>(() => EvidenceRecord.Observed(
-            BeforeId, default, "source", "health", AsOf,
+            BeforeId, default, Subject, "source", "health", AsOf,
             EvidenceValue.FromText("healthy"), "fixture",
             EvidencePrivacyClass.Equipment));
 
         Assert.Throws<ArgumentException>(() => EvidenceRecord.Missing(
-            AfterId, default, "source", "health", AsOf,
+            AfterId, default, Subject, "source", "health", AsOf,
             EvidenceAvailability.Unavailable, "fixture",
             EvidencePrivacyClass.Equipment, "No observation."));
     }
@@ -81,7 +84,7 @@ public class EvidenceContextIsolationTests
     {
         var first = Fact(BeforeId, CaseA, "healthy");
         var foreign = EvidenceRecord.Observed(
-            AfterId, CaseB, "same-provider", "irrelevant.gpu",
+            AfterId, CaseB, Subject, "same-provider", "irrelevant.gpu",
             AsOf.AddMinutes(-1), EvidenceValue.FromNumber(50),
             "synthetic-only", EvidencePrivacyClass.Equipment);
 
@@ -156,7 +159,7 @@ public class EvidenceContextIsolationTests
         var foreignOutcome = new RepairOutcomeAssessment(
             "other", "1", "health", BeforeId, BeforeId,
             RepairOutcomeStatus.Indeterminate,
-            RepairOutcomeReason.NoDemonstratedChange, CaseB);
+            RepairOutcomeReason.NoDemonstratedChange, CaseB, Subject);
         Assert.Throws<ArgumentException>(() =>
             TechnicalPassportBuilder.Build(CaseA, ExportId, AsOf,
                 new[] { local }, Array.Empty<DiagnosticAssessment>(),
