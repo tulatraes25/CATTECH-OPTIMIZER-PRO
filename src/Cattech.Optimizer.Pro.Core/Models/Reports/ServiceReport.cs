@@ -106,6 +106,9 @@ public class EquipmentInfo
     /// </summary>
     public double DiskFreeGB { get; set; }
 
+    /// <summary>Verified space for system volume, not guessed physical capacity.</summary>
+    public bool DiskFreeSpaceKnown { get; set; }
+
     /// <summary>
     /// Tipo aproximado de disco (HDD, SSD, NVMe).
     /// </summary>
