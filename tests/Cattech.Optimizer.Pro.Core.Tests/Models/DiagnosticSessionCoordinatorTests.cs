@@ -58,7 +58,7 @@ public sealed class DiagnosticSessionCoordinatorTests
         Assert.NotEqual(a, b);
         Assert.False(leaseA.IsCurrent);
         Assert.Null(coordinator.CaptureLeaseFor(a));
-        Assert.True(coordinator.CaptureLeaseFor(b)?.IsCurrent);
+        Assert.True(coordinator.CaptureLeaseFor(b)!.IsCurrent);
     }
 
     [Fact]
