@@ -38,3 +38,18 @@ Use existing `Core.Models.Smart.SmartDiskReport` as input. Store only private no
 
 ## DISPOSITION
 Implement/read-only testing only. **Keep #30 open**: real hardware binding, human-reviewed candidate acceptance, identity revocation, report consent and WPF UX all remain before production use. No merging `main` or publishing releases.
+
+## Hardening de entradas de firmware — slice posterior
+
+El firmware SMART puede devolver texto con caracteres de control, marcas
+Unicode de dirección/zero-width o identificadores uniformes de relleno (ej.
+`FFFFFFFFFFFF`). En comparaciones entre snapshots esos valores no deben
+producir candidatos. Se considera `UnverifiableIdentity` toda identidad
+que contenga caracteres de control/sustitutos/formato en serial/modelo/
+transporte, y todo serial de cuatro o más caracteres idénticos.
+
+Este criterio es deliberadamente conservador: podría rechazar un serial
+real inusual (falso negativo), pero nunca autoriza un emparejamiento.
+No usar normalizaciones visuales/confusables para forzar equivalencias.
+No implica validación de identidad física. QA con informes de distintos
+fabricantes y bridges sigue pendiente.
