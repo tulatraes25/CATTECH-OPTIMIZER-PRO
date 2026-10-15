@@ -325,6 +325,8 @@ public class TechnicalPassportTests
             StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("contextId", passport.PayloadJson,
             StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("contextId", JsonSerializer.Serialize(passport),
+            StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -354,6 +356,16 @@ public class TechnicalPassportTests
         Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(
             ExportId, IssuedAt, new[] { before, after },
             Array.Empty<DiagnosticAssessment>(), new[] { badOutcome }));
+    }
+
+
+    [Fact]
+    public void EmptyPassport_IsRejectedWithoutInventingAnEquipmentContext()
+    {
+        Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(
+            ExportId, IssuedAt, Array.Empty<EvidenceRecord>(),
+            Array.Empty<DiagnosticAssessment>(),
+            Array.Empty<RepairOutcomeAssessment>()));
     }
 
 }
