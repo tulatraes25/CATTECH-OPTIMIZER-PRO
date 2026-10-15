@@ -38,12 +38,24 @@ public sealed record TechnicalPassportPublicPayload(
 /// </summary>
 public sealed class TechnicalPassportArtifact
 {
-    internal TechnicalPassportArtifact(string payloadJson)
+    internal TechnicalPassportArtifact(
+        string payloadJson, DiagnosticContextId contextId)
     {
-        PayloadJson = payloadJson;
+        if (!contextId.IsValid)
+            throw new ArgumentException(
+                "A passport must be bound to its original diagnostic case.",
+                nameof(contextId));
+        PayloadJson = payloadJson ?? throw new ArgumentNullException(
+            nameof(payloadJson));
+        ContextId = contextId;
         Sha256Hex = Convert.ToHexString(
             SHA256.HashData(Encoding.UTF8.GetBytes(payloadJson)));
     }
+
+    // Private presentation gate metadata: NEVER serialize the service-session
+    // identity into public JSON. A matching digest is not a signature.
+    [System.Text.Json.Serialization.JsonIgnore]
+    public DiagnosticContextId ContextId { get; }
 
     public string PayloadJson { get; }
     public string Sha256Hex { get; }
@@ -211,7 +223,7 @@ public static class TechnicalPassportBuilder
         // Fixed-property contract and sorted status buckets make the same
         // input snapshot byte-stable regardless of input enumeration order.
         return new TechnicalPassportArtifact(
-            JsonSerializer.Serialize(payload, JsonOptions));
+            JsonSerializer.Serialize(payload, JsonOptions), contextId);
     }
 
     private static T[] CaptureBounded<T>(
