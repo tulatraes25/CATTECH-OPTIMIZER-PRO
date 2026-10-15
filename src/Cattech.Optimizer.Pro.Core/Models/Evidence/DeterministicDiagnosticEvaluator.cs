@@ -116,7 +116,7 @@ public sealed class DiagnosticAssessment
 
 /// <summary>
 /// Deterministic cross-source comparison, not causal inference.
-/// Unknown, inaccessible, stale/future-dated or contradictory data cannot silently
+/// Unknown, inaccessible, future-dated or contradictory data cannot silently
 /// produce a healthy or proven-cause claim.
 /// </summary>
 public static class DeterministicDiagnosticEvaluator
