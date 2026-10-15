@@ -477,6 +477,93 @@ public class TempCleanupTests
     }
 
     [Fact]
+    public void BoundedEnumeration_RefusesPartialCandidateLists()
+    {
+        var root = Path.Combine(Path.GetTempPath(),
+            "cattech-bounded-enum-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            for (var i = 0; i < 3; i++)
+                File.WriteAllText(Path.Combine(root, $"synthetic-{i}.tmp"), "KEEP");
+
+            Assert.False(TempCleanupService.TryEnumerateBounded(
+                root, "*", recursive: true, maxFiles: 2,
+                maxDuration: TimeSpan.FromSeconds(3), out var partial));
+            Assert.Empty(partial);
+
+            Assert.True(TempCleanupService.TryEnumerateBounded(
+                root, "*", recursive: true, maxFiles: 3,
+                maxDuration: TimeSpan.FromSeconds(3), out var complete));
+            Assert.Equal(3, complete.Count);
+            Assert.All(complete, path => Assert.StartsWith(root, path));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task FolderCleanup_OverBudget_RejectsBeforeRemovingAnything()
+    {
+        var root = Path.Combine(Path.GetTempPath(),
+            "cattech-enum-overflow-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var files = Enumerable.Range(0, 3)
+                .Select(i => Path.Combine(root, $"file-{i}.tmp")).ToArray();
+            foreach (var file in files)
+            {
+                File.WriteAllText(file, "SYNTHETIC-KEEP");
+                File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddMinutes(-5));
+            }
+
+            var target = new TempCleanupTarget { Id = "USER_TEMP", Path = root };
+            var details = new TargetResult { TargetId = target.Id };
+            var result = new TempCleanupResult();
+            await new TempCleanupService(root).CleanFolderAsync(
+                target, details, result, maxCandidates: 2);
+
+            Assert.Equal(0, result.DeletedFiles);
+            Assert.Equal(0L, result.DeletedBytes);
+            Assert.Equal("EnumerationError", Assert.Single(result.Errors).ErrorType);
+            Assert.False(details.IsSuccess);
+            Assert.All(files, file => Assert.Equal("SYNTHETIC-KEEP", File.ReadAllText(file)));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void ThumbnailCleanup_OverBudget_RejectsBeforeRemovingAnything()
+    {
+        var root = Path.Combine(Path.GetTempPath(),
+            "cattech-thumb-overflow-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var files = Enumerable.Range(0, 3)
+                .Select(i => Path.Combine(root, $"thumbcache_{i}.db")).ToArray();
+            foreach (var file in files)
+            {
+                File.WriteAllText(file, "SYNTHETIC-KEEP");
+                File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddMinutes(-5));
+            }
+
+            var target = new TempCleanupTarget { Id = "THUMBNAILS", Path = root };
+            var details = new TargetResult { TargetId = target.Id };
+            var result = new TempCleanupResult();
+            TempCleanupService.CleanThumbnailsFolder(
+                target, details, result, maxCandidates: 2);
+
+            Assert.Equal(0, result.DeletedFiles);
+            Assert.Equal(0L, result.DeletedBytes);
+            Assert.Equal("EnumerationError", Assert.Single(result.Errors).ErrorType);
+            Assert.False(details.IsSuccess);
+            Assert.All(files, file => Assert.Equal("SYNTHETIC-KEEP", File.ReadAllText(file)));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
     public void TempCleanupTarget_DefaultValues_AreValid()
     {
         var target = new TempCleanupTarget();

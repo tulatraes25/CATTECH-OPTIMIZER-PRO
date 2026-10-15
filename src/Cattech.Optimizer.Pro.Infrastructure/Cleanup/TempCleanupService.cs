@@ -390,101 +390,136 @@ public class TempCleanupService : ITempCleanupService
         return null;
     }
 
+    // Avoid materializing an unbounded directory listing before applying
+    // time limits. A failed preflight never returns partial candidates.
+    private const int MaxEnumeratedFilesPerTarget = 10_000;
+
+    internal static bool TryEnumerateBounded(
+        string directory, string pattern, bool recursive,
+        int maxFiles, TimeSpan maxDuration, out List<string> files)
+    {
+        files = new List<string>();
+        if (maxFiles <= 0 || maxDuration <= TimeSpan.Zero)
+            return false;
+
+        var options = new EnumerationOptions
+        {
+            RecurseSubdirectories = recursive,
+            IgnoreInaccessible = false,
+            AttributesToSkip = FileAttributes.Hidden | FileAttributes.System
+                | FileAttributes.ReparsePoint,
+            MaxRecursionDepth = 3
+        };
+        var watch = Stopwatch.StartNew();
+        try
+        {
+            foreach (var path in Directory.EnumerateFiles(directory, pattern, options))
+            {
+                // Bound memory and reject rather than operate on a partial list.
+                if (watch.Elapsed >= maxDuration || files.Count >= maxFiles)
+                {
+                    files.Clear();
+                    return false;
+                }
+                files.Add(path);
+            }
+            if (watch.Elapsed >= maxDuration)
+            {
+                files.Clear();
+                return false;
+            }
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+            or ArgumentException or NotSupportedException
+            or System.Security.SecurityException)
+        {
+            files.Clear();
+            return false;
+        }
+    }
+
     // --- Métodos de escaneo ---
 
     private static void ScanFolder(TempCleanupTarget target)
     {
-        try
+        target.EstimatedSizeBytes = 0;
+        target.EstimatedFileCount = 0;
+        target.IsAccessible = false;
+        target.IsSelected = false;
+        target.IsScanned = true;
+        if (!Directory.Exists(target.Path))
         {
-            if (!Directory.Exists(target.Path))
-            {
-                target.IsAccessible = false;
-                target.IsScanned = true;
-                target.ScanNotes = "Ubicación no encontrada";
-                return;
-            }
-
-            var dirInfo = new DirectoryInfo(target.Path);
-            var sw = Stopwatch.StartNew();
-
-            var files = dirInfo.GetFiles("*", new EnumerationOptions
-            {
-                RecurseSubdirectories = true,
-                IgnoreInaccessible = true,
-                AttributesToSkip = FileAttributes.Hidden | FileAttributes.System |
-                    FileAttributes.ReparsePoint,
-                MaxRecursionDepth = 3
-            });
-
-            foreach (var file in files)
-            {
-                try
-                {
-                    target.EstimatedSizeBytes += file.Length;
-                    target.EstimatedFileCount++;
-                }
-                catch { }
-
-                // Timeout de 3 segundos por ubicación
-                if (sw.ElapsedMilliseconds > 3000) break;
-            }
-
-            target.IsAccessible = true;
-            target.IsScanned = true;
-
-            if (target.IsSystemLocation)
-            {
-                target.ScanNotes = "Requiere permisos de administrador";
-            }
+            target.ScanNotes = "Ubicación no encontrada";
+            return;
         }
-        catch (Exception ex)
+
+        // Refuse incomplete listings instead of calling them a successful scan.
+        if (!TryEnumerateBounded(target.Path, "*", recursive: true,
+            MaxEnumeratedFilesPerTarget, TimeSpan.FromSeconds(3), out var files))
         {
-            target.IsAccessible = false;
-            target.IsScanned = true;
-            target.ScanNotes = $"Error: {ex.Message}";
+            target.ScanNotes = "No disponible: demasiados archivos, tiempo agotado o acceso denegado.";
+            return;
         }
+
+        foreach (var file in files)
+        {
+            try
+            {
+                target.EstimatedSizeBytes += new FileInfo(file).Length;
+                target.EstimatedFileCount++;
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+
+        target.IsAccessible = true;
+        target.ScanNotes = target.IsSystemLocation
+            ? "Requiere permisos de administrador" : string.Empty;
     }
 
     private static void ScanThumbnailsFolder(TempCleanupTarget target)
     {
-        try
+        target.EstimatedSizeBytes = 0;
+        target.EstimatedFileCount = 0;
+        target.IsAccessible = false;
+        target.IsSelected = false;
+        target.IsScanned = true;
+        if (!Directory.Exists(target.Path))
         {
-            if (!Directory.Exists(target.Path))
-            {
-                target.IsAccessible = false;
-                target.IsScanned = true;
-                target.ScanNotes = "Carpeta de miniaturas no encontrada";
-                return;
-            }
-
-            var thumbFiles = Directory.GetFiles(target.Path, "thumbcache_*.db");
-            foreach (var file in thumbFiles)
-            {
-                try
-                {
-                    var fileInfo = new FileInfo(file);
-                    target.EstimatedSizeBytes += fileInfo.Length;
-                    target.EstimatedFileCount++;
-                }
-                catch { }
-            }
-
-            target.IsAccessible = true;
-            target.IsScanned = true;
+            target.ScanNotes = "Carpeta de miniaturas no encontrada";
+            return;
         }
-        catch (Exception ex)
+
+        if (!TryEnumerateBounded(target.Path, "thumbcache_*.db",
+            recursive: false, MaxEnumeratedFilesPerTarget,
+            TimeSpan.FromSeconds(3), out var files))
         {
-            target.IsAccessible = false;
-            target.IsScanned = true;
-            target.ScanNotes = $"Error: {ex.Message}";
+            target.ScanNotes = "No disponible: no se pudo completar el escaneo.";
+            return;
         }
+
+        foreach (var file in files)
+        {
+            try
+            {
+                target.EstimatedSizeBytes += new FileInfo(file).Length;
+                target.EstimatedFileCount++;
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+
+        target.IsAccessible = true;
+        target.ScanNotes = "Solo archivos thumbcache_*.db";
     }
 
     // --- Métodos de limpieza ---
 
     // Internal only for isolated synthetic fixture regression tests.
     internal async Task CleanFolderAsync(
-        TempCleanupTarget target, TargetResult targetResult, TempCleanupResult result)
+        TempCleanupTarget target, TargetResult targetResult, TempCleanupResult result,
+        int maxCandidates = MaxEnumeratedFilesPerTarget)
     {
         if (!Directory.Exists(target.Path))
         {
@@ -500,36 +535,25 @@ public class TempCleanupService : ITempCleanupService
 
         await Task.Run(() =>
         {
-            var dirInfo = new DirectoryInfo(target.Path);
             var sw = Stopwatch.StartNew();
 
-            // Obtener todos los archivos
-            FileInfo[] files;
-            try
-            {
-                files = dirInfo.GetFiles("*", new EnumerationOptions
-                {
-                    RecurseSubdirectories = true,
-                    IgnoreInaccessible = true,
-                    AttributesToSkip = FileAttributes.Hidden | FileAttributes.System |
-                        FileAttributes.ReparsePoint,
-                    MaxRecursionDepth = 3
-                });
-            }
-            catch (Exception)
+            // Finish a bounded, non-destructive listing BEFORE the first delete.
+            if (!TryEnumerateBounded(target.Path, "*", recursive: true,
+                maxCandidates, TimeSpan.FromSeconds(8), out var files))
             {
                 result.Errors.Add(new CleanupError
                 {
                     FilePath = target.Id,
-                    Message = "No se pudo enumerar la ubicación de temporales.",
+                    Message = "Enumeración incompleta o límite de archivos excedido.",
                     ErrorType = "EnumerationError"
                 });
                 targetResult.IsSuccess = false;
                 return;
             }
 
-            foreach (var file in files)
+            foreach (var filePath in files)
             {
+                var file = new FileInfo(filePath);
                 // Timeout de 30 segundos por ubicación
                 if (sw.ElapsedMilliseconds > 30000)
                 {
@@ -602,7 +626,8 @@ public class TempCleanupService : ITempCleanupService
     }
 
     internal static void CleanThumbnailsFolder(
-        TempCleanupTarget target, TargetResult targetResult, TempCleanupResult result)
+        TempCleanupTarget target, TargetResult targetResult, TempCleanupResult result,
+        int maxCandidates = MaxEnumeratedFilesPerTarget)
     {
         if (!Directory.Exists(target.Path))
         {
@@ -618,7 +643,20 @@ public class TempCleanupService : ITempCleanupService
 
         try
         {
-            var thumbFiles = Directory.GetFiles(target.Path, "thumbcache_*.db");
+            // Never start deleting from a partial/unbounded cache listing.
+            if (!TryEnumerateBounded(target.Path, "thumbcache_*.db",
+                recursive: false, maxCandidates, TimeSpan.FromSeconds(5),
+                out var thumbFiles))
+            {
+                result.Errors.Add(new CleanupError
+                {
+                    FilePath = target.Id,
+                    Message = "No se pudo completar la enumeración de miniaturas.",
+                    ErrorType = "EnumerationError"
+                });
+                targetResult.IsSuccess = false;
+                return;
+            }
 
             foreach (var file in thumbFiles)
             {
