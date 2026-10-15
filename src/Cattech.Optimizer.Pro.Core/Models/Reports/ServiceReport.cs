@@ -190,7 +190,7 @@ public class ServiceReport
     /// <summary>
     /// ID único del reporte.
     /// </summary>
-    public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8].ToUpper();
+    public string Id { get; set; } = Guid.NewGuid().ToString("N").ToUpperInvariant();
 
     /// <summary>
     /// Información del cliente.
