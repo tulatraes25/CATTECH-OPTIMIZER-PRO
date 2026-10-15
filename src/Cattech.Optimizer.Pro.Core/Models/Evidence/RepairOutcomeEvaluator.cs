@@ -53,16 +53,67 @@ public sealed class RepairOutcomeRule
 /// <summary>
 /// Keeps only evidence identifiers; never copies raw values, file paths or PII.
 /// </summary>
-public sealed record RepairOutcomeAssessment(
-    string RuleId,
-    string RuleVersion,
-    string FactKey,
-    Guid BeforeEvidenceId,
-    Guid AfterEvidenceId,
-    RepairOutcomeStatus Status,
-    RepairOutcomeReason Reason,
-    DiagnosticContextId ContextId,
-    DiagnosticSubjectId SubjectId);
+/// <summary>
+/// Outcome is created by Core's evaluator, not arbitrary callers.
+/// This is an API-integrity constraint, NOT an authenticity signature.
+/// </summary>
+public sealed class RepairOutcomeAssessment
+{
+    internal RepairOutcomeAssessment(
+        string ruleId, string ruleVersion, string factKey,
+        Guid beforeEvidenceId, Guid afterEvidenceId,
+        RepairOutcomeStatus status, RepairOutcomeReason reason,
+        DiagnosticContextId contextId, DiagnosticSubjectId subjectId)
+    {
+        if (string.IsNullOrWhiteSpace(ruleId)
+            || string.IsNullOrWhiteSpace(ruleVersion)
+            || string.IsNullOrWhiteSpace(factKey))
+            throw new ArgumentException("Outcome rule metadata is required.");
+        if (beforeEvidenceId == Guid.Empty || afterEvidenceId == Guid.Empty)
+            throw new ArgumentException("Outcome evidence IDs are required.");
+        if (!Enum.IsDefined(status) || !Enum.IsDefined(reason))
+            throw new ArgumentOutOfRangeException(nameof(status));
+
+        if (status == RepairOutcomeStatus.ObservedImprovement
+            && reason != RepairOutcomeReason.ImprovementObserved
+            || status == RepairOutcomeStatus.Unresolved
+            && reason != RepairOutcomeReason.TargetNotReached
+            || status == RepairOutcomeStatus.Indeterminate
+            && reason is RepairOutcomeReason.ImprovementObserved
+                or RepairOutcomeReason.TargetNotReached)
+            throw new ArgumentException("Outcome reason contradicts its status.");
+
+        if (status != RepairOutcomeStatus.Indeterminate
+            && (!contextId.IsValid || !subjectId.IsValid
+                || beforeEvidenceId == afterEvidenceId))
+            throw new ArgumentException(
+                "A non-indeterminate outcome requires a bound case and component.");
+
+        RuleId = ruleId;
+        RuleVersion = ruleVersion;
+        FactKey = factKey;
+        BeforeEvidenceId = beforeEvidenceId;
+        AfterEvidenceId = afterEvidenceId;
+        Status = status;
+        Reason = reason;
+        ContextId = contextId;
+        SubjectId = subjectId;
+    }
+
+    public string RuleId { get; }
+    public string RuleVersion { get; }
+    public string FactKey { get; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public Guid BeforeEvidenceId { get; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public Guid AfterEvidenceId { get; }
+    public RepairOutcomeStatus Status { get; }
+    public RepairOutcomeReason Reason { get; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public DiagnosticContextId ContextId { get; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public DiagnosticSubjectId SubjectId { get; }
+}
 
 /// <summary>
 /// Compare two observations of the same measurement with an explicit postcondition.
