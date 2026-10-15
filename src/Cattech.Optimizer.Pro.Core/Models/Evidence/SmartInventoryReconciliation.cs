@@ -90,16 +90,19 @@ public sealed class SmartInventorySnapshot
 
     private readonly DiskIdentity?[] _identities;
     private readonly string?[] _claimedSerials;
+    private readonly bool _hasMalformedSerialClaim;
 
     private SmartInventorySnapshot(
         DiagnosticContextId contextId, DateTimeOffset capturedAtUtc,
-        DiskIdentity?[] identities, string?[] claimedSerials)
+        DiskIdentity?[] identities, string?[] claimedSerials,
+        bool hasMalformedSerialClaim)
     {
         ContextId = contextId;
         CapturedAtUtc = capturedAtUtc.ToUniversalTime();
         CaptureToken = Guid.NewGuid();
         _identities = identities;
         _claimedSerials = claimedSerials;
+        _hasMalformedSerialClaim = hasMalformedSerialClaim;
     }
 
     [JsonIgnore]
@@ -128,7 +131,8 @@ public sealed class SmartInventorySnapshot
         // now so caller edits cannot silently change a preview after review.
         return new SmartInventorySnapshot(contextId, capturedAt,
             snapshot.Select(ExtractIdentity).ToArray(),
-            snapshot.Select(ExtractClaimedSerial).ToArray());
+            snapshot.Select(ExtractClaimedSerial).ToArray(),
+            snapshot.Any(report => HasMalformedSerialClaim(report.SerialNumber)));
     }
 
     /// <summary>
@@ -171,6 +175,18 @@ public sealed class SmartInventorySnapshot
             DiagnosticSubjectId? previousSubject = null, int baselineIndex = -1) =>
             new(index, status, previousSubject, baselineIndex,
                 baseline.CaptureToken, current.CaptureToken);
+
+        // A malformed raw serial can hide a claim which would collide with
+        // a valid row. Invalidate every candidate in that inventory until
+        // fresh trustworthy input is acquired. Unknown placeholders alone
+        // do not block unrelated disks.
+        if (baseline._hasMalformedSerialClaim || current._hasMalformedSerialClaim)
+        {
+            for (var i = 0; i < previews.Length; i++)
+                previews[i] = ForCurrent(
+                    i, SmartInventoryMatchStatus.UnverifiableIdentity);
+            return Array.AsReadOnly(previews);
+        }
 
         for (var i = 0; i < current._identities.Length; i++)
         {
@@ -216,6 +232,10 @@ public sealed class SmartInventorySnapshot
 
         return Array.AsReadOnly(previews);
     }
+
+    private static bool HasMalformedSerialClaim(string? raw) =>
+        raw is not null && !string.IsNullOrWhiteSpace(raw)
+        && (raw.Length > MaxRawFieldLength || HasUnsafeFirmwareChars(raw));
 
     private static Dictionary<string, int> CountSerials(string?[] items)
     {
