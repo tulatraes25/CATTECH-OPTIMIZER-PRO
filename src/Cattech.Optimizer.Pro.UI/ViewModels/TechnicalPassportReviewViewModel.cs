@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Cattech.Optimizer.Pro.Core.Models.Evidence;
@@ -155,11 +154,11 @@ public partial class TechnicalPassportReviewViewModel : ObservableObject
             StatusMessage = "JSON copiado con autorización para el caso activo. " +
                 "No se envió a Internet ni se guardó ningún archivo.";
         }
-        catch (Exception ex) when (
-            ex is ExternalException or InvalidOperationException)
+        catch (Exception)
         {
-            // An external clipboard writer can throw after changing the OS
-            // clipboard; retrying with old consent would be unsafe.
+            // Even an unexpected callback failure can follow a partial
+            // clipboard change. Never expose the exception message or reuse
+            // the same approval.
             InvalidateForCaseSelectionChange();
             StatusMessage = "No se pudo confirmar la copia al portapapeles. " +
                 "Es posible que su contenido haya cambiado; revisalo. " +
