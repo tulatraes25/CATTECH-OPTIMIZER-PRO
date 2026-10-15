@@ -17,7 +17,7 @@ public partial class TechnicalPassportReviewViewModel : ObservableObject, IDispo
     private readonly Action<string> _writeClipboard;
     private readonly Func<DiagnosticContextId> _activeContext;
     private readonly DiagnosticSessionLease? _lease;
-    private readonly DiagnosticSessionCoordinator? _coordinator;
+    private readonly IDisposable? _leaseSubscription;
     private bool _consumed;
     private bool _revoked;
     private bool _copyInProgress;
@@ -34,8 +34,10 @@ public partial class TechnicalPassportReviewViewModel : ObservableObject, IDispo
         : this(snapshot, writeClipboard, LeaseScopeReader(lease))
     {
         _lease = lease;
-        _coordinator = lease.Owner;
-        _coordinator.SelectionChanged += OnCoordinatorSelectionChanged;
+        // The lease only grants subscription to its own revocation;
+        // the review UI never gains the authority to select a case.
+        _leaseSubscription = lease.SubscribeRevocation(
+            () => OnCoordinatorSelectionChanged(this, EventArgs.Empty));
 
         // Cover a selection transition between construction and subscription.
         if (!lease.IsCurrent)
@@ -108,8 +110,7 @@ public partial class TechnicalPassportReviewViewModel : ObservableObject, IDispo
             return;
 
         _disposed = true;
-        if (_coordinator is not null)
-            _coordinator.SelectionChanged -= OnCoordinatorSelectionChanged;
+        _leaseSubscription?.Dispose();
         InvalidateForCaseSelectionChange();
     }
 
