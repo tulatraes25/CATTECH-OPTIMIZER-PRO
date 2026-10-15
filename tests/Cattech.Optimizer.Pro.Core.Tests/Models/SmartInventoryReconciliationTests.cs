@@ -458,4 +458,81 @@ public sealed class SmartInventoryReconciliationTests
     }
 
 
+    [Theory]
+    [InlineData("SN-EDGE\n")]
+    [InlineData("\tSN-EDGE")]
+    [InlineData("SN-EDGE\r\n")]
+    [InlineData("SN-EDGE\u200B")]
+    public void RawSerialEdgeCharacters_AreNotSanitizedIntoMatchingIds(string serial)
+    {
+        var baseline = Snapshot(CaseA, PriorTime, Disk(serial: "SN-EDGE"));
+        var current = Snapshot(CaseA, CurrentTime, Disk(serial: serial));
+        var result = Assert.Single(SmartInventorySnapshot.Preview(
+            baseline, current, new[] { DiskA }, EvaluationTime));
+        Assert.Equal(SmartInventoryMatchStatus.UnverifiableIdentity, result.Status);
+        Assert.Null(result.PreviousSubjectId);
+    }
+
+    [Fact]
+    public void MalformedRawModel_IsNotTrimmedIntoGoodIdentity()
+    {
+        var baseline = Snapshot(CaseA, PriorTime, Disk());
+        var current = Snapshot(CaseA, CurrentTime,
+            Disk(model: "EXAMPLE NVME 1\t"));
+        var result = Assert.Single(SmartInventorySnapshot.Preview(
+            baseline, current, new[] { DiskA }, EvaluationTime));
+
+        Assert.Equal(SmartInventoryMatchStatus.UnverifiableIdentity, result.Status);
+    }
+
+    [Fact]
+    public void MalformedDevicePath_CannotClaimVerifiedInventory()
+    {
+        var baseline = Snapshot(CaseA, PriorTime, Disk());
+        var current = Snapshot(CaseA, CurrentTime,
+            Disk(path: "/dev/nvme0\r"));
+        var result = Assert.Single(SmartInventorySnapshot.Preview(
+            baseline, current, new[] { DiskA }, EvaluationTime));
+
+        Assert.Equal(SmartInventoryMatchStatus.UnverifiableIdentity, result.Status);
+    }
+
+    [Fact]
+    public void UnsafeExplicitSmartctlType_CannotFallbackToProtocol()
+    {
+        var baseline = Snapshot(CaseA, PriorTime, Disk());
+        var current = Snapshot(CaseA, CurrentTime,
+            Disk(transport: "\t"));
+        var result = Assert.Single(SmartInventorySnapshot.Preview(
+            baseline, current, new[] { DiskA }, EvaluationTime));
+
+        Assert.Equal(SmartInventoryMatchStatus.UnverifiableIdentity, result.Status);
+    }
+
+    [Fact]
+    public void ExcessiveRawPadding_IsRejectedBeforeTrim()
+    {
+        var baseline = Snapshot(CaseA, PriorTime, Disk(serial: "SN-123"));
+        var current = Snapshot(CaseA, CurrentTime,
+            Disk(serial: "SN-123" + new string(' ', 1600)));
+        var result = Assert.Single(SmartInventorySnapshot.Preview(
+            baseline, current, new[] { DiskA }, EvaluationTime));
+
+        Assert.Equal(SmartInventoryMatchStatus.UnverifiableIdentity, result.Status);
+    }
+
+    [Fact]
+    public void PlainSpacePadding_RemainsAValidReviewCandidate()
+    {
+        var baseline = Snapshot(CaseA, PriorTime, Disk(serial: "SN-123"));
+        var current = Snapshot(CaseA, CurrentTime,
+            Disk(serial: "  SN-123  ", model: " EXAMPLE NVME 1 "));
+        var result = Assert.Single(SmartInventorySnapshot.Preview(
+            baseline, current, new[] { DiskA }, EvaluationTime));
+
+        Assert.Equal(SmartInventoryMatchStatus.CandidateRequiresReview, result.Status);
+        Assert.Equal(DiskA, result.PreviousSubjectId);
+    }
+
+
 }
