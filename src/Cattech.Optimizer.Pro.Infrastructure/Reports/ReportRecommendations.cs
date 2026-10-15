@@ -308,8 +308,8 @@ public static class ReportRecommendationEngine
         }
 
         // Disco
-        if (diag.DiskType.Contains("HDD", StringComparison.OrdinalIgnoreCase) ||
-            diag.DiskType == "No detectado")
+        if (string.Equals(diag.DiskType?.Trim(), "HDD",
+            StringComparison.OrdinalIgnoreCase))
         {
             recs.Add(new ReportRecommendation
             {
@@ -320,7 +320,8 @@ public static class ReportRecommendationEngine
             });
         }
 
-        if (diag.DiskFreePercent > 0 && diag.DiskFreePercent < 15)
+        if (diag.DiskFreeSpaceKnown && diag.DiskFreeGB > 0 &&
+            diag.DiskFreePercent < 15)
         {
             recs.Add(new ReportRecommendation
             {
