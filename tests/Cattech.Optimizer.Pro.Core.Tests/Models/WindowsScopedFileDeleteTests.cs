@@ -342,6 +342,60 @@ public sealed class WindowsScopedFileDeleteTests
         finally { Directory.Delete(root, recursive: true); }
     }
 
+
+    [Fact]
+    public void OldFileWithOpenReaderAllowingDelete_IsPreservedUntilReaderCloses()
+    {
+        var root = NewFixture();
+        try
+        {
+            var file = Path.Combine(root, "reader-still-active.txt");
+            File.WriteAllText(file, "KEEP-ACTIVE-READER");
+            File.SetCreationTimeUtc(file, DateTime.UtcNow.AddDays(-8));
+            File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddDays(-8));
+
+            // The existing reader permits delete sharing. With the previous
+            // FILE_SHARE_READ open, the native cleanup could delete it.
+            using (var held = new FileStream(file, FileMode.Open,
+                FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+            {
+                Assert.False(WindowsScopedFileDelete.TryDelete(root, file, out var bytes));
+                Assert.Equal(0L, bytes);
+                Assert.True(File.Exists(file));
+            }
+
+            // After the reader closes, an otherwise eligible old fixture
+            // can be deleted using the same verified handle policy.
+            Assert.True(WindowsScopedFileDelete.TryDelete(root, file, out var removed));
+            Assert.True(removed > 0);
+            Assert.False(File.Exists(file));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void OldFileWithOpenWriterAllowingDelete_IsPreserved()
+    {
+        var root = NewFixture();
+        try
+        {
+            var file = Path.Combine(root, "writer-still-active.txt");
+            File.WriteAllText(file, "KEEP-ACTIVE-WRITER");
+            File.SetCreationTimeUtc(file, DateTime.UtcNow.AddDays(-8));
+            File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddDays(-8));
+
+            using (var held = new FileStream(file, FileMode.Open,
+                FileAccess.ReadWrite, FileShare.ReadWrite | FileShare.Delete))
+            {
+                Assert.False(WindowsScopedFileDelete.TryDelete(root, file, out var bytes));
+                Assert.Equal(0L, bytes);
+                Assert.Equal("KEEP-ACTIVE-WRITER", File.ReadAllText(file));
+            }
+            Assert.Equal("KEEP-ACTIVE-WRITER", File.ReadAllText(file));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
     private static string NewFixture()
     {
         var root = Path.Combine(Path.GetTempPath(),

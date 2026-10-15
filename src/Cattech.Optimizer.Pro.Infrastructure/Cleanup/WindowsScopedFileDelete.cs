@@ -16,6 +16,7 @@ internal static class WindowsScopedFileDelete
 {
     private const uint FileReadAttributes = 0x80;
     private const uint DeleteAccess = 0x00010000;
+    private const uint FileShareNone = 0;
     private const uint FileShareRead = 0x00000001;
     private const uint FileShareWrite = 0x00000002;
     private const uint OpenExisting = 3;
@@ -85,11 +86,12 @@ internal static class WindowsScopedFileDelete
             || !MatchesFinalPath(rootHandle, root))
             return false;
 
-        // Do not follow a leaf symlink. FileShareRead denies concurrent
-        // write/delete sharing, so a competing writer cannot replace an open
-        // candidate before handle-based disposition.
+        // Do not follow a leaf symlink. Request exclusive ownership for
+        // the brief verified-handle disposition: refuse even active readers
+        // that voluntarily allow FILE_SHARE_DELETE. Never delete a file
+        // currently held open for ordinary read/write access.
         using var fileHandle = CreateFile(
-            candidate, FileReadAttributes | DeleteAccess, FileShareRead,
+            candidate, FileReadAttributes | DeleteAccess, FileShareNone,
             IntPtr.Zero, OpenExisting, FileFlagOpenReparsePoint, IntPtr.Zero);
         if (fileHandle.IsInvalid
             || !GetFileInformationByHandle(fileHandle, out var info))
