@@ -98,3 +98,29 @@ Estos checks minimizan falsos positivos pero tambien pueden aumentar los
 falsos negativos, lo cual es intencional cuando no hay prueba de identidad
 fisica. La funcionalidad sigue siendo solo vista previa y no ejecuta
 operaciones ni comparte datos reales.
+
+## Inventario con reclamos de serial malformed (slice SMART-H4)
+
+**Riesgo adversarial:** una segunda fila puede reclamar el mismo serial
+que un disco valido, pero con un CR/LF, caracter de formato Unicode o
+longitud maliciosa. Si solo se contabilizan los seriales normalizados,
+esa segunda fila desaparece de la deteccion de duplicados y una primera
+fila podria terminar como `CandidateRequiresReview`.
+
+**Decision fail-closed:** si cualquier reporte de un inventario declara
+un serial no vacio con caracteres prohibidos o longitud excesiva, el
+preview para ese par de snapshots declara **todos los renglones actuales
+`UnverifiableIdentity`** y no entrega un `PreviousSubjectId`.
+La bandera privada se congela al capturar; arreglar el objeto de entrada
+despues de la captura no modifica un preview existente. Se necesita
+capturar nuevamente para continuar.
+
+Los placeholders nominales como `UNKNOWN`/`N/A` o un valor realmente
+ausente siguen representando solo datos no disponibles: no invalidan
+por si solos el resto de identidades validas.
+
+La decision es intencionalmente conservadora y puede bloquear otros
+discos sanos cuando el proveedor entregue una sola fila malformada.
+Eso es preferible a producir un falso emparejamiento automatico.
+No supone que un serial valido pruebe identidad fisica; toda coincidencia
+sigue requiriendo revision humana, inventario confiable y QA real.
