@@ -29,26 +29,46 @@ public class JsonServiceReportService : IServiceReportService
     /// <inheritdoc/>
     public async Task<string> SaveReportAsync(ServiceReport report)
     {
-        await _lock.WaitAsync();
+        ArgumentNullException.ThrowIfNull(report);
+        await _lock.WaitAsync().ConfigureAwait(false);
 
         try
         {
             EnsureDirectoryExists();
 
-            var fileName = $"service-report-{report.CreatedAt:yyyyMMdd-HHmmss}.json";
+            // The timestamp and report ID are not sufficient under concurrent
+            // writers, repeated saves or across independent service instances.
+            // Keep arbitrary report IDs out of the filesystem path.
+            var token = Guid.NewGuid().ToString("N");
+            var fileName = $"service-report-{report.CreatedAt:yyyyMMdd-HHmmss}-{token}.json";
             var filePath = Path.Combine(_reportsDirectory, fileName);
-
-            // Si ya existe un archivo con el mismo nombre, agregar sufijo
-            if (File.Exists(filePath))
-            {
-                fileName = $"service-report-{report.CreatedAt:yyyyMMdd-HHmmss}-{report.Id}.json";
-                filePath = Path.Combine(_reportsDirectory, fileName);
-            }
-
+            var stagedPath = Path.Combine(_reportsDirectory, $".cattech-service-{token}.tmp");
             var json = JsonSerializer.Serialize(report, SerializerOptions);
-            await File.WriteAllTextAsync(filePath, json);
 
-            return fileName;
+            try
+            {
+                // A failure before publication can only leave a temporary file.
+                // The final name is published atomically, without overwriting.
+                await using (var stream = new FileStream(stagedPath, FileMode.CreateNew,
+                    FileAccess.Write, FileShare.None, 8192, useAsync: true))
+                await using (var writer = new StreamWriter(stream, System.Text.Encoding.UTF8))
+                {
+                    await writer.WriteAsync(json).ConfigureAwait(false);
+                }
+
+                File.Move(stagedPath, filePath);
+                return fileName;
+            }
+            finally
+            {
+                try
+                {
+                    if (File.Exists(stagedPath))
+                        File.Delete(stagedPath);
+                }
+                catch (IOException) { /* Keep the original failure. */ }
+                catch (UnauthorizedAccessException) { /* Keep the original failure. */ }
+            }
         }
         finally
         {
@@ -59,32 +79,18 @@ public class JsonServiceReportService : IServiceReportService
     /// <inheritdoc/>
     public async Task<ServiceReport?> LoadReportAsync(string reportId)
     {
-        await _lock.WaitAsync();
-
+        await _lock.WaitAsync().ConfigureAwait(false);
         try
         {
             if (!Directory.Exists(_reportsDirectory))
                 return null;
 
-            var files = Directory.GetFiles(_reportsDirectory, "service-report-*.json");
-
-            foreach (var file in files)
-            {
-                try
-                {
-                    var json = await File.ReadAllTextAsync(file);
-                    var report = JsonSerializer.Deserialize<ServiceReport>(json, SerializerOptions);
-
-                    if (report?.Id == reportId)
-                        return report;
-                }
-                catch
-                {
-                    // Saltar archivos corruptos
-                }
-            }
-
-            return null;
+            // The first matching logical ID is NEVER sufficient: older
+            // report IDs may be only eight hex characters, and a snapshot
+            // may have been saved more than once with the same ID.
+            var match = await FindUniqueReportAsync(reportId)
+                .ConfigureAwait(false);
+            return match?.Report;
         }
         finally
         {
@@ -146,40 +152,89 @@ public class JsonServiceReportService : IServiceReportService
     /// <inheritdoc/>
     public async Task<bool> DeleteReportAsync(string reportId)
     {
-        await _lock.WaitAsync();
-
+        await _lock.WaitAsync().ConfigureAwait(false);
         try
         {
             if (!Directory.Exists(_reportsDirectory))
                 return false;
 
-            var files = Directory.GetFiles(_reportsDirectory, "service-report-*.json");
+            // Never delete the first apparent match: multiple stored files
+            // can carry the same logical Id. This is a best-effort local
+            // uniqueness gate, NOT an inter-process atomic identity lock.
+            var match = await FindUniqueReportAsync(reportId)
+                .ConfigureAwait(false);
+            if (match is null)
+                return false;
 
-            foreach (var file in files)
+            try
             {
-                try
-                {
-                    var json = await File.ReadAllTextAsync(file);
-                    var report = JsonSerializer.Deserialize<ServiceReport>(json, SerializerOptions);
-
-                    if (report?.Id == reportId)
-                    {
-                        File.Delete(file);
-                        return true;
-                    }
-                }
-                catch
-                {
-                    // Saltar archivos corruptos
-                }
+                File.Delete(match.Value.FilePath);
+                return true;
             }
-
-            return false;
+            catch (IOException) { return false; }
+            catch (UnauthorizedAccessException) { return false; }
         }
         finally
         {
             _lock.Release();
         }
+    }
+
+    /// <summary>
+    /// Reject ambiguous, unreadable, or malformed report directories.
+    /// Reading a corrupt file cannot prove that its logical ID is distinct,
+    /// so returning any other report (or deleting it) would be unsafe.
+    /// Caller already holds this instance's gate.
+    /// </summary>
+    private async Task<(ServiceReport Report, string FilePath)?>
+        FindUniqueReportAsync(string? reportId)
+    {
+        if (string.IsNullOrWhiteSpace(reportId))
+            return null;
+
+        (ServiceReport Report, string FilePath)? match = null;
+        var files = Directory.GetFiles(_reportsDirectory,
+            "service-report-*.json");
+
+        foreach (var file in files)
+        {
+            try
+            {
+                var json = await File.ReadAllTextAsync(file)
+                    .ConfigureAwait(false);
+                using var doc = JsonDocument.Parse(json);
+                if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                    return null;
+
+                // A missing or duplicated id can otherwise silently become
+                // a fresh GUID from ServiceReport's property initializer.
+                var ids = doc.RootElement.EnumerateObject()
+                    .Where(property => property.NameEquals("id"))
+                    .ToArray();
+                if (ids.Length != 1
+                    || ids[0].Value.ValueKind != JsonValueKind.String
+                    || string.IsNullOrWhiteSpace(ids[0].Value.GetString()))
+                    return null;
+
+                var report = JsonSerializer.Deserialize<ServiceReport>(
+                    json, SerializerOptions);
+                if (report is null || report.Id != ids[0].Value.GetString())
+                    return null;
+
+                if (string.Equals(report.Id, reportId,
+                    StringComparison.Ordinal))
+                {
+                    if (match is not null)
+                        return null; // Ambiguous ID: no first-match fallback.
+                    match = (report, file);
+                }
+            }
+            catch (IOException) { return null; }
+            catch (UnauthorizedAccessException) { return null; }
+            catch (JsonException) { return null; }
+        }
+
+        return match;
     }
 
     private void EnsureDirectoryExists()
