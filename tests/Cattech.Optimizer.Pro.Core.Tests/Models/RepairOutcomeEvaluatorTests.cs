@@ -153,7 +153,9 @@ public class RepairOutcomeEvaluatorTests
             StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(Subject.Value.ToString(), json,
             StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("ObservedImprovement", json);
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        Assert.Equal((int)RepairOutcomeStatus.ObservedImprovement,
+            doc.RootElement.GetProperty("Status").GetInt32());
     }
 
 }
