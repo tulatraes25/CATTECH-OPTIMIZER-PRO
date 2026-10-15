@@ -140,33 +140,32 @@ public sealed class EvidenceSubjectIsolationTests
     }
 
     [Fact]
-    public void Passport_RejectsForgedOutcomeSpanningDifferentDisks()
+    public void Passport_RejectsCrossDiskIndeterminateOutcome()
     {
-        var a = Measure(BeforeId, DiskA, "unhealthy");
-        var b = Measure(AfterId, DiskB, "healthy");
-        var forged = new RepairOutcomeAssessment("fake", "1",
-            "disk.health", BeforeId, AfterId,
-            RepairOutcomeStatus.ObservedImprovement,
-            RepairOutcomeReason.ImprovementObserved, Context, DiskA);
+        var a = Measure(BeforeId, DiskA, "unhealthy", AsOf.AddHours(-2));
+        var b = Measure(AfterId, DiskB, "healthy", AsOf.AddHours(-1));
+        var evaluated = RepairOutcomeEvaluator.Compare(OutcomeRule(), a, b);
+        Assert.Equal(RepairOutcomeReason.IncompatibleSubject, evaluated.Reason);
+        Assert.Equal(RepairOutcomeStatus.Indeterminate, evaluated.Status);
 
         Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(
             Context, ExportId, AsOf, new[] { a, b },
-            Array.Empty<DiagnosticAssessment>(), new[] { forged }));
+            Array.Empty<DiagnosticAssessment>(), new[] { evaluated }));
     }
 
     [Fact]
-    public void Passport_RejectsOutcomeWithInvalidDeclaredSubject()
+    public void Passport_RejectsOutcomeReplayedWithDifferentDiskRecord()
     {
-        var a = Measure(BeforeId, DiskA, "unhealthy");
-        var b = Measure(AfterId, DiskA, "healthy");
-        var forged = new RepairOutcomeAssessment("fake", "1",
-            "disk.health", BeforeId, AfterId,
-            RepairOutcomeStatus.ObservedImprovement,
-            RepairOutcomeReason.ImprovementObserved, Context, default);
+        var before = Measure(BeforeId, DiskA, "unhealthy", AsOf.AddHours(-2));
+        var afterDiskA = Measure(AfterId, DiskA, "healthy", AsOf.AddHours(-1));
+        var afterDiskB = Measure(AfterId, DiskB, "healthy", AsOf.AddHours(-1));
+        var evaluated = RepairOutcomeEvaluator.Compare(
+            OutcomeRule(), before, afterDiskA);
+        Assert.Equal(RepairOutcomeStatus.ObservedImprovement, evaluated.Status);
 
         Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(
-            Context, ExportId, AsOf, new[] { a, b },
-            Array.Empty<DiagnosticAssessment>(), new[] { forged }));
+            Context, ExportId, AsOf, new[] { before, afterDiskB },
+            Array.Empty<DiagnosticAssessment>(), new[] { evaluated }));
     }
 
     [Fact]
