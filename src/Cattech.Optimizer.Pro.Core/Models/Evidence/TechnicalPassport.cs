@@ -82,14 +82,18 @@ public static class TechnicalPassportBuilder
         };
 
     public static TechnicalPassportArtifact Build(
+        DiagnosticContextId contextId,
         Guid freshExportId,
         DateTimeOffset issuedAt,
         IEnumerable<EvidenceRecord> evidence,
         IEnumerable<DiagnosticAssessment> diagnostics,
         IEnumerable<RepairOutcomeAssessment> outcomes)
     {
-        if (freshExportId == Guid.Empty)
-            throw new ArgumentException("A fresh, random export ID is required.",
+        if (!contextId.IsValid)
+            throw new ArgumentException("Cannot export an unscoped diagnostic case.",
+                nameof(contextId));
+        if (freshExportId == Guid.Empty || freshExportId == contextId.Value)
+            throw new ArgumentException("A distinct random export ID is required.",
                 nameof(freshExportId));
 
         var records = CaptureBounded(evidence, MaximumEvidence, nameof(evidence));
@@ -97,6 +101,19 @@ public static class TechnicalPassportBuilder
             diagnostics, MaximumAssessments, nameof(diagnostics));
         var postchecks = CaptureBounded(
             outcomes, MaximumAssessments, nameof(outcomes));
+
+        // Every record and derived assessment must belong to exactly one
+        // explicitly selected equipment service session. Unknown or mixed
+        // contexts fail closed rather than polluting a client report.
+        if (records.Any(item => item.ContextId != contextId))
+            throw new ArgumentException("Mixed equipment evidence is not exportable.",
+                nameof(evidence));
+        if (assessments.Any(item => item.ContextId != contextId))
+            throw new ArgumentException("A diagnostic assessment belongs to another case.",
+                nameof(diagnostics));
+        if (postchecks.Any(item => item.ContextId != contextId))
+            throw new ArgumentException("A repair outcome belongs to another case.",
+                nameof(outcomes));
 
         // Reusing an evidence ID (even with identical data) can inflate counts.
         if (records.Select(item => item.Id).Distinct().Count() != records.Length)
