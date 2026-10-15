@@ -81,11 +81,12 @@ public sealed class DiagnosticRule
 /// </summary>
 public sealed class DiagnosticAssessment
 {
-    internal DiagnosticAssessment(DiagnosticRule rule,
+    internal DiagnosticAssessment(DiagnosticContextId contextId, DiagnosticRule rule,
         DiagnosticAssessmentStatus status,
         IEnumerable<Guid> supporting, IEnumerable<Guid> contradicting,
         IEnumerable<string> missing, IEnumerable<string> futureDated)
     {
+        ContextId = contextId;
         RuleId = rule.RuleId;
         RuleVersion = rule.Version;
         Hypothesis = rule.Hypothesis;
@@ -103,6 +104,7 @@ public sealed class DiagnosticAssessment
                 .OrderBy(x => x, StringComparer.Ordinal).ToArray());
     }
 
+    public DiagnosticContextId ContextId { get; }
     public string RuleId { get; }
     public string RuleVersion { get; }
     public string Hypothesis { get; }
@@ -122,15 +124,22 @@ public sealed class DiagnosticAssessment
 public static class DeterministicDiagnosticEvaluator
 {
     public static DiagnosticAssessment Evaluate(
-        DiagnosticRule rule, IEnumerable<EvidenceRecord> evidence,
+        DiagnosticContextId contextId, DiagnosticRule rule,
+        IEnumerable<EvidenceRecord> evidence,
         DateTimeOffset evaluationAt)
     {
+        if (!contextId.IsValid)
+            throw new ArgumentException("A valid diagnostic context is required.",
+                nameof(contextId));
         ArgumentNullException.ThrowIfNull(rule);
         ArgumentNullException.ThrowIfNull(evidence);
 
         var snapshot = evidence.Take(10_001).ToArray();
         if (snapshot.Length > 10_000 || snapshot.Any(item => item is null))
             throw new ArgumentException("Evidence must contain <= 10,000 valid records.",
+                nameof(evidence));
+        if (snapshot.Any(item => item.ContextId != contextId))
+            throw new ArgumentException("Cross-context diagnostic evidence is forbidden.",
                 nameof(evidence));
 
         // Reject a reused identity containing different facts rather than allowing
@@ -191,7 +200,7 @@ public static class DeterministicDiagnosticEvaluator
                         ? DiagnosticAssessmentStatus.InsufficientEvidence
                         : DiagnosticAssessmentStatus.Corroborated;
 
-        return new DiagnosticAssessment(rule, status, supporting, contradicting,
+        return new DiagnosticAssessment(contextId, rule, status, supporting, contradicting,
             missing, future);
     }
 }
