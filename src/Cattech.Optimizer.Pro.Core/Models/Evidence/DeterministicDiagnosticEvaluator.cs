@@ -82,10 +82,12 @@ public sealed class DiagnosticRule
 public sealed class DiagnosticAssessment
 {
     internal DiagnosticAssessment(DiagnosticRule rule,
+        DiagnosticContextId contextId,
         DiagnosticAssessmentStatus status,
         IEnumerable<Guid> supporting, IEnumerable<Guid> contradicting,
         IEnumerable<string> missing, IEnumerable<string> futureDated)
     {
+        ContextId = contextId;
         RuleId = rule.RuleId;
         RuleVersion = rule.Version;
         Hypothesis = rule.Hypothesis;
@@ -103,6 +105,7 @@ public sealed class DiagnosticAssessment
                 .OrderBy(x => x, StringComparer.Ordinal).ToArray());
     }
 
+    public DiagnosticContextId ContextId { get; }
     public string RuleId { get; }
     public string RuleVersion { get; }
     public string Hypothesis { get; }
@@ -123,7 +126,16 @@ public static class DeterministicDiagnosticEvaluator
 {
     public static DiagnosticAssessment Evaluate(
         DiagnosticRule rule, IEnumerable<EvidenceRecord> evidence,
-        DateTimeOffset evaluationAt)
+        DateTimeOffset evaluationAt) =>
+        Evaluate(rule, evidence, evaluationAt, default);
+
+    /// <summary>
+    /// An explicit scope permits a missing-data-only assessment with zero records;
+    /// a scope-free empty input or mixed/unbound records are never accepted.
+    /// </summary>
+    public static DiagnosticAssessment Evaluate(
+        DiagnosticRule rule, IEnumerable<EvidenceRecord> evidence,
+        DateTimeOffset evaluationAt, DiagnosticContextId expectedContext)
     {
         ArgumentNullException.ThrowIfNull(rule);
         ArgumentNullException.ThrowIfNull(evidence);
@@ -143,6 +155,16 @@ public static class DeterministicDiagnosticEvaluator
                     nameof(evidence));
             unique[item.Id] = item;
         }
+
+        var context = expectedContext.IsBound
+            ? expectedContext
+            : unique.Count == 0 ? default : unique.Values.First().ContextId;
+
+        if (!context.IsBound
+            || unique.Values.Any(item => item.ContextId != context))
+            throw new ArgumentException(
+                "An assessment requires one bound diagnostic context; missing or mixed contexts are rejected.",
+                nameof(evidence));
 
         var atUtc = evaluationAt.ToUniversalTime();
         var supporting = new List<Guid>();
@@ -191,7 +213,7 @@ public static class DeterministicDiagnosticEvaluator
                         ? DiagnosticAssessmentStatus.InsufficientEvidence
                         : DiagnosticAssessmentStatus.Corroborated;
 
-        return new DiagnosticAssessment(rule, status, supporting, contradicting,
-            missing, future);
+        return new DiagnosticAssessment(rule, context, status, supporting,
+            contradicting, missing, future);
     }
 }
