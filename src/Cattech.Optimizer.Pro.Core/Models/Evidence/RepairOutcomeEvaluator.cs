@@ -52,15 +52,50 @@ public sealed class RepairOutcomeRule
 /// <summary>
 /// Keeps only evidence identifiers; never copies raw values, file paths or PII.
 /// </summary>
-public sealed record RepairOutcomeAssessment(
-    string RuleId,
-    string RuleVersion,
-    string FactKey,
-    Guid BeforeEvidenceId,
-    Guid AfterEvidenceId,
-    RepairOutcomeStatus Status,
-    RepairOutcomeReason Reason,
-    DiagnosticContextId ContextId = default);
+public sealed class RepairOutcomeAssessment
+{
+    // Only the evaluated comparison may manufacture an outcome in normal code.
+    // This is an API correctness boundary, not a cryptographic attestation.
+    internal RepairOutcomeAssessment(
+        string ruleId, string ruleVersion, string factKey,
+        Guid beforeEvidenceId, Guid afterEvidenceId,
+        RepairOutcomeStatus status, RepairOutcomeReason reason,
+        DiagnosticContextId contextId)
+    {
+        if (string.IsNullOrWhiteSpace(ruleId)
+            || string.IsNullOrWhiteSpace(ruleVersion)
+            || string.IsNullOrWhiteSpace(factKey))
+            throw new ArgumentException("Outcome rule metadata is required.");
+        if (beforeEvidenceId == Guid.Empty || afterEvidenceId == Guid.Empty)
+            throw new ArgumentException("Outcome evidence references are required.");
+        if (!Enum.IsDefined(status) || !Enum.IsDefined(reason))
+            throw new ArgumentOutOfRangeException(nameof(status));
+        if (!contextId.IsBound && status != RepairOutcomeStatus.Indeterminate)
+            throw new ArgumentException(
+                "A positive or unresolved outcome requires a bound context.",
+                nameof(contextId));
+
+        RuleId = ruleId;
+        RuleVersion = ruleVersion;
+        FactKey = factKey;
+        BeforeEvidenceId = beforeEvidenceId;
+        AfterEvidenceId = afterEvidenceId;
+        Status = status;
+        Reason = reason;
+        ContextId = contextId;
+    }
+
+    public string RuleId { get; }
+    public string RuleVersion { get; }
+    public string FactKey { get; }
+    public Guid BeforeEvidenceId { get; }
+    public Guid AfterEvidenceId { get; }
+    public RepairOutcomeStatus Status { get; }
+    public RepairOutcomeReason Reason { get; }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public DiagnosticContextId ContextId { get; }
+}
 
 /// <summary>
 /// Compare two observations of the same measurement with an explicit postcondition.
