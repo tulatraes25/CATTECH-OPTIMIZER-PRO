@@ -78,6 +78,8 @@ public sealed class PassportConsentContextSecurityTests
         var review = MakeReview(passport, _ => copies++, () => selected);
 
         Assert.True(review.IsConsentRevoked);
+        Assert.Empty(review.PreviewJson);
+        Assert.Empty(review.PreviewSha256);
         Assert.False(review.CopyApprovedPayloadCommand.CanExecute(null));
         review.HasReviewedPreview = true;
         review.ConsentsToClipboard = true;
@@ -126,6 +128,8 @@ public sealed class PassportConsentContextSecurityTests
         Assert.False(review.HasReviewedPreview);
         Assert.False(review.ConsentsToClipboard);
         Assert.True(review.IsConsentRevoked);
+        Assert.Empty(review.PreviewJson);
+        Assert.Empty(review.PreviewSha256);
         selected = CaseA;
         review.HasReviewedPreview = true;
         review.ConsentsToClipboard = true;
@@ -167,6 +171,8 @@ public sealed class PassportConsentContextSecurityTests
 
         Assert.Single(copies);
         Assert.Equal(passport.PayloadJson, copies[0]);
+        Assert.Empty(review.PreviewJson);
+        Assert.Empty(review.PreviewSha256);
         Assert.True(review.HasCopiedToClipboard);
         Assert.True(review.IsConsentRevoked);
         Assert.Contains("podría contener", review.StatusMessage);
@@ -244,6 +250,32 @@ public sealed class PassportConsentContextSecurityTests
         review.ConsentsToClipboard = true;
         review.CopyApprovedPayloadCommand.Execute(null);
         Assert.Equal(1, copied);
+    }
+
+    [Fact]
+    public void UnexpectedClipboardWriterException_RevokesAndSanitizesOutput()
+    {
+        var callCount = 0;
+        var review = MakeReview(MakePassport(CaseA), _ =>
+        {
+            callCount++;
+            throw new ApplicationException(
+                "Sensitive internal callback with customer name");
+        });
+        review.HasReviewedPreview = true;
+        review.ConsentsToClipboard = true;
+
+        review.CopyApprovedPayloadCommand.Execute(null);
+
+        Assert.Equal(1, callCount);
+        Assert.True(review.IsConsentRevoked);
+        Assert.Empty(review.PreviewJson);
+        Assert.Empty(review.PreviewSha256);
+        Assert.False(review.HasCopiedToClipboard);
+        Assert.DoesNotContain("customer name", review.StatusMessage);
+        Assert.Contains("No se pudo confirmar", review.StatusMessage);
+        review.CopyApprovedPayloadCommand.Execute(null);
+        Assert.Equal(1, callCount);
     }
 
     [Fact]
