@@ -1,0 +1,164 @@
+using Cattech.Optimizer.Pro.Core.Models.Diagnostics;
+using Cattech.Optimizer.Pro.Infrastructure.Diagnostics;
+
+namespace Cattech.Optimizer.Pro.Core.Tests.Models;
+
+public class BugCheckDecoderTests
+{
+    private static string FindRepositoryFile(string path)
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null)
+        {
+            var candidate = Path.Combine(dir.FullName, path);
+            if (File.Exists(candidate))
+                return candidate;
+            dir = dir.Parent;
+        }
+
+        throw new FileNotFoundException("No se encontró el archivo dentro del checkout del repositorio.", path);
+    }
+
+    [Fact]
+    public void PackagedCatalog_IsDeclaredByUiProject()
+    {
+        var project = File.ReadAllText(FindRepositoryFile(
+            "src/Cattech.Optimizer.Pro.UI/Cattech.Optimizer.Pro.UI.csproj"));
+        Assert.Contains("config\\bugcheckcodes.json", project);
+        Assert.Contains("<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>", project);
+    }
+
+    [Fact]
+    public void RealRepositoryCatalog_DecodesRepresentativeCodes()
+    {
+        var catalog = FindRepositoryFile("config/bugcheckcodes.json");
+        var decoder = new BugCheckDecoder(catalog);
+
+        Assert.True(decoder.CatalogAvailable);
+        Assert.Equal("WHEA_UNCORRECTABLE_ERROR", decoder.Decode(0x124).Name);
+        Assert.Equal("DRIVER_POWER_STATE_FAILURE", decoder.Decode(0x9F).Name);
+        Assert.Equal("DPC_WATCHDOG_VIOLATION", decoder.Decode(0x133).Name);
+    }
+
+    [Fact]
+    public void MissingCatalog_DoesNotCrashAndReportsUnavailable()
+    {
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "not-found.json");
+        var decoder = new BugCheckDecoder(path);
+
+        Assert.False(decoder.CatalogAvailable);
+        Assert.False(decoder.Decode(0x124).IsKnown);
+    }
+
+    [Fact]
+    public void CorruptedCatalog_DoesNotCrash()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(path, "{ malformed json");
+            var decoder = new BugCheckDecoder(path);
+            Assert.False(decoder.CatalogAvailable);
+            Assert.False(decoder.Decode(0x124).IsKnown);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void LoadCatalog_DecodesKnownHexCode()
+    {
+        const string json = """
+        [
+          {
+            "code": "0x00000124",
+            "name": "WHEA_UNCORRECTABLE_ERROR",
+            "description": "Hardware no corregible",
+            "typicalAreas": ["cpu", "memoria"]
+          }
+        ]
+        """;
+
+        var catalog = BugCheckDecoder.LoadCatalog(json);
+        var decoder = new BugCheckDecoder(catalog);
+
+        var result = decoder.Decode(0x124);
+
+        Assert.True(result.IsKnown);
+        Assert.Equal("0x00000124", result.HexCode);
+        Assert.Equal("WHEA_UNCORRECTABLE_ERROR", result.Name);
+        Assert.Equal("Hardware no corregible", result.Description);
+        Assert.Equal(new[] { "cpu", "memoria" }, result.TypicalAreas);
+    }
+
+    [Fact]
+    public void Decode_UnknownCode_IsHonestAndNonFatal()
+    {
+        var decoder = new BugCheckDecoder(new Dictionary<uint, BugCheckDecodeResult>());
+
+        var result = decoder.Decode(0xDEADBEEF);
+
+        Assert.False(result.IsKnown);
+        Assert.Equal("0xDEADBEEF", result.HexCode);
+        Assert.Equal("UNKNOWN_BUG_CHECK", result.Name);
+        Assert.NotEmpty(result.Description);
+        Assert.Empty(result.TypicalAreas);
+    }
+
+    [Theory]
+    [InlineData("0x0000000A", 0x0000000Au)]
+    [InlineData("0X00000124", 0x00000124u)]
+    [InlineData("292", 292u)]
+    public void TryParseCode_AcceptsHexAndDecimal(string input, uint expected)
+    {
+        var ok = BugCheckDecoder.TryParseCode(input, out var actual);
+
+        Assert.True(ok);
+        Assert.Equal(expected, actual);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("0xZZZZ")]
+    [InlineData("-1")]
+    [InlineData("not-a-code")]
+    public void TryParseCode_RejectsInvalidValues(string input)
+    {
+        Assert.False(BugCheckDecoder.TryParseCode(input, out _));
+    }
+
+    [Fact]
+    public void LoadCatalog_FirstDuplicateWins()
+    {
+        const string json = """
+        [
+          { "code": "0xA", "name": "FIRST", "description": "first" },
+          { "code": "0xA", "name": "SECOND", "description": "second" }
+        ]
+        """;
+
+        var catalog = BugCheckDecoder.LoadCatalog(json);
+
+        Assert.Single(catalog);
+        Assert.Equal("FIRST", catalog[0xAu].Name);
+    }
+
+    [Fact]
+    public void LoadCatalog_IgnoresInvalidAndNamelessEntries()
+    {
+        const string json = """
+        [
+          { "code": "bad", "name": "INVALID" },
+          { "code": "0x50", "name": "" },
+          { "code": "0x9F", "name": "DRIVER_POWER_STATE_FAILURE" }
+        ]
+        """;
+
+        var catalog = BugCheckDecoder.LoadCatalog(json);
+
+        Assert.Single(catalog);
+        Assert.True(catalog.ContainsKey(0x9Fu));
+    }
+}
