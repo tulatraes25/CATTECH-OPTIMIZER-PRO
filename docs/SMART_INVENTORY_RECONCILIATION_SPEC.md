@@ -53,3 +53,27 @@ real inusual (falso negativo), pero nunca autoriza un emparejamiento.
 No usar normalizaciones visuales/confusables para forzar equivalencias.
 No implica validación de identidad física. QA con informes de distintos
 fabricantes y bridges sigue pendiente.
+
+## Revision de candidatos vinculada a capturas exactas
+
+Un `CandidateRequiresReview` del inventario anterior no sirve como prueba
+de correspondencia despues de capturar nuevamente el equipo, aunque los
+campos serial/modelo/capacidad/transporte sean iguales. Cada captura en
+memoria dispone de un token aleatorio independiente del hardware; el
+`SmartInventoryMatchPreview` recuerda, sin serializarlos, los tokens de
+ambos snapshots y la posicion original de la identidad de sujeto.
+
+`IsCurrentCandidateFor(baseline,current,baselineSubjects,currentIndex)`
+solo devuelve `true` si es un candidato del mismo par de capturas, con
+el mismo indice actual seleccionado y la misma asignacion de sujeto en
+la posicion del inventario base. Las listas del llamador se copian al
+hacer `Preview` para evitar resultados inconsistentes por mutaciones
+posteriores. El token nunca figura en JSON exportado.
+
+**Limites**: este chequeo es una precondicion de frescura de vista previa,
+no un acto de consentimiento ni una prueba de identidad fisica.
+Codigo malicioso u otros consumidores pueden ignorar el metodo, por lo
+que cualquier futuro adaptador que transforme candidatos en evidencias
+debera imponer nuevamente estos controles y confirmar el hardware
+en la interfaz con el tecnico. El plan de revocacion al cambiar el
+equipo sigue pendiente de QA WPF/Windows real.
