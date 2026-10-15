@@ -16,19 +16,24 @@ public class TechnicalPassportTests
     private static readonly DateTimeOffset IssuedAt =
         new(2026, 10, 15, 6, 0, 0, TimeSpan.Zero);
 
+    private static readonly DiagnosticContextId Context =
+        DiagnosticContextId.FromGuid(
+            Guid.Parse("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"));
+
     private static EvidenceRecord Observed(Guid id, string value,
         EvidencePrivacyClass privacy = EvidencePrivacyClass.Equipment,
-        string source = "synthetic", DateTimeOffset? observedAt = null) =>
+        string source = "synthetic", DateTimeOffset? observedAt = null,
+        DiagnosticContextId? context = null) =>
         EvidenceRecord.Observed(id, source, "windows.health",
             observedAt ?? IssuedAt.AddHours(-2), EvidenceValue.FromText(value),
             "synthetic-test-only", privacy,
-            "Only fixture data.");
+            "Only fixture data.", contextId: context ?? Context);
 
     private static EvidenceRecord Missing(Guid id) =>
         EvidenceRecord.Missing(id, "synthetic", "windows.health",
             IssuedAt.AddHours(-1), EvidenceAvailability.AccessDenied,
             "fixture", EvidencePrivacyClass.Equipment,
-            "Synthetic access denied.");
+            "Synthetic access denied.", contextId: Context);
 
     private static DiagnosticAssessment Diagnostic(EvidenceRecord fact) =>
         DeterministicDiagnosticEvaluator.Evaluate(
@@ -90,7 +95,7 @@ public class TechnicalPassportTests
         var sensitive = EvidenceRecord.Observed(SensitiveId, marker,
             "windows.health", IssuedAt.AddHours(-2),
             EvidenceValue.FromText(path), marker,
-            EvidencePrivacyClass.Sensitive, marker);
+            EvidencePrivacyClass.Sensitive, marker, contextId: Context);
         var safe = Observed(FirstId, "unhealthy", source: marker);
         var second = Observed(SecondId, "healthy",
             observedAt: IssuedAt.AddHours(-1));
@@ -206,7 +211,7 @@ public class TechnicalPassportTests
     {
         var future = EvidenceRecord.Observed(FirstId, "fixture", "windows.health",
             IssuedAt.AddMinutes(10), EvidenceValue.FromText("healthy"),
-            "fixture", EvidencePrivacyClass.Equipment);
+            "fixture", EvidencePrivacyClass.Equipment, contextId: Context);
 
         Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(
             ExportId, IssuedAt, new[] { future },
@@ -221,7 +226,8 @@ public class TechnicalPassportTests
         var after = Observed(SecondId, "healthy");
         var invalid = new RepairOutcomeAssessment("synthetic", "1",
             "windows.health", FirstId, SecondId,
-            (RepairOutcomeStatus)999, RepairOutcomeReason.ImprovementObserved);
+            (RepairOutcomeStatus)999, RepairOutcomeReason.ImprovementObserved,
+            Context);
         Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(
             ExportId, IssuedAt, new[] { before, after },
             Array.Empty<DiagnosticAssessment>(), new[] { invalid }));
@@ -256,7 +262,7 @@ public class TechnicalPassportTests
             {
                 new EvidenceExpectation("private.customer", EvidenceValue.FromText("present"))
             }),
-            Array.Empty<EvidenceRecord>(), IssuedAt);
+            Array.Empty<EvidenceRecord>(), IssuedAt, Context);
 
         Assert.Equal(DiagnosticAssessmentStatus.InsufficientEvidence, partial.Status);
         Assert.Single(partial.SupportingEvidenceIds);
@@ -275,5 +281,79 @@ public class TechnicalPassportTests
             .GetProperty("observed").GetInt32());
     }
 
+
+
+    [Fact]
+    public void MixedEquipmentObservations_CannotBecomeOnePublicPassport()
+    {
+        var different = DiagnosticContextId.FromGuid(
+            Guid.Parse("ffffffff-ffff-4fff-8fff-ffffffffffff"));
+        var a = Observed(FirstId, "unhealthy");
+        var b = Observed(SecondId, "healthy", context: different);
+
+        Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(
+            ExportId, IssuedAt, new[] { a, b },
+            Array.Empty<DiagnosticAssessment>(),
+            Array.Empty<RepairOutcomeAssessment>()));
+    }
+
+    [Fact]
+    public void AssessmentFromAnotherCase_IsRejectedEvenWhenReferencesExist()
+    {
+        var different = DiagnosticContextId.FromGuid(
+            Guid.Parse("ffffffff-ffff-4fff-8fff-ffffffffffff"));
+        var a = Observed(FirstId, "unhealthy");
+        var b = Observed(SecondId, "healthy");
+        var foreign = Observed(SecondId, "healthy", context: different);
+        var foreignAssessment = Diagnostic(foreign);
+
+        Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(
+            ExportId, IssuedAt, new[] { a, b }, new[] { foreignAssessment },
+            Array.Empty<RepairOutcomeAssessment>()));
+    }
+
+    [Fact]
+    public void PublicJsonOmitsOpaqueContextIdentifier()
+    {
+        var record = Observed(FirstId, "healthy");
+        var passport = TechnicalPassportBuilder.Build(ExportId, IssuedAt,
+            new[] { record }, Array.Empty<DiagnosticAssessment>(),
+            Array.Empty<RepairOutcomeAssessment>());
+
+        Assert.Equal(Context, passport.ContextId);
+        Assert.DoesNotContain(Context.Value.ToString(), passport.PayloadJson,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("contextId", passport.PayloadJson,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void LegacyUnboundEvidence_IsNotExported()
+    {
+        var old = EvidenceRecord.Observed(FirstId, "synthetic", "windows.health",
+            IssuedAt.AddHours(-2), EvidenceValue.FromText("healthy"),
+            "legacy-fixture", EvidencePrivacyClass.Equipment);
+
+        Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(
+            ExportId, IssuedAt, new[] { old },
+            Array.Empty<DiagnosticAssessment>(),
+            Array.Empty<RepairOutcomeAssessment>()));
+    }
+
+    [Fact]
+    public void CrossContextOutcome_IsNotExportedEvenWithKnownEvidenceIds()
+    {
+        var different = DiagnosticContextId.FromGuid(
+            Guid.Parse("ffffffff-ffff-4fff-8fff-ffffffffffff"));
+        var before = Observed(FirstId, "unhealthy");
+        var after = Observed(SecondId, "healthy");
+        var foreign = Observed(SecondId, "healthy", context: different);
+        var badOutcome = Outcome(before, foreign);
+
+        Assert.Equal(RepairOutcomeStatus.Indeterminate, badOutcome.Status);
+        Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(
+            ExportId, IssuedAt, new[] { before, after },
+            Array.Empty<DiagnosticAssessment>(), new[] { badOutcome }));
+    }
 
 }
