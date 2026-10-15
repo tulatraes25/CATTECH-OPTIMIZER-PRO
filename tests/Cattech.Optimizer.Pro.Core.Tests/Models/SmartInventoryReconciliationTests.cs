@@ -535,4 +535,29 @@ public sealed class SmartInventoryReconciliationTests
     }
 
 
+    [Fact]
+    public void ExcessivelyLongExplicitType_CannotFallbackToProtocol()
+    {
+        var baseline = Snapshot(CaseA, PriorTime, Disk());
+        var current = Snapshot(CaseA, CurrentTime,
+            Disk(transport: new string(' ', 1500)));
+        var result = Assert.Single(SmartInventorySnapshot.Preview(
+            baseline, current, new[] { DiskA }, EvaluationTime));
+
+        Assert.Equal(SmartInventoryMatchStatus.UnverifiableIdentity, result.Status);
+    }
+
+    [Fact]
+    public void ExcessivelyLongDevicePath_CannotClaimInventoryIdentity()
+    {
+        var baseline = Snapshot(CaseA, PriorTime, Disk());
+        var current = Snapshot(CaseA, CurrentTime,
+            Disk(path: "/dev/" + new string('x', 1500)));
+        var result = Assert.Single(SmartInventorySnapshot.Preview(
+            baseline, current, new[] { DiskA }, EvaluationTime));
+
+        Assert.Equal(SmartInventoryMatchStatus.UnverifiableIdentity, result.Status);
+    }
+
+
 }
