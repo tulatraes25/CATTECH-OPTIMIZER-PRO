@@ -134,8 +134,6 @@ public sealed class RepairPreviewPlan
     public bool RequiresElevation => Steps.Any(step => step.RequiresElevation);
     public bool RequiresRestart => Steps.Any(step => step.RequiresRestart);
 
-    public bool HasUncertainReversibility => Steps.Any(step =>
-        step.Kind == PreviewStepKind.SystemChange
-        && (step.Reversibility is PreviewReversibility.Unknown
-            or PreviewReversibility.NotReversible));
+    // Even documented rollback steps can fail. Never promise guaranteed undo.
+    public bool RequiresReversibilityReview => MayModifySystem;
 }
