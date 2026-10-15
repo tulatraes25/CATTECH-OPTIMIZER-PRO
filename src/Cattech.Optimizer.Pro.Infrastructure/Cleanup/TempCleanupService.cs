@@ -500,7 +500,8 @@ public class TempCleanupService : ITempCleanupService
             ? "Requiere permisos de administrador" : string.Empty;
     }
 
-    private static void ScanThumbnailsFolder(TempCleanupTarget target)
+    // Exposed internally for isolated scan-only fixture tests.
+    internal static void ScanThumbnailsFolder(TempCleanupTarget target)
     {
         var wasSelected = target.IsSelected;
         target.EstimatedSizeBytes = 0;
@@ -691,8 +692,18 @@ public class TempCleanupService : ITempCleanupService
             {
                 try
                 {
-                    // Cache files use the same handle-scoped safety policy:
-                    // no following junctions, no deleting changed/recent files.
+                    // Preserve the same filename, reparse-point and retention
+                    // exclusions applied by ScanThumbnailsFolder. The native
+                    // handle check is an additional, never a replacement, gate.
+                    if (IsProtectedFile(new FileInfo(file)))
+                    {
+                        targetResult.SkippedFiles++;
+                        result.SkippedFiles++;
+                        continue;
+                    }
+
+                    // Keep the verified-handle deletion gate; never delete
+                    // by pathname after this managed preflight.
                     if (!WindowsScopedFileDelete.TryDelete(
                         target.Path, file, out var size))
                     {

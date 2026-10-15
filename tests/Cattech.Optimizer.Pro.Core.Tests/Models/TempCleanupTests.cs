@@ -456,6 +456,72 @@ public class TempCleanupTests
         finally { Directory.Delete(root, recursive: true); }
     }
 
+
+    [Fact]
+    public void ThumbnailScanAndCleanup_PreserveProtectedNamesWithAccurateCounts()
+    {
+        // Synthetic-only fixture: no real Explorer caches are accessed.
+        var root = Path.Combine(Path.GetTempPath(),
+            "cattech-thumbs-protected-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var protectedNames = new[]
+        {
+            "thumbcache_session.lock.db",
+            "thumbcache_worker.pid.db",
+            "thumbcache_daemon.socket.db"
+        };
+        const string payload = "DO-NOT-DELETE";
+        try
+        {
+            foreach (var name in protectedNames)
+            {
+                var file = Path.Combine(root, name);
+                File.WriteAllText(file, payload);
+                File.SetCreationTimeUtc(file, DateTime.UtcNow.AddDays(-8));
+                File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddDays(-8));
+            }
+
+            var eligible = Path.Combine(root, "thumbcache_eligible.db");
+            File.WriteAllBytes(eligible, new byte[431]);
+            File.SetCreationTimeUtc(eligible, DateTime.UtcNow.AddDays(-8));
+            File.SetLastWriteTimeUtc(eligible, DateTime.UtcNow.AddDays(-8));
+
+            var target = new TempCleanupTarget
+            {
+                Id = "THUMBNAILS",
+                Path = root,
+                IsSelected = true
+            };
+
+            TempCleanupService.ScanThumbnailsFolder(target);
+
+            Assert.True(target.IsScanned);
+            Assert.True(target.IsAccessible);
+            Assert.True(target.IsSelected);
+            Assert.Equal(1, target.EstimatedFileCount);
+            Assert.Equal(431L, target.EstimatedSizeBytes);
+
+            var details = new TargetResult { TargetId = target.Id };
+            var result = new TempCleanupResult();
+            TempCleanupService.CleanThumbnailsFolder(target, details, result);
+
+            Assert.Equal(1, details.DeletedFiles);
+            Assert.Equal(431L, details.DeletedBytes);
+            Assert.Equal(3, details.SkippedFiles);
+            Assert.Equal(1, result.DeletedFiles);
+            Assert.Equal(3, result.SkippedFiles);
+            Assert.Equal(0, result.FailedFiles);
+            Assert.Empty(result.Errors);
+            Assert.False(File.Exists(eligible));
+            foreach (var name in protectedNames)
+                Assert.Equal(payload, File.ReadAllText(Path.Combine(root, name)));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Fact]
     public void Cleanup_CapturedScope_DoesNotFollowLaterCallerMutations()
     {
