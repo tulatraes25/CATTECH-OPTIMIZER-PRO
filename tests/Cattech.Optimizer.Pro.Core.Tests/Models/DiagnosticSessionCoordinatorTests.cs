@@ -248,6 +248,55 @@ public sealed class DiagnosticSessionCoordinatorTests
     }
 
     [Fact]
+    public void LeaseSubscription_NotifiesOnlyOnceAcrossMultipleCaseTransitions()
+    {
+        var coordinator = new DiagnosticSessionCoordinator();
+        coordinator.SelectCase(CaseA);
+        var lease = coordinator.CaptureLeaseFor(CaseA)!;
+        var callbacks = 0;
+        using var subscription = lease.SubscribeRevocation(() => callbacks++);
+
+        coordinator.SelectCase(CaseB);
+        coordinator.SelectCase(CaseA);
+        coordinator.ClearSelection();
+
+        Assert.Equal(1, callbacks);
+        Assert.False(lease.IsCurrent);
+        Assert.Null(typeof(DiagnosticSessionLease).GetProperty("Owner"));
+    }
+
+    [Fact]
+    public void LateSubscriptionToStaleLease_ImmediatelyNotifiesOnce()
+    {
+        var coordinator = new DiagnosticSessionCoordinator();
+        coordinator.SelectCase(CaseA);
+        var lease = coordinator.CaptureLeaseFor(CaseA)!;
+        coordinator.SelectCase(CaseB);
+
+        var called = 0;
+        using var subscription = lease.SubscribeRevocation(() => called++);
+        Assert.Equal(1, called);
+        coordinator.SelectCase(CaseA);
+        Assert.Equal(1, called);
+    }
+
+    [Fact]
+    public void ExplicitRevocationSubscriptionDispose_PreventsFutureCallbacks()
+    {
+        var coordinator = new DiagnosticSessionCoordinator();
+        coordinator.SelectCase(CaseA);
+        var lease = coordinator.CaptureLeaseFor(CaseA)!;
+        var count = 0;
+        var subscription = lease.SubscribeRevocation(() => count++);
+        subscription.Dispose();
+        subscription.Dispose();
+        coordinator.SelectCase(CaseB);
+        Assert.Equal(0, count);
+        Assert.Throws<ArgumentNullException>(() =>
+            lease.SubscribeRevocation(null!));
+    }
+
+    [Fact]
     public void OnlyLeaseBasedConstructorsArePublicInReviewSurfaces()
     {
         var vm = Assert.Single(
