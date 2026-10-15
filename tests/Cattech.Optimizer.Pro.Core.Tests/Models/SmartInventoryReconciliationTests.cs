@@ -560,4 +560,87 @@ public sealed class SmartInventoryReconciliationTests
     }
 
 
+    [Fact]
+    public void MalformedBaselineSerial_CannotHideDuplicateAndApproveOtherRow()
+    {
+        var baseline = Snapshot(CaseA, PriorTime,
+            Disk(serial: "CLAIM-A", path: "/dev/sda"),
+            Disk(serial: "CLAIM-A\n", path: "/dev/sdb"));
+        var current = Snapshot(CaseA, CurrentTime,
+            Disk(serial: "CLAIM-A", path: "/dev/sdc"));
+        var result = Assert.Single(SmartInventorySnapshot.Preview(
+            baseline, current, new[] { DiskA, DiskB }, EvaluationTime));
+
+        Assert.Equal(SmartInventoryMatchStatus.UnverifiableIdentity, result.Status);
+        Assert.Null(result.PreviousSubjectId);
+    }
+
+    [Fact]
+    public void MalformedCurrentSerial_CannotHideDuplicateClaim()
+    {
+        var baseline = Snapshot(CaseA, PriorTime, Disk(serial: "CLAIM-A"));
+        var current = Snapshot(CaseA, CurrentTime,
+            Disk(serial: "CLAIM-A", path: "/dev/sda"),
+            Disk(serial: "CLAIM-A\u200B", path: "/dev/sdb"));
+        var results = SmartInventorySnapshot.Preview(
+            baseline, current, new[] { DiskA }, EvaluationTime);
+
+        Assert.Equal(2, results.Count);
+        Assert.All(results, result =>
+        {
+            Assert.Equal(SmartInventoryMatchStatus.UnverifiableIdentity, result.Status);
+            Assert.Null(result.PreviousSubjectId);
+        });
+    }
+
+    [Fact]
+    public void UnsafeClaimForOtherDisk_BlocksAllCandidateContinuity()
+    {
+        var baseline = Snapshot(CaseA, PriorTime,
+            Disk(serial: "GOOD-A"), Disk(serial: "GOOD-B"));
+        var current = Snapshot(CaseA, CurrentTime,
+            Disk(serial: "GOOD-A"), Disk(serial: "GOOD-B\r"));
+        var results = SmartInventorySnapshot.Preview(
+            baseline, current, new[] { DiskA, DiskB }, EvaluationTime);
+
+        Assert.All(results, result =>
+            Assert.Equal(SmartInventoryMatchStatus.UnverifiableIdentity, result.Status));
+    }
+
+    [Fact]
+    public void KnownUnknownSerial_StillAllowsOtherDistinctDiskCandidate()
+    {
+        var baseline = Snapshot(CaseA, PriorTime,
+            Disk(serial: "GOOD-A"), Disk(serial: "N/A"));
+        var current = Snapshot(CaseA, CurrentTime, Disk(serial: "GOOD-A"));
+        var match = Assert.Single(SmartInventorySnapshot.Preview(
+            baseline, current, new[] { DiskA, DiskB }, EvaluationTime));
+
+        Assert.Equal(SmartInventoryMatchStatus.CandidateRequiresReview, match.Status);
+        Assert.Equal(DiskA, match.PreviousSubjectId);
+    }
+
+    [Fact]
+    public void Snapshot_RetainsUnsafeFlagUntilFreshInventoryCapture()
+    {
+        var other = Disk(serial: "OTHER-BAD\t");
+        var original = Snapshot(CaseA, PriorTime,
+            Disk(serial: "GOOD-A"), other);
+        other.SerialNumber = "OTHER-GOOD";
+        var after = Snapshot(CaseA, CurrentTime, Disk(serial: "GOOD-A"));
+
+        var originalPreview = Assert.Single(SmartInventorySnapshot.Preview(
+            original, after, new[] { DiskA, DiskB }, EvaluationTime));
+        Assert.Equal(SmartInventoryMatchStatus.UnverifiableIdentity,
+            originalPreview.Status);
+
+        var recaptured = Snapshot(CaseA, PriorTime,
+            Disk(serial: "GOOD-A"), other);
+        var newPreview = Assert.Single(SmartInventorySnapshot.Preview(
+            recaptured, after, new[] { DiskA, DiskB }, EvaluationTime));
+        Assert.Equal(SmartInventoryMatchStatus.CandidateRequiresReview,
+            newPreview.Status);
+    }
+
+
 }
