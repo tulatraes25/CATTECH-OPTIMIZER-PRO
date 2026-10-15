@@ -38,8 +38,12 @@ public sealed record TechnicalPassportPublicPayload(
 /// </summary>
 public sealed class TechnicalPassportArtifact
 {
-    internal TechnicalPassportArtifact(string payloadJson)
+    internal TechnicalPassportArtifact(
+        string payloadJson, DiagnosticContextId contextId)
     {
+        if (!contextId.IsBound)
+            throw new ArgumentException("Export context must be bound.", nameof(contextId));
+        ContextId = contextId;
         PayloadJson = payloadJson;
         Sha256Hex = Convert.ToHexString(
             SHA256.HashData(Encoding.UTF8.GetBytes(payloadJson)));
@@ -47,6 +51,10 @@ public sealed class TechnicalPassportArtifact
 
     public string PayloadJson { get; }
     public string Sha256Hex { get; }
+
+    // Kept only in process memory to support future UI case-change invalidation;
+    // excluded entirely from the versioned public JSON.
+    public DiagnosticContextId ContextId { get; }
 
     public static bool MatchesDigest(string? payloadJson, string? expectedSha256Hex)
     {
@@ -98,6 +106,16 @@ public static class TechnicalPassportBuilder
         var postchecks = CaptureBounded(
             outcomes, MaximumAssessments, nameof(outcomes));
 
+        // A public passport must summarize one explicitly scoped diagnostic
+        // session. No records and unbound/mixed legacy contexts fail closed.
+        if (records.Length == 0 || !records[0].ContextId.IsBound
+            || records.Any(item => item.ContextId != records[0].ContextId))
+            throw new ArgumentException(
+                "Passport evidence requires exactly one bound diagnostic context.",
+                nameof(evidence));
+
+        var context = records[0].ContextId;
+
         // Reusing an evidence ID (even with identical data) can inflate counts.
         if (records.Select(item => item.Id).Distinct().Count() != records.Length)
             throw new ArgumentException("Duplicate evidence IDs are not exportable.",
@@ -123,6 +141,10 @@ public static class TechnicalPassportBuilder
             if (!Enum.IsDefined(assessment.Status))
                 throw new ArgumentException("Unknown diagnostic assessment state.",
                     nameof(diagnostics));
+            if (assessment.ContextId != context)
+                throw new ArgumentException(
+                    "Diagnostic assessment is unbound or belongs to another case.",
+                    nameof(diagnostics));
 
             if (assessment.SupportingEvidenceIds
                 .Concat(assessment.ContradictingEvidenceIds)
@@ -136,6 +158,10 @@ public static class TechnicalPassportBuilder
             if (!Enum.IsDefined(outcome.Status)
                 || !Enum.IsDefined(outcome.Reason))
                 throw new ArgumentException("Unknown outcome state.", nameof(outcomes));
+            if (outcome.ContextId != context)
+                throw new ArgumentException(
+                    "Outcome is unbound or belongs to another case.",
+                    nameof(outcomes));
 
             if (!knownIds.Contains(outcome.BeforeEvidenceId)
                 || !knownIds.Contains(outcome.AfterEvidenceId))
@@ -185,7 +211,7 @@ public static class TechnicalPassportBuilder
         // Fixed-property contract and sorted status buckets make the same
         // input snapshot byte-stable regardless of input enumeration order.
         return new TechnicalPassportArtifact(
-            JsonSerializer.Serialize(payload, JsonOptions));
+            JsonSerializer.Serialize(payload, JsonOptions), context);
     }
 
     private static T[] CaptureBounded<T>(
