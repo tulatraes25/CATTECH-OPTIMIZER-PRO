@@ -36,7 +36,7 @@ public class RepairPreviewPlanTests
         Assert.True(plan.RequiresBackupReview);
         Assert.True(plan.RequiresElevation);
         Assert.True(plan.RequiresRestart);
-        Assert.True(plan.HasUncertainReversibility);
+        Assert.True(plan.RequiresReversibilityReview);
         Assert.Equal(2, plan.Steps.Count);
         Assert.Contains("Post-repair", plan.Steps[1].VerificationCriterion);
     }
@@ -53,7 +53,7 @@ public class RepairPreviewPlanTests
         Assert.False(plan.RequiresBackupReview);
         Assert.False(plan.RequiresElevation);
         Assert.False(plan.RequiresRestart);
-        Assert.False(plan.HasUncertainReversibility);
+        Assert.False(plan.RequiresReversibilityReview);
     }
 
     [Fact]
@@ -76,6 +76,10 @@ public class RepairPreviewPlanTests
 
         var documented = ProposedChange(PreviewReversibility.DocumentedProcedure);
         Assert.Equal(PreviewReversibility.DocumentedProcedure, documented.Reversibility);
+        var plan = new RepairPreviewPlan(PlanId, "1", "Controlled change",
+            "Synthetic technical evidence", new[] { EvidenceId },
+            new[] { documented });
+        Assert.True(plan.RequiresReversibilityReview);
     }
 
     [Fact]
