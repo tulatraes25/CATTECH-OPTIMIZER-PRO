@@ -1,3 +1,5 @@
+using System.ComponentModel;
+
 namespace Cattech.Optimizer.Pro.Core.Models.Cleanup;
 
 /// <summary>
@@ -12,8 +14,14 @@ public enum CleanupRiskLevel
 /// <summary>
 /// Ubicación de archivos temporales que puede ser limpiada.
 /// </summary>
-public class TempCleanupTarget
+public class TempCleanupTarget : INotifyPropertyChanged
 {
+    private bool _isSelected;
+
+    /// <summary>
+    /// Updates the bound CheckBox after bulk selection or safety rejection.
+    /// </summary>
+    public event PropertyChangedEventHandler? PropertyChanged;
     /// <summary>
     /// ID único del target.
     /// </summary>
@@ -47,7 +55,17 @@ public class TempCleanupTarget
     /// <summary>
     /// Si está seleccionado para limpieza.
     /// </summary>
-    public bool IsSelected { get; set; }
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set
+        {
+            if (_isSelected == value)
+                return;
+            _isSelected = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected)));
+        }
+    }
 
     /// <summary>
     /// Tamaño estimado en bytes.
@@ -90,11 +108,78 @@ public class TempCleanupTarget
 /// </summary>
 public static class CleanupTargets
 {
+    // Canonical filename policy shared by scan and native deletion. Any
+    // unfamiliar caller of WindowsScopedFileDelete must respect the same
+    // lock/PID/socket exclusions; this does not rely on the calling UI.
+    private static readonly string[] ProtectedNameFragments =
+        [".lock", ".pid", ".socket"];
+
+    public static bool IsProtectedTemporaryFileName(string? fileName) =>
+        string.IsNullOrWhiteSpace(fileName)
+        || ProtectedNameFragments.Any(fragment =>
+            fileName.Contains(fragment, StringComparison.OrdinalIgnoreCase));
+
+    // Minimum retention before an explicitly confirmed temporary-file cleanup.
+    // Both NTFS creation and modification times must be older than this limit.
+    public const int MinimumAgeDays = 7;
+
+    /// <summary>
+    /// TEMP/TMP can redirect Path.GetTempPath. Automatic cleanup requires
+    /// the independent OS-known per-user LocalApplicationData\Temp location.
+    /// Custom temporary roots need separate security design and approval.
+    /// </summary>
+    public static bool IsTrustedUserTempPath(string? candidate)
+    {
+        var known = Environment.GetFolderPath(
+            Environment.SpecialFolder.LocalApplicationData);
+        return OperatingSystem.IsWindows()
+            && !string.IsNullOrWhiteSpace(known)
+            && IsExactTrustedPath(candidate, Path.Combine(known, "Temp"));
+    }
+
+    /// <summary>
+    /// Determine the actual Windows installation folder, not hardcoded C:\.
+    /// </summary>
+    public static bool IsTrustedWindowsTempPath(string? candidate)
+    {
+        var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        return OperatingSystem.IsWindows()
+            && !string.IsNullOrWhiteSpace(windows)
+            && IsExactTrustedPath(candidate, Path.Combine(windows, "Temp"));
+    }
+
+    private static bool IsExactTrustedPath(string? candidate, string expected)
+    {
+        if (string.IsNullOrWhiteSpace(candidate)
+            || candidate.StartsWith(@"\\", StringComparison.Ordinal)
+            || expected.StartsWith(@"\\", StringComparison.Ordinal))
+            return false;
+
+        try
+        {
+            if (!Path.IsPathFullyQualified(candidate)
+                || !Path.IsPathFullyQualified(expected))
+                return false;
+
+            return string.Equals(
+                Path.TrimEndingDirectorySeparator(Path.GetFullPath(candidate)),
+                Path.TrimEndingDirectorySeparator(Path.GetFullPath(expected)),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is ArgumentException
+            or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+    }
+
     public static List<TempCleanupTarget> GetDefaultTargets()
     {
-        var tempPath = Path.GetTempPath();
-        var userTemp = Path.GetFullPath(tempPath);
-        var windowsTemp = @"C:\Windows\Temp";
+        var userTemp = Path.GetFullPath(Path.GetTempPath());
+        var windowsRoot = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        var windowsTemp = string.IsNullOrWhiteSpace(windowsRoot)
+            ? string.Empty : Path.Combine(windowsRoot, "Temp");
+        var userTempIsTrusted = IsTrustedUserTempPath(userTemp);
 
         return
         [
@@ -103,18 +188,20 @@ public static class CleanupTargets
                 Id = "USER_TEMP",
                 DisplayName = "Temporales del usuario",
                 Path = userTemp,
-                Description = "Archivos temporales creados por aplicaciones del usuario. Generalmente seguro de limpiar.",
+                Description = "Solo archivos directos creados y modificados hace al menos 7 días. Revisá la selección antes de borrar.",
                 IsSystemLocation = false,
                 IsOptional = false,
-                IsSelected = true,
-                RiskLevel = CleanupRiskLevel.Low
+                IsSelected = userTempIsTrusted,
+                RiskLevel = CleanupRiskLevel.Low,
+                ScanNotes = userTempIsTrusted ? string.Empty
+                    : "No disponible: la carpeta TEMP no coincide con el perfil local."
             },
             new TempCleanupTarget
             {
                 Id = "WINDOWS_TEMP",
                 DisplayName = "Temporales de Windows",
                 Path = windowsTemp,
-                Description = "Archivos temporales del sistema. Puede requerir permisos de administrador.",
+                Description = "Archivos directos con al menos 7 días de antigüedad; puede requerir administrador.",
                 IsSystemLocation = true,
                 IsOptional = false,
                 IsSelected = false,
@@ -140,7 +227,7 @@ public static class CleanupTargets
                 Path = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                     @"Microsoft\Windows\Explorer"),
-                Description = "Caché de miniaturas de imágenes y archivos. Se regenerará automáticamente.",
+                Description = "Caché de miniaturas: solo archivos creados y modificados hace más de 7 días.",
                 IsSystemLocation = false,
                 IsOptional = true,
                 IsSelected = false,
