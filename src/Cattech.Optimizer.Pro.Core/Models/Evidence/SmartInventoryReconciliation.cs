@@ -209,14 +209,30 @@ public sealed class SmartInventorySnapshot
         if (serial.All(ch => ch == '0'))
             return null;
 
+        // Uniform dummy identifiers (e.g. FFFFFFFFFFFF or XXXXXXXXXXXX)
+        // cannot justify continuity of a physical drive. Only reject longer
+        // repeated patterns; a short real vendor serial may legitimately repeat.
+        if (serial.Length >= 4 && serial.All(ch => ch == serial[0]))
+            return null;
+
         return serial;
     }
 
     private static string? Normalize(string? raw)
     {
         var value = raw?.Trim();
-        return string.IsNullOrWhiteSpace(value) || value.Length > MaxFieldLength
-            ? null : value.ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(value) || value.Length > MaxFieldLength)
+            return null;
+
+        // SMART strings are untrusted firmware output. Control, Unicode
+        // formatting/bidi and unpaired surrogate characters must not be used
+        // as identity evidence, even when two reports happen to match.
+        if (value.Any(ch => char.IsControl(ch) || char.IsSurrogate(ch)
+            || char.GetUnicodeCategory(ch)
+                == System.Globalization.UnicodeCategory.Format))
+            return null;
+
+        return value.ToUpperInvariant();
     }
 
     // Private by design: raw SMART identity is neither returned nor logged.
