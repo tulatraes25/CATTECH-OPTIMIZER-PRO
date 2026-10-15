@@ -4,6 +4,9 @@ namespace Cattech.Optimizer.Pro.Core.Tests.Models;
 
 public class DeterministicDiagnosticEvaluatorTests
 {
+    private static readonly DiagnosticSubjectId Subject =
+        new(Guid.Parse("77777777-7777-4777-8777-777777777777"));
+
     private static readonly DiagnosticContextId Context =
         new(Guid.Parse("99999999-9999-4999-8999-999999999999"));
 
@@ -19,12 +22,12 @@ public class DeterministicDiagnosticEvaluatorTests
     private static DiagnosticRule OneFactRule() => new(
         "bsod-evidence", "1", "A specified bugcheck was observed",
         "A different observed bugcheck would refute this condition.",
-        new[] { new EvidenceExpectation("crash.bugcheck",
+        new[] { new EvidenceExpectation(Subject, "crash.bugcheck",
             EvidenceValue.FromText("0x0000009F")) });
 
     private static EvidenceRecord Crash(Guid id, string code,
         DateTimeOffset? timestamp = null, string source = "wer") =>
-        EvidenceRecord.Observed(id, Context, source, "crash.bugcheck",
+        EvidenceRecord.Observed(id, Context, Subject, source, "crash.bugcheck",
             timestamp ?? AsOf.AddHours(-1), EvidenceValue.FromText(code),
             "synthetic-only", EvidencePrivacyClass.Equipment);
 
@@ -34,13 +37,13 @@ public class DeterministicDiagnosticEvaluatorTests
         var rule = new DiagnosticRule("correlation", "v1",
             "Two observations coexist", "Any missing or contrary observation.",
             new[] {
-                new EvidenceExpectation("crash.bugcheck", EvidenceValue.FromText("0x0000009F")),
-                new EvidenceExpectation("disk.health", EvidenceValue.FromText("warning"))
+                new EvidenceExpectation(Subject, "crash.bugcheck", EvidenceValue.FromText("0x0000009F")),
+                new EvidenceExpectation(Subject, "disk.health", EvidenceValue.FromText("warning"))
             });
         var facts = new[]
         {
             Crash(IdB, "0x0000009F"),
-            EvidenceRecord.Observed(IdA, Context, "smart", "disk.health",
+            EvidenceRecord.Observed(IdA, Context, Subject, "smart", "disk.health",
                 AsOf.AddHours(-1), EvidenceValue.FromText("warning"),
                 "synthetic", EvidencePrivacyClass.Equipment)
         };
@@ -64,10 +67,10 @@ public class DeterministicDiagnosticEvaluatorTests
         var rule = new DiagnosticRule("multisource", "1",
             "Cross check crash and disk", "An observation would contradict a requirement.",
             new[] {
-                new EvidenceExpectation("crash.bugcheck", EvidenceValue.FromText("0x0000009F")),
-                new EvidenceExpectation("disk.health", EvidenceValue.FromText("healthy"))
+                new EvidenceExpectation(Subject, "crash.bugcheck", EvidenceValue.FromText("0x0000009F")),
+                new EvidenceExpectation(Subject, "disk.health", EvidenceValue.FromText("healthy"))
             });
-        var absent = EvidenceRecord.Missing(IdB, Context, "smart", "disk.health",
+        var absent = EvidenceRecord.Missing(IdB, Context, Subject, "smart", "disk.health",
             AsOf.AddHours(-1), EvidenceAvailability.AccessDenied,
             "synthetic", EvidencePrivacyClass.Equipment, "Missing SMART permission.");
 
@@ -118,7 +121,7 @@ public class DeterministicDiagnosticEvaluatorTests
     public void IrrelevantFacts_AndDuplicateIdenticalRecords_DoNotChangeStatus()
     {
         var valid = Crash(IdA, "0x0000009F");
-        var irrelevant = EvidenceRecord.Observed(IdB, Context, "mock", "gpu.temperature",
+        var irrelevant = EvidenceRecord.Observed(IdB, Context, Subject, "mock", "gpu.temperature",
             AsOf, EvidenceValue.FromNumber(40), "synthetic",
             EvidencePrivacyClass.Equipment);
 
@@ -143,7 +146,7 @@ public class DeterministicDiagnosticEvaluatorTests
     {
         var requirements = new List<EvidenceExpectation>
         {
-            new("crash.bugcheck", EvidenceValue.FromText("0x0000009F"))
+            new(Subject, "crash.bugcheck", EvidenceValue.FromText("0x0000009F"))
         };
         var rule = new DiagnosticRule("stable", "1", "hypothesis",
             "a contradicting result", requirements);
@@ -152,8 +155,8 @@ public class DeterministicDiagnosticEvaluatorTests
         Assert.Throws<ArgumentException>(() =>
             new DiagnosticRule("bad", "1", "hypothesis", "a contradiction",
                 new[] {
-                    new EvidenceExpectation("disk", EvidenceValue.FromBoolean(true)),
-                    new EvidenceExpectation("disk", EvidenceValue.FromBoolean(false))
+                    new EvidenceExpectation(Subject, "disk", EvidenceValue.FromBoolean(true)),
+                    new EvidenceExpectation(Subject, "disk", EvidenceValue.FromBoolean(false))
                 }));
         Assert.Throws<ArgumentException>(() =>
             new DiagnosticRule("bad", "1", "hypothesis", "a contradiction",
@@ -166,9 +169,9 @@ public class DeterministicDiagnosticEvaluatorTests
         const string sensitive = "SYNTHETIC-PRIVATE-IDENTIFIER";
         var rule = new DiagnosticRule("private", "1", "A private fact matches",
             "A different value refutes it.",
-            new[] { new EvidenceExpectation("diagnostic.private",
+            new[] { new EvidenceExpectation(Subject, "diagnostic.private",
                 EvidenceValue.FromText(sensitive)) });
-        var fact = EvidenceRecord.Observed(IdA, Context, "test", "diagnostic.private",
+        var fact = EvidenceRecord.Observed(IdA, Context, Subject, "test", "diagnostic.private",
             AsOf, EvidenceValue.FromText(sensitive), "synthetic",
             EvidencePrivacyClass.Sensitive);
 
