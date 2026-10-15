@@ -273,19 +273,33 @@ public class DiskInfo
     public double TotalGB { get; set; }
 
     /// <summary>
-    /// Espacio libre en GB.
+    /// Legacy numeric field. Zero alone does not establish a full volume.
+    /// Use SystemVolume.FreeGB / HasVerifiedSystemVolumeMetrics for reports.
     /// </summary>
     public double FreeGB { get; set; }
 
-    /// <summary>
-    /// Espacio usado en GB.
-    /// </summary>
-    public double UsedGB => TotalGB - FreeGB;
+    /// <summary>Result of the explicit WMI association lookup, not a guess.</summary>
+    public bool VolumeAssociationsVerified { get; set; }
+
+    /// <summary>Associated fixed logical volumes only (multiple per disk possible).</summary>
+    public List<DiskVolumeInfo> Volumes { get; set; } = new();
+
+    public bool IsSystemDisk => Volumes.Any(v => v.IsSystemVolume);
+
+    public DiskVolumeInfo? SystemVolume =>
+        Volumes.FirstOrDefault(v => v.IsSystemVolume);
+
+    public bool HasVerifiedSystemVolumeMetrics =>
+        SystemVolume?.FreePercent.HasValue == true;
 
     /// <summary>
-    /// Porcentaje de uso.
+    /// Legacy display metric, now based solely on an explicitly mapped system
+    /// volume rather than subtracting partition free space from physical size.
+    /// Zero can also indicate unknown; use HasVerifiedSystemVolumeMetrics.
     /// </summary>
-    public double UsagePercent => TotalGB > 0 ? (UsedGB / TotalGB) * 100 : 0;
+    public double UsedGB => SystemVolume?.UsedGB ?? 0;
+
+    public double UsagePercent => SystemVolume?.UsedPercent ?? 0;
 
     /// <summary>
     /// Estado de salud SMART (si disponible).
@@ -296,6 +310,39 @@ public class DiskInfo
     /// Temperatura del disco en °C (si disponible).
     /// </summary>
     public double? TemperatureCelsius { get; set; }
+}
+
+/// <summary>
+/// One fixed logical volume reached through verified WMI disk/partition/volume
+/// relationships. Capacity/free space always refer to THIS VOLUME, not the
+/// enclosing physical disk. Missing or contradictory values remain null.
+/// </summary>
+public sealed class DiskVolumeInfo
+{
+    public string DriveLetter { get; set; } = string.Empty;
+    public ulong? CapacityBytes { get; set; }
+    public ulong? FreeBytes { get; set; }
+    public bool IsSystemVolume { get; set; }
+
+    public double? CapacityGB => CapacityBytes is > 0
+        ? (double)CapacityBytes.Value / (1024d * 1024 * 1024)
+        : null;
+
+    public double? FreeGB =>
+        CapacityBytes is > 0 && FreeBytes.HasValue && FreeBytes <= CapacityBytes
+        ? (double)FreeBytes.Value / (1024d * 1024 * 1024)
+        : null;
+
+    public double? UsedGB => CapacityGB.HasValue && FreeGB.HasValue
+        ? CapacityGB.Value - FreeGB.Value : null;
+
+    public double? FreePercent => CapacityBytes is > 0 &&
+        FreeBytes.HasValue && FreeBytes <= CapacityBytes
+        ? 100d * FreeBytes.Value / CapacityBytes.Value
+        : null;
+
+    public double? UsedPercent => FreePercent.HasValue
+        ? 100d - FreePercent.Value : null;
 }
 
 /// <summary>
