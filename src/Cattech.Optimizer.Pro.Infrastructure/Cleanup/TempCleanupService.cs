@@ -470,7 +470,9 @@ public class TempCleanupService : ITempCleanupService
         }
 
         // Refuse incomplete listings instead of calling them a successful scan.
-        if (!TryEnumerateBounded(target.Path, "*", recursive: true,
+        // Safe deletion currently supports direct children only. The scan
+        // must estimate exactly that scope, not nested folders.
+        if (!TryEnumerateBounded(target.Path, "*", recursive: false,
             MaxEnumeratedFilesPerTarget, TimeSpan.FromSeconds(3), out var files))
         {
             target.ScanNotes = "No disponible: demasiados archivos, tiempo agotado o acceso denegado.";
@@ -556,7 +558,9 @@ public class TempCleanupService : ITempCleanupService
             var sw = Stopwatch.StartNew();
 
             // Finish a bounded, non-destructive listing BEFORE the first delete.
-            if (!TryEnumerateBounded(target.Path, "*", recursive: true,
+            // Do not traverse nested directories until identity-preserving
+            // handle-relative directory enumeration is reviewed.
+            if (!TryEnumerateBounded(target.Path, "*", recursive: false,
                 maxCandidates, TimeSpan.FromSeconds(8), out var files))
             {
                 result.Errors.Add(new CleanupError

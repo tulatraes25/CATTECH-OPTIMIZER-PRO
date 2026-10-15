@@ -29,8 +29,8 @@ internal static class WindowsScopedFileDelete
     private const uint MinFileAgeSeconds = 60;
 
     /// <summary>
-    /// Deletes only a handle-verified, old, ordinary file at precisely its
-    /// expected path under the handle-verified directory. Returns false if
+    /// Deletes only a handle-verified, old, ordinary DIRECT-CHILD file at its
+    /// exact path in the handle-verified directory. Returns false if
     /// anything cannot be proven. All caller-supplied paths are untrusted.
     /// </summary>
     internal static bool TryDelete(
@@ -59,11 +59,15 @@ internal static class WindowsScopedFileDelete
             return false;
         }
 
-        // Block alternate data streams, device paths, and root-adjacent files.
+        // Fail closed on nested paths. Intermediate child directories could
+        // be renamed after a pathname check; until handle-relative traversal
+        // is independently reviewed, only delete DIRECT children of a held
+        // allowed-root directory handle. Never recursively delete under it.
+        // Also reject alternate data streams, device paths, and volume roots.
         if (candidate.Length < 3 || root.Length < 3
             || candidate.AsSpan(2).Contains(':')
             || root.AsSpan(2).Contains(':')
-            || !candidate.StartsWith(root + Path.DirectorySeparatorChar,
+            || !string.Equals(Path.GetDirectoryName(candidate), root,
                 StringComparison.OrdinalIgnoreCase))
             return false;
 

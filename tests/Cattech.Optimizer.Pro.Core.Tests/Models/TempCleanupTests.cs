@@ -630,6 +630,40 @@ public class TempCleanupTests
         finally { Directory.Delete(root, recursive: true); }
     }
 
+
+    [Fact]
+    public async Task Cleanup_NestedOldFile_IsNotInDeletionScope()
+    {
+        var root = Path.Combine(Path.GetTempPath(),
+            "cattech-direct-only-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var nested = Path.Combine(root, "nested");
+            Directory.CreateDirectory(nested);
+            var nestedFile = Path.Combine(nested, "old-user-data.txt");
+            File.WriteAllText(nestedFile, "SYNTHETIC-KEEP");
+            File.SetLastWriteTimeUtc(nestedFile, DateTime.UtcNow.AddMinutes(-8));
+
+            Assert.True(TempCleanupService.TryEnumerateBounded(
+                root, "*", recursive: false, maxFiles: 5,
+                maxDuration: TimeSpan.FromSeconds(3), out var candidates));
+            Assert.Empty(candidates);
+
+            var target = new TempCleanupTarget { Id = "USER_TEMP", Path = root };
+            var details = new TargetResult { TargetId = target.Id };
+            var result = new TempCleanupResult();
+            await new TempCleanupService(root).CleanFolderAsync(
+                target, details, result);
+
+            Assert.Equal(0, details.DeletedFiles);
+            Assert.Equal(0L, details.DeletedBytes);
+            Assert.Empty(result.Errors);
+            Assert.Equal("SYNTHETIC-KEEP", File.ReadAllText(nestedFile));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
     [Fact]
     public void TempCleanupTarget_DefaultValues_AreValid()
     {

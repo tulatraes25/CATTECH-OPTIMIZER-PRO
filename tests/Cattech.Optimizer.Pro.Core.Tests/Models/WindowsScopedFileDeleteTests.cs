@@ -1,4 +1,5 @@
 using Cattech.Optimizer.Pro.Infrastructure.Cleanup;
+using System.Runtime.InteropServices;
 
 namespace Cattech.Optimizer.Pro.Core.Tests.Models;
 
@@ -151,6 +152,81 @@ public sealed class WindowsScopedFileDeleteTests
             Directory.Delete(outside, recursive: true);
         }
     }
+
+
+    [Fact]
+    public void NestedOrdinaryFile_IsNeverDeletedEvenWhenOld()
+    {
+        var root = NewFixture();
+        try
+        {
+            var nested = Path.Combine(root, "synthetic-subdirectory");
+            Directory.CreateDirectory(nested);
+            var file = Path.Combine(nested, "old-nested.txt");
+            File.WriteAllText(file, "NESTED-SYNTHETIC-KEEP");
+            File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddMinutes(-8));
+
+            Assert.False(WindowsScopedFileDelete.TryDelete(root, file, out var bytes));
+            Assert.Equal(0L, bytes);
+            Assert.Equal("NESTED-SYNTHETIC-KEEP", File.ReadAllText(file));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void HardLinkedFile_IsNeverDeletedThroughEitherName()
+    {
+        var root = NewFixture();
+        try
+        {
+            Assert.Equal("NTFS", new DriveInfo(root).DriveFormat.ToUpperInvariant());
+            var original = Path.Combine(root, "original.txt");
+            var alternate = Path.Combine(root, "linked.txt");
+            File.WriteAllText(original, "HARDLINK-SYNTHETIC-KEEP");
+            File.SetLastWriteTimeUtc(original, DateTime.UtcNow.AddMinutes(-9));
+
+            Assert.True(CreateHardLink(alternate, original, IntPtr.Zero),
+                $"NTFS synthetic hard-link setup failed: {Marshal.GetLastWin32Error()}");
+            Assert.False(WindowsScopedFileDelete.TryDelete(root, alternate, out var bytes));
+            Assert.Equal(0L, bytes);
+            Assert.True(File.Exists(original));
+            Assert.True(File.Exists(alternate));
+            Assert.Equal("HARDLINK-SYNTHETIC-KEEP", File.ReadAllText(original));
+            Assert.Equal("HARDLINK-SYNTHETIC-KEEP", File.ReadAllText(alternate));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void ReadOnlyOldFile_IsNotDeleted()
+    {
+        var root = NewFixture();
+        var file = Path.Combine(root, "readonly-old.txt");
+        try
+        {
+            File.WriteAllText(file, "READONLY-SYNTHETIC-KEEP");
+            File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddMinutes(-9));
+            File.SetAttributes(file, File.GetAttributes(file) | FileAttributes.ReadOnly);
+
+            Assert.False(WindowsScopedFileDelete.TryDelete(root, file, out var bytes));
+            Assert.Equal(0L, bytes);
+            Assert.Equal("READONLY-SYNTHETIC-KEEP", File.ReadAllText(file));
+        }
+        finally
+        {
+            if (File.Exists(file))
+                File.SetAttributes(file, FileAttributes.Normal);
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll",
+        EntryPoint = "CreateHardLinkW", CharSet = System.Runtime.InteropServices.CharSet.Unicode,
+        SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(
+        System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool CreateHardLink(
+        string newFileName, string existingFileName, IntPtr securityAttributes);
 
     private static string NewFixture()
     {
