@@ -379,4 +379,83 @@ public sealed class SmartInventoryReconciliationTests
     }
 
 
+    [Fact]
+    public void MatchingPreview_IsCurrentOnlyForOriginalFrozenSnapshots()
+    {
+        var baseline = Snapshot(CaseA, PriorTime, Disk(serial: "SN1"));
+        var current = Snapshot(CaseA, CurrentTime, Disk(serial: "SN1"));
+        var preview = Assert.Single(SmartInventorySnapshot.Preview(
+            baseline, current, new[] { DiskA }, EvaluationTime));
+
+        Assert.Equal(SmartInventoryMatchStatus.CandidateRequiresReview, preview.Status);
+        Assert.True(preview.IsCurrentCandidateFor(
+            baseline, current, new[] { DiskA }, selectedCurrentIndex: 0));
+
+        // A new capture must require a new review even with identical reports.
+        var reCapturedCurrent = Snapshot(CaseA, CurrentTime, Disk(serial: "SN1"));
+        var reCapturedBaseline = Snapshot(CaseA, PriorTime, Disk(serial: "SN1"));
+        Assert.False(preview.IsCurrentCandidateFor(
+            baseline, reCapturedCurrent, new[] { DiskA }, 0));
+        Assert.False(preview.IsCurrentCandidateFor(
+            reCapturedBaseline, current, new[] { DiskA }, 0));
+    }
+
+    [Fact]
+    public void ReorderedDisks_RejectOldRowOrRemappedBaselineSubjects()
+    {
+        var baseline = Snapshot(CaseA, PriorTime,
+            Disk(serial: "SN-A"), Disk(serial: "SN-B"));
+        var current = Snapshot(CaseA, CurrentTime,
+            Disk(serial: "SN-B"), Disk(serial: "SN-A"));
+        var map = new List<DiagnosticSubjectId> { DiskA, DiskB };
+        var matches = SmartInventorySnapshot.Preview(
+            baseline, current, map, EvaluationTime);
+
+        Assert.True(matches[0].IsCurrentCandidateFor(baseline, current, map, 0));
+        Assert.Equal(DiskB, matches[0].PreviousSubjectId);
+        Assert.False(matches[0].IsCurrentCandidateFor(baseline, current, map, 1));
+
+        // A caller mutating the previous subject mapping cannot reuse the
+        // originally evaluated candidate to bind a different disk.
+        map[0] = DiskB;
+        map[1] = DiskA;
+        Assert.False(matches[0].IsCurrentCandidateFor(baseline, current, map, 0));
+        Assert.Equal(DiskB, matches[0].PreviousSubjectId);
+    }
+
+    [Fact]
+    public void NonCandidateAndInvalidReviewMapping_NeverPassFreshnessGate()
+    {
+        var baseline = Snapshot(CaseA, PriorTime, Disk(serial: "ORIGINAL"));
+        var current = Snapshot(CaseA, CurrentTime, Disk(serial: "REPLACEMENT"));
+        var preview = Assert.Single(SmartInventorySnapshot.Preview(
+            baseline, current, new[] { DiskA }, EvaluationTime));
+
+        Assert.Equal(SmartInventoryMatchStatus.NewDevice, preview.Status);
+        Assert.False(preview.IsCurrentCandidateFor(
+            baseline, current, new[] { DiskA }, 0));
+        Assert.False(preview.IsCurrentCandidateFor(
+            baseline, current, Array.Empty<DiagnosticSubjectId>(), 0));
+    }
+
+    [Fact]
+    public void FreshnessTokens_AreNeverIncludedInPublicJson()
+    {
+        var baseline = Snapshot(CaseA, PriorTime, Disk(serial: "SECRET-SN-1"));
+        var current = Snapshot(CaseA, CurrentTime, Disk(serial: "SECRET-SN-1"));
+        var preview = Assert.Single(SmartInventorySnapshot.Preview(
+            baseline, current, new[] { DiskA }, EvaluationTime));
+
+        var json = JsonSerializer.Serialize(preview)
+            + JsonSerializer.Serialize(baseline)
+            + JsonSerializer.Serialize(current);
+        Assert.DoesNotContain("CaptureToken", json);
+        Assert.DoesNotContain("BaselineCaptureToken", json);
+        Assert.DoesNotContain("CurrentCaptureToken", json);
+        Assert.DoesNotContain("SECRET-SN-1", json);
+        Assert.DoesNotContain(DiskA.Value.ToString(), json,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+
 }
