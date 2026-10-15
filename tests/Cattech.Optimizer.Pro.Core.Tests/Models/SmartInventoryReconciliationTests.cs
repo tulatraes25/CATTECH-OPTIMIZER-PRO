@@ -172,6 +172,44 @@ public sealed class SmartInventoryReconciliationTests
         Assert.Equal(DiskA, result.PreviousSubjectId);
     }
 
+    [Theory]
+    [InlineData("SN\\nABC")]
+    [InlineData("SN\\rABC")]
+    [InlineData("SN\\tABC")]
+    [InlineData("SN\\u200BABC")]
+    [InlineData("SN\\u202EABC")]
+    [InlineData("SN\\u2066ABC")]
+    [InlineData("FFFFFFFFFFFF")]
+    [InlineData("XXXXXXXXXXXX")]
+    public void UntrustedSerialControlOrRepeatedMarker_NeverSuggestsContinuity(string serial)
+    {
+        var prior = Snapshot(CaseA, PriorTime, Disk(serial: serial));
+        var current = Snapshot(CaseA, CurrentTime, Disk(serial: serial));
+
+        var match = Assert.Single(SmartInventorySnapshot.Preview(
+            prior, current, new[] { DiskA }, EvaluationTime));
+        Assert.Equal(SmartInventoryMatchStatus.UnverifiableIdentity, match.Status);
+        Assert.Null(match.PreviousSubjectId);
+    }
+
+    [Fact]
+    public void FormatCharactersInModelOrTransport_FailClosed()
+    {
+        var before = Snapshot(CaseA, PriorTime, Disk());
+        var invalidModel = Snapshot(CaseA, CurrentTime,
+            Disk(model: "EXAMPLE\\u202E NVME"));
+        var invalidTransport = Snapshot(CaseA, CurrentTime,
+            Disk(transport: "NVME\\u200B"));
+
+        foreach (var current in new[] { invalidModel, invalidTransport })
+        {
+            var match = Assert.Single(SmartInventorySnapshot.Preview(
+                before, current, new[] { DiskA }, EvaluationTime));
+            Assert.Equal(SmartInventoryMatchStatus.UnverifiableIdentity, match.Status);
+            Assert.Null(match.PreviousSubjectId);
+        }
+    }
+
     [Fact]
     public void FailedAnalysis_ZeroCapacity_OrMissingDevice_DoNotClaimIdentity()
     {
