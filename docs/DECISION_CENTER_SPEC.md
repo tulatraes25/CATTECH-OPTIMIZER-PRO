@@ -50,3 +50,38 @@ El cliente podría interpretar una correlación positiva como reparación causal
 
 ## EVIDENCE / DISPOSITION
 Se abrió Issue #44 después de inspeccionar el estado GitHub y las páginas oficiales de herramientas competidoras. `main` estable en SHA `02586cc8dc8f6c83c9242582405291d90c55730c` al iniciar. Base del desarrollo: PR #42 SHA `0cfb395a19cf8c5a2f3025c98825494c52cf1a85`, CI #127 `1387/0/0`. No se presume integración certificada por la CI anterior. Estado real y nuevo SHA deben revalidarse en cada gate.
+
+## DC-02 — Demo WPF interactiva (corte separado)
+
+La vista `DecisionCenterDemoView` se encuentra bajo `UI/Views`; el
+ViewModel `DecisionCenterDemoViewModel` utiliza **exclusivamente**
+`DiagnosticContextId.NewSession()`, `DiagnosticSubjectId.NewSubject()` y
+registros sintéticos creados en memoria. Ninguna instancia de proveedor
+SMART, WMI, DumpChk, servicio de reparación o red es inyectada a este demo.
+El menú lateral muestra **Decisiones · DEMO**; la página comienza con una
+advertencia visible que niega inspección real de este PC.
+
+Escenarios seleccionables y resultados:
+- **Datos insuficientes:** falta lectura; no se considera sano el equipo.
+- **Fuentes contradictorias:** observaciones incompatibles; revisar fuentes.
+- **Mejoría observada:** baseline/postcheck sintéticos comparables;
+  no se afirma causalidad ni reparación certificada.
+- **Problema persistente:** un chequeo hecho no demuestra éxito;
+  requiere investigación y revalidación.
+
+Los botones actualizan el ViewModel y las tarjetas de diagnóstico,
+comprobación y próximo paso. El sidebar es desplazable para mantener
+accesibles sus secciones al agregar el demo, incluso con altura reducida.
+El paso Entrega remite al Pasaporte Técnico solo a nivel de explicación:
+**no existe exportación ni conexión real** desde esta pantalla.
+
+Pruebas de aceptación DC-02: valores sintéticos rotulados,
+comandos con cambios observables, notificaciones enlazables,
+sin seriales ni códigos arbitrarios, build WPF en Windows CI.
+Pendiente QA manual: ventana a 900x600, escalamientos 125/150/200%,
+teclado, contraste y contraste alto, lectura con lector de pantalla,
+redimensionado y navegación al cambiar sección.
+
+**Gate de producto**: compilar/demo sintético no equivale a
+certificación de datos reales, privacidad para clientes ni release.
+No habilitar adquisición ni exportación automática sin #27/#30/#33/#43.
