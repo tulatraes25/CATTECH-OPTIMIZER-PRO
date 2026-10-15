@@ -26,12 +26,17 @@ public class TechnicalPassportReviewViewModelTests
             Array.Empty<RepairOutcomeAssessment>());
     }
 
+    // Only the explicitly selected synthetic equipment may authorize review.
+    private static TechnicalPassportReviewViewModel NewReview(
+        TechnicalPassportArtifact snapshot, Action<string> writer) =>
+        new(snapshot, writer, () => Context);
+
     [Fact]
     public void OpeningPreview_NeverCopiesAutomatically_AndStartsUnconsented()
     {
         int copies = 0;
         var passport = NewPassport();
-        var vm = new TechnicalPassportReviewViewModel(passport, _ => copies++);
+        var vm = NewReview(passport, _ => copies++);
 
         Assert.Equal(passport.PayloadJson, vm.PreviewJson);
         Assert.Equal(passport.Sha256Hex, vm.PreviewSha256);
@@ -48,7 +53,7 @@ public class TechnicalPassportReviewViewModelTests
     public void AcknowledgmentAndConsent_AreBothRequiredForTheSamePreview()
     {
         int copies = 0;
-        var vm = new TechnicalPassportReviewViewModel(NewPassport(), _ => copies++);
+        var vm = NewReview(NewPassport(), _ => copies++);
 
         vm.HasReviewedPreview = true;
         Assert.False(vm.CopyApprovedPayloadCommand.CanExecute(null));
@@ -73,7 +78,7 @@ public class TechnicalPassportReviewViewModelTests
     {
         var copied = new List<string>();
         var passport = NewPassport();
-        var vm = new TechnicalPassportReviewViewModel(passport, copied.Add);
+        var vm = NewReview(passport, copied.Add);
         vm.HasReviewedPreview = true;
         vm.ConsentsToClipboard = true;
 
@@ -96,10 +101,10 @@ public class TechnicalPassportReviewViewModelTests
     }
 
     [Fact]
-    public void ClipboardFailure_DoesNotClaimSuccessOrConsumeConsent()
+    public void ClipboardFailure_RevokesAmbiguousConsentWithoutClaimingSuccess()
     {
         int calls = 0;
-        var vm = new TechnicalPassportReviewViewModel(NewPassport(), _ =>
+        var vm = NewReview(NewPassport(), _ =>
         {
             calls++;
             if (calls == 1)
@@ -110,22 +115,24 @@ public class TechnicalPassportReviewViewModelTests
 
         vm.CopyApprovedPayloadCommand.Execute(null);
         Assert.False(vm.HasCopiedToClipboard);
-        Assert.True(vm.CopyApprovedPayloadCommand.CanExecute(null));
+        Assert.True(vm.IsConsentRevoked);
+        Assert.False(vm.CopyApprovedPayloadCommand.CanExecute(null));
         Assert.Contains("No se pudo", vm.StatusMessage);
         Assert.DoesNotContain("synthetic clipboard", vm.StatusMessage);
 
+        // Even a driver that threw AFTER writing must not reuse consent.
         vm.CopyApprovedPayloadCommand.Execute(null);
-        Assert.True(vm.HasCopiedToClipboard);
-        Assert.Equal(2, calls);
+        Assert.False(vm.HasCopiedToClipboard);
+        Assert.Equal(1, calls);
     }
 
     [Fact]
     public void NewSnapshot_NeedsFreshReviewAndConsent()
     {
         int copies = 0;
-        var a = new TechnicalPassportReviewViewModel(NewPassport("healthy"),
+        var a = NewReview(NewPassport("healthy"),
             _ => copies++);
-        var b = new TechnicalPassportReviewViewModel(NewPassport("unhealthy"),
+        var b = NewReview(NewPassport("unhealthy"),
             _ => copies++);
 
         a.HasReviewedPreview = true;
@@ -143,6 +150,6 @@ public class TechnicalPassportReviewViewModelTests
     public void MissingClipboardWriter_IsRejectedAtConstruction()
     {
         Assert.Throws<ArgumentNullException>(() =>
-            new TechnicalPassportReviewViewModel(NewPassport(), null!));
+            NewReview(NewPassport(), null!));
     }
 }
