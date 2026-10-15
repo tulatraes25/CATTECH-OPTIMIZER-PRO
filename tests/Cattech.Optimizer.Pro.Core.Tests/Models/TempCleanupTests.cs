@@ -388,6 +388,95 @@ public class TempCleanupTests
     }
 
     [Fact]
+    public void Cleanup_CapturedScope_DoesNotFollowLaterCallerMutations()
+    {
+        // No cleanup is executed: verifies the trust boundary on an isolated
+        // synthetic scope while a UI/client still owns its mutable objects.
+        var original = new TempCleanupTarget
+        {
+            Id = "USER_TEMP",
+            DisplayName = "Synthetic selection",
+            Path = @"C:\synthetic\Temp",
+            IsSelected = true,
+            IsScanned = true,
+            IsAccessible = true,
+            EstimatedSizeBytes = 123
+        };
+        var notSelected = new TempCleanupTarget
+        {
+            Id = "THUMBNAILS",
+            Path = @"C:\synthetic\Thumbnails",
+            IsSelected = false
+        };
+
+        var captured = TempCleanupService.CaptureSelectedTargets(
+            new[] { original, notSelected });
+        var snapshot = Assert.Single(captured);
+        Assert.NotSame(original, snapshot);
+
+        original.Id = "WINDOWS_TEMP";
+        original.Path = @"C:\synthetic\system-redirect";
+        original.DisplayName = "Changed after approval";
+        original.IsScanned = false;
+        original.IsAccessible = false;
+        original.IsSelected = false;
+        original.EstimatedSizeBytes = 999;
+
+        Assert.Equal("USER_TEMP", snapshot.Id);
+        Assert.Equal(@"C:\synthetic\Temp", snapshot.Path);
+        Assert.Equal("Synthetic selection", snapshot.DisplayName);
+        Assert.True(snapshot.IsScanned);
+        Assert.True(snapshot.IsAccessible);
+        Assert.True(snapshot.IsSelected);
+        Assert.Equal(123L, snapshot.EstimatedSizeBytes);
+        Assert.DoesNotContain(captured, target => target.Id == "THUMBNAILS");
+    }
+
+    [Fact]
+    public async Task Cleanup_DuplicateSelection_FailsBeforeAnyMutation()
+    {
+        var root = Path.Combine(Path.GetTempPath(),
+            "cattech-duplicate-guard-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var sentinel = Path.Combine(root, "keep.txt");
+        await File.WriteAllTextAsync(sentinel, "SYNTHETIC-KEEP");
+        try
+        {
+            // Deliberately forge duplicate allowed IDs and paths; direct
+            // CleanupAsync should abort before calling a deletion routine.
+            var duplicates = Enumerable.Range(0, 2).Select(i =>
+                new TempCleanupTarget
+                {
+                    Id = "USER_TEMP",
+                    DisplayName = $"Synthetic-{i}",
+                    Path = root,
+                    IsSelected = true,
+                    IsScanned = true,
+                    IsAccessible = true
+                }).ToArray();
+
+            var result = await new TempCleanupService(root).CleanupAsync(duplicates);
+
+            Assert.False(result.IsSuccess);
+            Assert.Equal(0, result.DeletedFiles);
+            Assert.Equal(0L, result.DeletedBytes);
+            Assert.Equal(2, result.Errors.Count);
+            Assert.All(result.Errors, error =>
+            {
+                Assert.Equal("UnsafeTarget", error.ErrorType);
+                Assert.Contains("duplicada", error.Message);
+            });
+            Assert.Equal(2, result.TargetResults.Count);
+            Assert.All(result.TargetResults, item => Assert.False(item.IsSuccess));
+            Assert.Equal("SYNTHETIC-KEEP", await File.ReadAllTextAsync(sentinel));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void TempCleanupTarget_DefaultValues_AreValid()
     {
         var target = new TempCleanupTarget();

@@ -91,6 +91,35 @@ public class TempCleanupService : ITempCleanupService
         return Task.FromResult(targets);
     }
 
+    /// <summary>
+    /// Snapshot only the selected scope, copying all scalar metadata needed by
+    /// validation, execution and audit. The caller owns the original objects;
+    /// no mutable reference to one is retained after this method returns.
+    /// </summary>
+    internal static List<TempCleanupTarget> CaptureSelectedTargets(
+        IEnumerable<TempCleanupTarget> targets)
+    {
+        ArgumentNullException.ThrowIfNull(targets);
+
+        return targets.Where(target => target.IsSelected)
+            .Select(target => new TempCleanupTarget
+            {
+                Id = target.Id,
+                DisplayName = target.DisplayName,
+                Description = target.Description,
+                Path = target.Path,
+                IsSelected = true,
+                IsScanned = target.IsScanned,
+                IsAccessible = target.IsAccessible,
+                IsSystemLocation = target.IsSystemLocation,
+                IsOptional = target.IsOptional,
+                EstimatedSizeBytes = target.EstimatedSizeBytes,
+                EstimatedFileCount = target.EstimatedFileCount,
+                RiskLevel = target.RiskLevel,
+                ScanNotes = target.ScanNotes
+            }).ToList();
+    }
+
     /// <inheritdoc/>
     public async Task<TempCleanupResult> CleanupAsync(
         IEnumerable<TempCleanupTarget> targets, IProgress<int>? progress = null)
@@ -100,13 +129,21 @@ public class TempCleanupService : ITempCleanupService
             StartedAt = DateTime.Now
         };
 
-        ArgumentNullException.ThrowIfNull(targets);
-        var selectedTargets = targets.Where(t => t.IsSelected).ToList();
+        // Capture immutable-by-ownership copies before preflight or any await.
+        // WPF, plugins and callers retain mutable TempCleanupTarget references;
+        // their later edits must not redirect or broaden an approved cleanup.
+        var selectedTargets = CaptureSelectedTargets(targets);
+        var duplicateIds = selectedTargets.GroupBy(t => t.Id, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .ToHashSet(StringComparer.Ordinal);
 
-        // All-or-nothing preflight: a forged or stale target must never cause
-        // an unrelated selected folder to be partially deleted first.
+        // All-or-nothing preflight: reject duplicates and unsafe roots before
+        // starting any deletion, even when other targets appear legitimate.
         var rejectedTargets = selectedTargets.Select(target =>
-            (Target: target, Reason: GetTargetRejectionReason(target)))
+            (Target: target, Reason: duplicateIds.Contains(target.Id)
+                ? "La ubicación de limpieza está duplicada."
+                : GetTargetRejectionReason(target)))
             .Where(entry => entry.Reason is not null)
             .ToArray();
         if (rejectedTargets.Length > 0)
