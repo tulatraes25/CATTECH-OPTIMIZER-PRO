@@ -156,10 +156,14 @@ public class EvidenceContextIsolationTests
                 new[] { local }, new[] { foreignDiagnostic },
                 Array.Empty<RepairOutcomeAssessment>()));
 
-        var foreignOutcome = new RepairOutcomeAssessment(
-            "other", "1", "health", BeforeId, BeforeId,
-            RepairOutcomeStatus.Indeterminate,
-            RepairOutcomeReason.NoDemonstratedChange, CaseB, Subject);
+        var foreignBefore = Fact(BeforeId, CaseB, "unhealthy",
+            AsOf.AddHours(-1));
+        var foreignAfter = Fact(AfterId, CaseB, "healthy",
+            AsOf.AddMinutes(-1));
+        var foreignOutcome = RepairOutcomeEvaluator.Compare(
+            OutcomeRule(), foreignBefore, foreignAfter);
+        Assert.Equal(RepairOutcomeStatus.ObservedImprovement,
+            foreignOutcome.Status);
         Assert.Throws<ArgumentException>(() =>
             TechnicalPassportBuilder.Build(CaseA, ExportId, AsOf,
                 new[] { local }, Array.Empty<DiagnosticAssessment>(),
