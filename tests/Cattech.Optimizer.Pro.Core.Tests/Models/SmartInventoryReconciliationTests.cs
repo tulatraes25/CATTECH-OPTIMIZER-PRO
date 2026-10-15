@@ -165,13 +165,8 @@ public sealed class SmartInventoryReconciliationTests
     public void SameSerialWithChangedCapacityModelOrTransport_RequiresInvestigation()
     {
         var prior = Snapshot(CaseA, PriorTime, Disk());
-        var after = Snapshot(CaseA, CurrentTime,
-            Disk(size: 1_024_000_000_000),
-            Disk(model: "REPLACEMENT DEVICE"),
-            Disk(transport: "sat"));
-
-        // Duplicated serial in a single inventory must take precedence even
-        // over changed fields. Test each proposed replacement separately.
+        // Evaluate each changed identity independently: a repeated serial
+        // with mismatched hardware attributes must never produce a binding.
         foreach (var candidate in new[]
         {
             Disk(size: 1_024_000_000_000),
