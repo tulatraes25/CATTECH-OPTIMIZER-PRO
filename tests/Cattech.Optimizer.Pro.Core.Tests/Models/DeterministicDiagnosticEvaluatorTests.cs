@@ -13,6 +13,10 @@ public class DeterministicDiagnosticEvaluatorTests
     private static readonly Guid IdB =
         Guid.Parse("22222222-2222-4222-8222-222222222222");
 
+    private static readonly DiagnosticContextId Context =
+        DiagnosticContextId.FromGuid(
+            Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"));
+
     private static DiagnosticRule OneFactRule() => new(
         "bsod-evidence", "1", "A specified bugcheck was observed",
         "A different observed bugcheck would refute this condition.",
@@ -20,10 +24,12 @@ public class DeterministicDiagnosticEvaluatorTests
             EvidenceValue.FromText("0x0000009F")) });
 
     private static EvidenceRecord Crash(Guid id, string code,
-        DateTimeOffset? timestamp = null, string source = "wer") =>
+        DateTimeOffset? timestamp = null, string source = "wer",
+        DiagnosticContextId? context = null) =>
         EvidenceRecord.Observed(id, source, "crash.bugcheck",
             timestamp ?? AsOf.AddHours(-1), EvidenceValue.FromText(code),
-            "synthetic-only", EvidencePrivacyClass.Equipment);
+            "synthetic-only", EvidencePrivacyClass.Equipment,
+            contextId: context ?? Context);
 
     [Fact]
     public void TwoRequiredFacts_CorroboratedOnlyWhenBothPresent()
@@ -39,7 +45,8 @@ public class DeterministicDiagnosticEvaluatorTests
             Crash(IdB, "0x0000009F"),
             EvidenceRecord.Observed(IdA, "smart", "disk.health",
                 AsOf.AddHours(-1), EvidenceValue.FromText("warning"),
-                "synthetic", EvidencePrivacyClass.Equipment)
+                "synthetic", EvidencePrivacyClass.Equipment,
+                contextId: Context)
         };
 
         var first = DeterministicDiagnosticEvaluator.Evaluate(rule, facts, AsOf);
@@ -53,6 +60,7 @@ public class DeterministicDiagnosticEvaluatorTests
         Assert.Empty(first.MissingFactKeys);
         Assert.Empty(first.ContradictingEvidenceIds);
         Assert.Equal("v1", first.RuleVersion);
+        Assert.Equal(Context, first.ContextId);
     }
 
     [Fact]
@@ -66,7 +74,8 @@ public class DeterministicDiagnosticEvaluatorTests
             });
         var absent = EvidenceRecord.Missing(IdB, "smart", "disk.health",
             AsOf.AddHours(-1), EvidenceAvailability.AccessDenied,
-            "synthetic", EvidencePrivacyClass.Equipment, "Missing SMART permission.");
+            "synthetic", EvidencePrivacyClass.Equipment, "Missing SMART permission.",
+            contextId: Context);
 
         var result = DeterministicDiagnosticEvaluator.Evaluate(
             rule, new[] { Crash(IdA, "0x0000009F"), absent }, AsOf);
@@ -117,7 +126,7 @@ public class DeterministicDiagnosticEvaluatorTests
         var valid = Crash(IdA, "0x0000009F");
         var irrelevant = EvidenceRecord.Observed(IdB, "mock", "gpu.temperature",
             AsOf, EvidenceValue.FromNumber(40), "synthetic",
-            EvidencePrivacyClass.Equipment);
+            EvidencePrivacyClass.Equipment, contextId: Context);
 
         var result = DeterministicDiagnosticEvaluator.Evaluate(OneFactRule(),
             new[] { irrelevant, valid, valid }, AsOf);
@@ -167,7 +176,7 @@ public class DeterministicDiagnosticEvaluatorTests
                 EvidenceValue.FromText(sensitive)) });
         var fact = EvidenceRecord.Observed(IdA, "test", "diagnostic.private",
             AsOf, EvidenceValue.FromText(sensitive), "synthetic",
-            EvidencePrivacyClass.Sensitive);
+            EvidencePrivacyClass.Sensitive, contextId: Context);
 
         var result = DeterministicDiagnosticEvaluator.Evaluate(
             rule, new[] { fact }, AsOf);
@@ -176,4 +185,50 @@ public class DeterministicDiagnosticEvaluatorTests
         Assert.Single(result.SupportingEvidenceIds);
         Assert.DoesNotContain(sensitive, System.Text.Json.JsonSerializer.Serialize(result));
     }
+
+    [Fact]
+    public void MixedEquipmentContext_NeverCorroboratesCombinedRecords()
+    {
+        var other = DiagnosticContextId.FromGuid(
+            Guid.Parse("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"));
+        var mixed = new[]
+        {
+            Crash(IdA, "0x0000009F"),
+            Crash(IdB, "0x0000009F", context: other)
+        };
+
+        Assert.Throws<ArgumentException>(() =>
+            DeterministicDiagnosticEvaluator.Evaluate(OneFactRule(), mixed, AsOf));
+        Assert.Throws<ArgumentException>(() =>
+            DeterministicDiagnosticEvaluator.Evaluate(OneFactRule(),
+                mixed.Reverse(), AsOf, Context));
+    }
+
+    [Fact]
+    public void LegacyUnboundEvidence_IsRejectedInsteadOfTrusted()
+    {
+        var legacy = EvidenceRecord.Observed(IdA, "wer", "crash.bugcheck",
+            AsOf.AddHours(-1), EvidenceValue.FromText("0x0000009F"),
+            "legacy-fixture", EvidencePrivacyClass.Equipment);
+
+        Assert.False(legacy.ContextId.IsBound);
+        Assert.Throws<ArgumentException>(() =>
+            DeterministicDiagnosticEvaluator.Evaluate(OneFactRule(),
+                new[] { legacy }, AsOf));
+        Assert.Throws<ArgumentException>(() =>
+            DeterministicDiagnosticEvaluator.Evaluate(OneFactRule(),
+                Array.Empty<EvidenceRecord>(), AsOf));
+    }
+
+    [Fact]
+    public void MissingOnlyAssessment_RequiresExplicitBoundContext()
+    {
+        var result = DeterministicDiagnosticEvaluator.Evaluate(OneFactRule(),
+            Array.Empty<EvidenceRecord>(), AsOf, Context);
+
+        Assert.Equal(DiagnosticAssessmentStatus.InsufficientEvidence, result.Status);
+        Assert.Equal(Context, result.ContextId);
+        Assert.Equal(new[] { "crash.bugcheck" }, result.MissingFactKeys);
+    }
+
 }
