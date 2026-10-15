@@ -36,7 +36,7 @@ public sealed record EvidenceExpectation
 }
 
 /// <summary>
-/// A versioned, pure-data diagnostic rule. One requirement per fact key.
+/// A versioned, pure-data diagnostic rule. One requirement per subject/fact pair.
 /// The rule does not execute any repair or query the operating system.
 /// </summary>
 public sealed class DiagnosticRule
