@@ -130,7 +130,8 @@ public static class TechnicalPassportBuilder
                 "Future-dated observations require clock review before export.",
                 nameof(issuedAt));
 
-        var knownIds = records.Select(item => item.Id).ToHashSet();
+        var recordsById = records.ToDictionary(item => item.Id);
+        var knownIds = recordsById.Keys.ToHashSet();
         var sensitiveIds = records.Where(item =>
             item.PrivacyClass == EvidencePrivacyClass.Sensitive)
             .Select(item => item.Id).ToHashSet();
@@ -158,6 +159,14 @@ public static class TechnicalPassportBuilder
                 || !knownIds.Contains(outcome.AfterEvidenceId))
                 throw new ArgumentException(
                     "Outcome refers to missing evidence.", nameof(outcomes));
+
+            var before = recordsById[outcome.BeforeEvidenceId];
+            var after = recordsById[outcome.AfterEvidenceId];
+            if (!outcome.SubjectId.IsValid || before.SubjectId != after.SubjectId
+                || before.SubjectId != outcome.SubjectId)
+                throw new ArgumentException(
+                    "Outcome evidence refers to incompatible components.",
+                    nameof(outcomes));
         }
 
         // Deliberate omission: sensitive records, labels, arbitrary rule text,
