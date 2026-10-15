@@ -5,6 +5,9 @@ namespace Cattech.Optimizer.Pro.Core.Tests.Models;
 
 public class TechnicalPassportReviewViewModelTests
 {
+    private static readonly DiagnosticSubjectId Subject =
+        new(Guid.Parse("77777777-7777-4777-8777-777777777777"));
+
     private static readonly DiagnosticContextId Context =
         new(Guid.Parse("99999999-9999-4999-8999-999999999999"));
 
@@ -12,7 +15,7 @@ public class TechnicalPassportReviewViewModelTests
     {
         var issued = new DateTimeOffset(2026, 10, 15, 12, 0, 0, TimeSpan.Zero);
         var evidence = EvidenceRecord.Observed(
-            Guid.Parse("10101010-1010-4010-8010-101010101010"), Context,
+            Guid.Parse("10101010-1010-4010-8010-101010101010"), Context, Subject,
             "synthetic", "windows.health", issued.AddMinutes(-10),
             EvidenceValue.FromText(observation), "synthetic-test-only",
             EvidencePrivacyClass.Equipment);
