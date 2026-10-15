@@ -21,12 +21,6 @@ public class TempCleanupService : ITempCleanupService
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    // Patrones de archivos que NO se deben borrar
-    private static readonly string[] ProtectedPatterns =
-    [
-        "*.lock", "*.pid", "*.socket"
-    ];
-
     // Extensiones de caché de miniaturas
     private static readonly string[] ThumbnailExtensions =
     [
@@ -754,10 +748,9 @@ public class TempCleanupService : ITempCleanupService
         if ((file.Attributes & FileAttributes.ReparsePoint) != 0)
             return true;
 
-        var name = file.Name.ToLowerInvariant();
-
-        // No borrar archivos de lock, PID, socket
-        if (ProtectedPatterns.Any(p => name.Contains(p.Replace("*", ""))))
+        // Use one shared filename policy in managed scan, cleanup and native
+        // disposition to avoid bypass through a future direct helper call.
+        if (CleanupTargets.IsProtectedTemporaryFileName(file.Name))
             return true;
 
         // A file may have old modification time but a recent NTFS creation

@@ -399,6 +399,35 @@ public sealed class WindowsScopedFileDeleteTests
         finally { Directory.Delete(root, recursive: true); }
     }
 
+
+    [Fact]
+    public void DirectNativeDelete_RejectsProtectedNamesWithoutManagedPreflight()
+    {
+        var root = NewFixture();
+        var names = new[]
+        {
+            "thumbcache_session.lock.db",
+            "thumbcache_worker.pid.db",
+            "thumbcache_daemon.socket.db"
+        };
+        try
+        {
+            foreach (var name in names)
+            {
+                var file = Path.Combine(root, name);
+                const string payload = "SYNTHETIC-PRESERVE";
+                File.WriteAllText(file, payload);
+                File.SetCreationTimeUtc(file, DateTime.UtcNow.AddDays(-8));
+                File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddDays(-8));
+
+                Assert.False(WindowsScopedFileDelete.TryDelete(root, file, out var bytes));
+                Assert.Equal(0L, bytes);
+                Assert.Equal(payload, File.ReadAllText(file));
+            }
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
     private static string NewFixture()
     {
         var root = Path.Combine(Path.GetTempPath(),

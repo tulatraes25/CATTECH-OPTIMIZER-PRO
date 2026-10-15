@@ -776,6 +776,21 @@ public class TempCleanupTests
         finally { Directory.Delete(root, recursive: true); }
     }
 
+
+    [Theory]
+    [InlineData("session.lock", true)]
+    [InlineData("thumbcache_worker.PID.db", true)]
+    [InlineData("service.socket.db", true)]
+    [InlineData("tempfile.tmp", false)]
+    [InlineData("", true)]
+    [InlineData(null, true)]
+    public void ProtectedFileNamePolicy_IsSharedAcrossCleanupLayers(
+        string? fileName, bool shouldProtect)
+    {
+        Assert.Equal(shouldProtect,
+            CleanupTargets.IsProtectedTemporaryFileName(fileName));
+    }
+
     [Fact]
     public void TempCleanupTarget_DefaultValues_AreValid()
     {

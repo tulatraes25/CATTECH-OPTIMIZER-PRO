@@ -108,6 +108,17 @@ public class TempCleanupTarget : INotifyPropertyChanged
 /// </summary>
 public static class CleanupTargets
 {
+    // Canonical filename policy shared by scan and native deletion. Any
+    // unfamiliar caller of WindowsScopedFileDelete must respect the same
+    // lock/PID/socket exclusions; this does not rely on the calling UI.
+    private static readonly string[] ProtectedNameFragments =
+        [".lock", ".pid", ".socket"];
+
+    public static bool IsProtectedTemporaryFileName(string? fileName) =>
+        string.IsNullOrWhiteSpace(fileName)
+        || ProtectedNameFragments.Any(fragment =>
+            fileName.Contains(fragment, StringComparison.OrdinalIgnoreCase));
+
     // Minimum retention before an explicitly confirmed temporary-file cleanup.
     // Both NTFS creation and modification times must be older than this limit.
     public const int MinimumAgeDays = 7;

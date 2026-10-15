@@ -60,7 +60,11 @@ internal static class WindowsScopedFileDelete
             return false;
         }
 
-        if (!IsSafeAllowedRoot(root))
+        // Defensive filename check on the native deletion boundary: even a
+        // caller bypassing managed scanner cannot remove protected lock, PID
+        // or socket-like files based only on their old timestamps.
+        if (CleanupTargets.IsProtectedTemporaryFileName(Path.GetFileName(candidate))
+            || !IsSafeAllowedRoot(root))
             return false;
 
         // Fail closed on nested paths. Intermediate child directories could
