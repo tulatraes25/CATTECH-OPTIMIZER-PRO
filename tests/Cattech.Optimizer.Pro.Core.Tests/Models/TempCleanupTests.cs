@@ -16,6 +16,20 @@ public class TempCleanupTests
 
 
     [Fact]
+    public async Task Scan_TrustedDefaultSelection_IsPreservedOnlyWhenAccessible()
+    {
+        // Scan-only: never invokes CleanupAsync or removes any real files.
+        var defaults = CleanupTargets.GetDefaultTargets();
+        var original = defaults.Single(t => t.Id == "USER_TEMP");
+        var scanned = await new TempCleanupService().ScanAsync();
+        var userTemp = scanned.Single(t => t.Id == "USER_TEMP");
+
+        Assert.Equal(original.IsSelected && userTemp.IsAccessible, userTemp.IsSelected);
+        if (!userTemp.IsAccessible)
+            Assert.False(userTemp.IsSelected);
+    }
+
+    [Fact]
     public async Task Scan_RecycleBin_IsExplicitlyUnavailable()
     {
         // Scan-only test: no cleanup is ever requested or performed.

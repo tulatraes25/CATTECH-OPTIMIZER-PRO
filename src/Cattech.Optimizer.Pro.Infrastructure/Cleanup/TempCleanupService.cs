@@ -443,10 +443,11 @@ public class TempCleanupService : ITempCleanupService
 
     private static void ScanFolder(TempCleanupTarget target)
     {
+        var wasSelected = target.IsSelected;
         target.EstimatedSizeBytes = 0;
         target.EstimatedFileCount = 0;
         target.IsAccessible = false;
-        target.IsSelected = false;
+        target.IsSelected = false; // Fail closed until the scan succeeds.
         target.IsScanned = true;
         if (!Directory.Exists(target.Path))
         {
@@ -474,16 +475,18 @@ public class TempCleanupService : ITempCleanupService
         }
 
         target.IsAccessible = true;
+        target.IsSelected = wasSelected; // Preserve trusted default selection only.
         target.ScanNotes = target.IsSystemLocation
             ? "Requiere permisos de administrador" : string.Empty;
     }
 
     private static void ScanThumbnailsFolder(TempCleanupTarget target)
     {
+        var wasSelected = target.IsSelected;
         target.EstimatedSizeBytes = 0;
         target.EstimatedFileCount = 0;
         target.IsAccessible = false;
-        target.IsSelected = false;
+        target.IsSelected = false; // Fail closed until the scan succeeds.
         target.IsScanned = true;
         if (!Directory.Exists(target.Path))
         {
@@ -511,6 +514,7 @@ public class TempCleanupService : ITempCleanupService
         }
 
         target.IsAccessible = true;
+        target.IsSelected = wasSelected;
         target.ScanNotes = "Solo archivos thumbcache_*.db";
     }
 
