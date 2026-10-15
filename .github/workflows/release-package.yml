@@ -158,7 +158,7 @@ jobs:
         shell: pwsh
         run: |
           $publishDir = "${{ github.workspace }}\output\release-package\win-x64"
-          $required = @("Cattech.Optimizer.Pro.UI.exe", "LibreHardwareMonitorLib.dll", "config\herramientas.json")
+          $required = @("Cattech.Optimizer.Pro.UI.exe", "LibreHardwareMonitorLib.dll", "config\herramientas.json", "config\bugcheckcodes.json")
           foreach ($file in $required) {
             if (-not (Test-Path (Join-Path $publishDir $file))) {
               throw "Missing critical file: $file"
@@ -177,6 +177,19 @@ jobs:
             throw "herramientas.json contains personal paths or secrets"
           }
           Write-Output "herramientas.json valid and clean"
+
+      - name: Validate bugcheckcodes.json
+        shell: pwsh
+        run: |
+          $file = "${{ github.workspace }}\output\release-package\win-x64\config\bugcheckcodes.json"
+          $records = @(Get-Content $file -Raw | ConvertFrom-Json)
+          if ($records.Count -lt 14) { throw "BUGCHECK catalog coverage below expected minimum (14)" }
+          $requiredCodes = @("0x0000000A", "0x0000009F", "0x00000124", "0x00000133")
+          foreach ($code in $requiredCodes) {
+            $matched = @($records | Where-Object { $_.code -eq $code -and -not [string]::IsNullOrWhiteSpace($_.name) })
+            if ($matched.Count -ne 1) { throw "BUGCHECK catalog invalid/missing code: $code" }
+          }
+          Write-Output "BUGCHECK catalog validated: $($records.Count) entries"
 
       - name: Validate smartctl absent
         shell: pwsh
@@ -253,7 +266,7 @@ jobs:
           try {
             # Compress-Archive (pwsh/.NET) normalizes separators to '/'
             $names = $zip.Entries | ForEach-Object { $_.FullName.Replace('\', '/') }
-            foreach ($required in @("Cattech.Optimizer.Pro.UI.exe", "LibreHardwareMonitorLib.dll", "config/herramientas.json", "README.md", "LICENSE")) {
+            foreach ($required in @("Cattech.Optimizer.Pro.UI.exe", "LibreHardwareMonitorLib.dll", "config/herramientas.json", "config/bugcheckcodes.json", "README.md", "LICENSE")) {
               if (-not ($names -contains $required)) { throw "ZIP missing entry: $required" }
             }
             if ($names -match "smartctl\.exe") { throw "ZIP contains smartctl.exe" }
