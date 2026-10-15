@@ -74,8 +74,10 @@ public sealed record EvidenceRecord
         EvidenceValue? value,
         string provenance,
         EvidencePrivacyClass privacyClass,
-        string limitations)
+        string limitations,
+        DiagnosticContextId contextId)
     {
+        ContextId = contextId;
         Id = id;
         SourceId = sourceId;
         FactKey = factKey;
@@ -86,6 +88,12 @@ public sealed record EvidenceRecord
         PrivacyClass = privacyClass;
         Limitations = limitations;
     }
+
+    /// <summary>
+    /// The diagnostic session, not a serial number or hardware fingerprint.
+    /// Unbound legacy records are inert for correlation and public export.
+    /// </summary>
+    public DiagnosticContextId ContextId { get; }
 
     public Guid Id { get; }
     public string SourceId { get; }
@@ -100,18 +108,20 @@ public sealed record EvidenceRecord
     public static EvidenceRecord Observed(
         Guid id, string sourceId, string factKey, DateTimeOffset observedAt,
         EvidenceValue value, string provenance, EvidencePrivacyClass privacyClass,
-        string limitations = "")
+        string limitations = "", DiagnosticContextId contextId = default)
     {
         ArgumentNullException.ThrowIfNull(value);
         Validate(id, sourceId, factKey, provenance, privacyClass, limitations);
         return new EvidenceRecord(id, sourceId, factKey, observedAt,
-            EvidenceAvailability.Observed, value, provenance, privacyClass, limitations);
+            EvidenceAvailability.Observed, value, provenance, privacyClass,
+            limitations, contextId);
     }
 
     public static EvidenceRecord Missing(
         Guid id, string sourceId, string factKey, DateTimeOffset observedAt,
         EvidenceAvailability reason, string provenance,
-        EvidencePrivacyClass privacyClass, string limitations)
+        EvidencePrivacyClass privacyClass, string limitations,
+        DiagnosticContextId contextId = default)
     {
         if (reason == EvidenceAvailability.Observed
             || !Enum.IsDefined(reason))
@@ -124,7 +134,7 @@ public sealed record EvidenceRecord
                 nameof(limitations));
 
         return new EvidenceRecord(id, sourceId, factKey, observedAt,
-            reason, null, provenance, privacyClass, limitations);
+            reason, null, provenance, privacyClass, limitations, contextId);
     }
 
     private static void Validate(
