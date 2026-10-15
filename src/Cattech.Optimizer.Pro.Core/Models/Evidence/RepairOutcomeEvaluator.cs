@@ -74,13 +74,13 @@ public sealed class RepairOutcomeAssessment
         if (!Enum.IsDefined(status) || !Enum.IsDefined(reason))
             throw new ArgumentOutOfRangeException(nameof(status));
 
-        if (status == RepairOutcomeStatus.ObservedImprovement
-            && reason != RepairOutcomeReason.ImprovementObserved
-            || status == RepairOutcomeStatus.Unresolved
-            && reason != RepairOutcomeReason.TargetNotReached
-            || status == RepairOutcomeStatus.Indeterminate
-            && reason is RepairOutcomeReason.ImprovementObserved
-                or RepairOutcomeReason.TargetNotReached)
+        if ((status == RepairOutcomeStatus.ObservedImprovement
+                && reason != RepairOutcomeReason.ImprovementObserved)
+            || (status == RepairOutcomeStatus.Unresolved
+                && reason != RepairOutcomeReason.TargetNotReached)
+            || (status == RepairOutcomeStatus.Indeterminate
+                && (reason == RepairOutcomeReason.ImprovementObserved
+                    || reason == RepairOutcomeReason.TargetNotReached)))
             throw new ArgumentException("Outcome reason contradicts its status.");
 
         if (status != RepairOutcomeStatus.Indeterminate
