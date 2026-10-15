@@ -86,6 +86,7 @@ public sealed class SmartInventorySnapshot
 {
     private const int MaxDisks = 128;
     private const int MaxFieldLength = 256;
+    private const int MaxRawFieldLength = 1024;
 
     private readonly DiskIdentity?[] _identities;
     private readonly string?[] _claimedSerials;
@@ -227,7 +228,14 @@ public sealed class SmartInventorySnapshot
 
     private static DiskIdentity? ExtractIdentity(SmartDiskReport report)
     {
-        if (!report.IsAnalysisSuccessful || string.IsNullOrWhiteSpace(report.Device))
+        var device = report.Device;
+        if (!report.IsAnalysisSuccessful || string.IsNullOrWhiteSpace(device)
+            || device.Length > MaxRawFieldLength
+            || HasUnsafeFirmwareChars(device)
+            // If smartctl explicitly reports a malformed type, falling back
+            // to protocol must not erase the unsafe source value.
+            || (report.SmartctlDeviceType is { } explicitType
+                && HasUnsafeFirmwareChars(explicitType)))
             return null;
 
         var serial = ExtractClaimedSerial(report);
@@ -272,20 +280,23 @@ public sealed class SmartInventorySnapshot
 
     private static string? Normalize(string? raw)
     {
-        var value = raw?.Trim();
-        if (string.IsNullOrWhiteSpace(value) || value.Length > MaxFieldLength)
+        // Validate the ORIGINAL firmware value. Trimming first would hide
+        // leading/trailing CR, LF or tabs and could falsely match a clean ID.
+        if (raw is null || raw.Length > MaxRawFieldLength
+            || HasUnsafeFirmwareChars(raw))
             return null;
 
-        // SMART strings are untrusted firmware output. Control, Unicode
-        // formatting/bidi and unpaired surrogate characters must not be used
-        // as identity evidence, even when two reports happen to match.
-        if (value.Any(ch => char.IsControl(ch) || char.IsSurrogate(ch)
-            || char.GetUnicodeCategory(ch)
-                == System.Globalization.UnicodeCategory.Format))
+        var value = raw.Trim();
+        if (string.IsNullOrWhiteSpace(value) || value.Length > MaxFieldLength)
             return null;
 
         return value.ToUpperInvariant();
     }
+
+    private static bool HasUnsafeFirmwareChars(string raw) =>
+        raw.Any(ch => char.IsControl(ch) || char.IsSurrogate(ch)
+            || char.GetUnicodeCategory(ch)
+                == System.Globalization.UnicodeCategory.Format);
 
     // Private by design: raw SMART identity is neither returned nor logged.
     private sealed record DiskIdentity(
