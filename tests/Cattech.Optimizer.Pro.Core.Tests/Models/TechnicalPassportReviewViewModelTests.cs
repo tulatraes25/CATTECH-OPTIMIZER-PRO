@@ -12,7 +12,9 @@ public class TechnicalPassportReviewViewModelTests
             Guid.Parse("10101010-1010-4010-8010-101010101010"),
             "synthetic", "windows.health", issued.AddMinutes(-10),
             EvidenceValue.FromText(observation), "synthetic-test-only",
-            EvidencePrivacyClass.Equipment);
+            EvidencePrivacyClass.Equipment,
+            contextId: DiagnosticContextId.FromGuid(
+                Guid.Parse("77777777-7777-4777-8777-777777777777")));
 
         return TechnicalPassportBuilder.Build(
             Guid.Parse("20202020-2020-4020-8020-202020202020"), issued,
