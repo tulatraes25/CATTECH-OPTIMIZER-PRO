@@ -221,16 +221,11 @@ public class TechnicalPassportTests
     }
 
     [Fact]
-    public void InvalidOutcomeStatusAndReason_AreRejected()
+    public void RepairOutcome_DoesNotExposePublicConstructorsOrSetters()
     {
-        var before = Observed(FirstId, "unhealthy");
-        var after = Observed(SecondId, "healthy");
-        var invalid = new RepairOutcomeAssessment("synthetic", "1",
-            "windows.health", FirstId, SecondId,
-            (RepairOutcomeStatus)999, RepairOutcomeReason.ImprovementObserved, Context, Subject);
-        Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(Context, 
-            ExportId, IssuedAt, new[] { before, after },
-            Array.Empty<DiagnosticAssessment>(), new[] { invalid }));
+        var type = typeof(RepairOutcomeAssessment);
+        Assert.Empty(type.GetConstructors());
+        Assert.All(type.GetProperties(), property => Assert.False(property.CanWrite));
     }
 
     [Fact]
