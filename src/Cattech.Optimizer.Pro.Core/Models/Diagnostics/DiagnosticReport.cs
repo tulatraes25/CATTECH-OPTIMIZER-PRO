@@ -244,9 +244,19 @@ public class DiagnosticReport
     public double DiskFreeGB { get; set; }
 
     /// <summary>
-    /// Porcentaje de espacio libre.
+    /// Porcentaje de espacio libre en el volumen del sistema, no del disco físico.
     /// </summary>
     public double DiskFreePercent { get; set; }
+
+    /// <summary>
+    /// True only when the system volume was explicitly associated with one
+    /// physical disk and both capacity and free bytes were valid. False for
+    /// old/unknown diagnostic reports: a default 0 is NOT a full drive.
+    /// </summary>
+    public bool DiskFreeSpaceKnown { get; set; }
+
+    /// <summary>Verified drive letter of the Windows system volume, if any.</summary>
+    public string SystemVolumeLetter { get; set; } = string.Empty;
 
     // --- Programas de inicio ---
 
