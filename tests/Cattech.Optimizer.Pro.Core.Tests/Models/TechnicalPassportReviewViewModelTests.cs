@@ -5,6 +5,10 @@ namespace Cattech.Optimizer.Pro.Core.Tests.Models;
 
 public class TechnicalPassportReviewViewModelTests
 {
+    private static TechnicalPassportReviewViewModel NewReview(
+        TechnicalPassportArtifact snapshot, Action<string> writer) =>
+        new(snapshot, writer, () => snapshot.ContextId);
+
     private static TechnicalPassportArtifact NewPassport(string observation = "healthy")
     {
         var issued = new DateTimeOffset(2026, 10, 15, 12, 0, 0, TimeSpan.Zero);
@@ -27,7 +31,7 @@ public class TechnicalPassportReviewViewModelTests
     {
         int copies = 0;
         var passport = NewPassport();
-        var vm = new TechnicalPassportReviewViewModel(passport, _ => copies++);
+        var vm = NewReview(passport, _ => copies++);
 
         Assert.Equal(passport.PayloadJson, vm.PreviewJson);
         Assert.Equal(passport.Sha256Hex, vm.PreviewSha256);
@@ -44,7 +48,7 @@ public class TechnicalPassportReviewViewModelTests
     public void AcknowledgmentAndConsent_AreBothRequiredForTheSamePreview()
     {
         int copies = 0;
-        var vm = new TechnicalPassportReviewViewModel(NewPassport(), _ => copies++);
+        var vm = NewReview(NewPassport(), _ => copies++);
 
         vm.HasReviewedPreview = true;
         Assert.False(vm.CopyApprovedPayloadCommand.CanExecute(null));
@@ -69,7 +73,7 @@ public class TechnicalPassportReviewViewModelTests
     {
         var copied = new List<string>();
         var passport = NewPassport();
-        var vm = new TechnicalPassportReviewViewModel(passport, copied.Add);
+        var vm = NewReview(passport, copied.Add);
         vm.HasReviewedPreview = true;
         vm.ConsentsToClipboard = true;
 
@@ -95,7 +99,7 @@ public class TechnicalPassportReviewViewModelTests
     public void ClipboardFailure_DoesNotClaimSuccessOrConsumeConsent()
     {
         int calls = 0;
-        var vm = new TechnicalPassportReviewViewModel(NewPassport(), _ =>
+        var vm = NewReview(NewPassport(), _ =>
         {
             calls++;
             if (calls == 1)
@@ -119,9 +123,9 @@ public class TechnicalPassportReviewViewModelTests
     public void NewSnapshot_NeedsFreshReviewAndConsent()
     {
         int copies = 0;
-        var a = new TechnicalPassportReviewViewModel(NewPassport("healthy"),
+        var a = NewReview(NewPassport("healthy"),
             _ => copies++);
-        var b = new TechnicalPassportReviewViewModel(NewPassport("unhealthy"),
+        var b = NewReview(NewPassport("unhealthy"),
             _ => copies++);
 
         a.HasReviewedPreview = true;
@@ -139,6 +143,100 @@ public class TechnicalPassportReviewViewModelTests
     public void MissingClipboardWriter_IsRejectedAtConstruction()
     {
         Assert.Throws<ArgumentNullException>(() =>
-            new TechnicalPassportReviewViewModel(NewPassport(), null!));
+            NewReview(NewPassport(), null!));
     }
+
+    [Fact]
+    public void SwitchingEquipment_RevokesConsentPermanentlyForOldPreview()
+    {
+        var passport = NewPassport();
+        var active = passport.ContextId;
+        int copies = 0;
+        var vm = new TechnicalPassportReviewViewModel(
+            passport, _ => copies++, () => active);
+
+        vm.HasReviewedPreview = true;
+        vm.ConsentsToClipboard = true;
+        Assert.True(vm.CopyApprovedPayloadCommand.CanExecute(null));
+
+        active = DiagnosticContextId.FromGuid(
+            Guid.Parse("99999999-9999-4999-8999-999999999999"));
+        vm.InvalidateForCaseSelectionChange();
+
+        Assert.False(vm.HasReviewedPreview);
+        Assert.False(vm.ConsentsToClipboard);
+        Assert.False(vm.CopyApprovedPayloadCommand.CanExecute(null));
+
+        // Returning to the old case does not restore a stale approval.
+        active = passport.ContextId;
+        vm.HasReviewedPreview = true;
+        vm.ConsentsToClipboard = true;
+        Assert.False(vm.CopyApprovedPayloadCommand.CanExecute(null));
+        vm.CopyApprovedPayloadCommand.Execute(null);
+        Assert.Equal(0, copies);
+    }
+
+    [Fact]
+    public void ActiveScopeMismatch_BlocksEvenWithoutNavigationNotification()
+    {
+        var passport = NewPassport();
+        var active = passport.ContextId;
+        int copies = 0;
+        var vm = new TechnicalPassportReviewViewModel(
+            passport, _ => copies++, () => active);
+        vm.HasReviewedPreview = true;
+        vm.ConsentsToClipboard = true;
+
+        active = DiagnosticContextId.NewSession();
+
+        Assert.False(vm.CopyApprovedPayloadCommand.CanExecute(null));
+        vm.CopyApprovedPayloadCommand.Execute(null);
+        Assert.Equal(0, copies);
+    }
+
+    [Fact]
+    public void ContextProviderFailure_FailsClosed()
+    {
+        var passport = NewPassport();
+        var vm = new TechnicalPassportReviewViewModel(
+            passport, _ => throw new Exception("Must not copy"),
+            () => throw new InvalidOperationException("Synthetic provider failed"));
+
+        vm.HasReviewedPreview = true;
+        vm.ConsentsToClipboard = true;
+        Assert.False(vm.CopyApprovedPayloadCommand.CanExecute(null));
+        Assert.DoesNotContain("Synthetic provider failed", vm.StatusMessage);
+    }
+
+    [Fact]
+    public void ContextChangedDuringClipboardCallback_DoesNotReportSafeSuccess()
+    {
+        var passport = NewPassport();
+        var active = passport.ContextId;
+        int clipboardCalls = 0;
+        var vm = new TechnicalPassportReviewViewModel(
+            passport, _ =>
+            {
+                clipboardCalls++;
+                active = DiagnosticContextId.NewSession();
+            }, () => active);
+        vm.HasReviewedPreview = true;
+        vm.ConsentsToClipboard = true;
+
+        vm.CopyApprovedPayloadCommand.Execute(null);
+
+        Assert.Equal(1, clipboardCalls);
+        Assert.True(vm.HasCopiedToClipboard);
+        Assert.False(vm.CopyApprovedPayloadCommand.CanExecute(null));
+        Assert.Contains("podría contener", vm.StatusMessage);
+        Assert.DoesNotContain("con autorización", vm.StatusMessage);
+    }
+
+    [Fact]
+    public void MissingActiveContextProvider_IsRejectedAtConstruction()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+            new TechnicalPassportReviewViewModel(NewPassport(), _ => { }, null!));
+    }
+
 }
