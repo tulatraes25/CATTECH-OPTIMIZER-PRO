@@ -14,11 +14,17 @@ public partial class TechnicalPassportReviewView : UserControl
 {
     public TechnicalPassportReviewView(
         TechnicalPassportArtifact passport,
-        Func<DiagnosticContextId> activeContext)
+        DiagnosticSessionLease selectedCaseLease)
     {
-        ArgumentNullException.ThrowIfNull(activeContext);
+        ArgumentNullException.ThrowIfNull(selectedCaseLease);
         InitializeComponent();
         DataContext = new TechnicalPassportReviewViewModel(
-            passport, payload => Clipboard.SetText(payload), activeContext);
+            passport, payload => Clipboard.SetText(payload),
+            selectedCaseLease);
+
+        // Navigating away must not leave old previews/consents subscribed
+        // to the coordinator, even if the same WPF object is later reused.
+        Unloaded += (_, _) =>
+            (DataContext as IDisposable)?.Dispose();
     }
 }
