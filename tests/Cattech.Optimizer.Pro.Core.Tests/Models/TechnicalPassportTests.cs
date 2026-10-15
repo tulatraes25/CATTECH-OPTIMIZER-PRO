@@ -18,9 +18,9 @@ public class TechnicalPassportTests
 
     private static EvidenceRecord Observed(Guid id, string value,
         EvidencePrivacyClass privacy = EvidencePrivacyClass.Equipment,
-        string source = "synthetic") =>
+        string source = "synthetic", DateTimeOffset? observedAt = null) =>
         EvidenceRecord.Observed(id, source, "windows.health",
-            IssuedAt.AddHours(-2), EvidenceValue.FromText(value),
+            observedAt ?? IssuedAt.AddHours(-2), EvidenceValue.FromText(value),
             "synthetic-test-only", privacy,
             "Only fixture data.");
 
@@ -48,7 +48,8 @@ public class TechnicalPassportTests
     [Fact]
     public void Export_IsCanonical_RegardlessOfInputOrder()
     {
-        var healthy = Observed(SecondId, "healthy");
+        var healthy = Observed(SecondId, "healthy",
+            observedAt: IssuedAt.AddHours(-1));
         var unhealthy = Observed(FirstId, "unhealthy");
         var missing = Missing(SensitiveId);
         var diagnostic = Diagnostic(healthy);
@@ -91,7 +92,8 @@ public class TechnicalPassportTests
             EvidenceValue.FromText(path), marker,
             EvidencePrivacyClass.Sensitive, marker);
         var safe = Observed(FirstId, "unhealthy", source: marker);
-        var second = Observed(SecondId, "healthy");
+        var second = Observed(SecondId, "healthy",
+            observedAt: IssuedAt.AddHours(-1));
         var assessment = DeterministicDiagnosticEvaluator.Evaluate(
             new DiagnosticRule(marker, "1", marker, marker,
                 new[] { new EvidenceExpectation("windows.health",
