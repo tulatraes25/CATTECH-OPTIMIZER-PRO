@@ -19,7 +19,7 @@ No atribuir identidad física de hardware mediante un GUID. No leer SMART real, 
 ## RISKS
 Un técnico o un adaptador defectuoso podría reutilizar el mismo SubjectId para dos discos; el modelo no lo detecta sin una fuente adicional confiable. Un recurso puede ser removido/reemplazado durante la sesión. Antes de comercializar la función deben añadirse inventario físico, control de cambios de componentes, expiración de identidades y pruebas Windows con dispositivos reales.
 
-`DiagnosticAssessment.MissingFactKeys` sigue expresando claves de hecho sin identificador de sujeto para UI interna; eso puede resultar ambiguo si una regla espera la misma clave en varios recursos. No usar ese texto solo para demostrar cuál componente falló: vincular la lista de carencias con sujetos de modo seguro antes de una UI que permita decisiones automáticas.
+`DiagnosticAssessment.MissingFactKeys` y `FutureDatedFactKeys` conservan una vista de compatibilidad solo con claves, que puede resultar ambigua en reglas multidisco. El slice de precisión agrega `MissingFactReferences` y `FutureDatedFactReferences` con la pareja `(SubjectId, FactKey)` ordenada; la UI técnica deberá usar estos nuevos campos y resolver los IDs a etiquetas de inventario validadas. Los nuevos campos se excluyen de la serialización JSON genérica para evitar fugas accidentales; nunca ingresan al pasaporte público. No presentar las claves de compatibilidad como identificación de un disco.
 
 ## DESIGN / TASKS
 1. `DiagnosticSubjectId` obligatorio; se crean sujetos host y componentes mediante GUIDs de sesión.
