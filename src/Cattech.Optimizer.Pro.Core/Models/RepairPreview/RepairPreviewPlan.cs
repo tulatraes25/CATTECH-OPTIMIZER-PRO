@@ -45,9 +45,9 @@ public sealed record RepairPreviewStep
             throw new ArgumentOutOfRangeException(nameof(reversibility));
         if (kind == PreviewStepKind.ReadOnlyInspection
             && (reversibility != PreviewReversibility.NotApplicable
-                || requiresElevation || requiresRestart))
+                || requiresRestart))
             throw new ArgumentException(
-                "Read-only previews cannot claim elevation, restart or reversibility.");
+                "Read-only previews cannot claim restart or reversibility.");
         if (kind == PreviewStepKind.SystemChange
             && reversibility == PreviewReversibility.NotApplicable)
             throw new ArgumentException(
