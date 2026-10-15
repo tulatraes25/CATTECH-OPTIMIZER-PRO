@@ -77,3 +77,24 @@ que cualquier futuro adaptador que transforme candidatos en evidencias
 debera imponer nuevamente estos controles y confirmar el hardware
 en la interfaz con el tecnico. El plan de revocacion al cambiar el
 equipo sigue pendiente de QA WPF/Windows real.
+
+## Validacion pre-trim y tamanos de firmware (slice SMART-H3)
+
+La validacion sobre texto de firmware se realiza sobre la **cadena cruda**
+antes de aplicar `Trim`: un serial como `"SN-123\\n"` nunca debe
+convertirse silenciosamente en el mismo candidato que `"SN-123"`.
+Tambien se rechazan controles/formato Unicode en el nombre de modelo, la
+ruta logica del dispositivo y el tipo explicito devuelto por smartctl,
+aunque el codigo pudiera sustituir ese tipo por el campo `Protocol`.
+
+Todo valor crudo de identidad queda limitado a 1024 caracteres, y el
+normalizado usado para coincidencia, a 256; los espacios ASCII normales en
+los extremos todavia se pueden recortar cuando no hay control ni formato.
+No se eliminan marcas peligrosas para fabricar equivalencias. Si un
+parseador externo agrega CRLF al dato, debe corregirse en la capa de
+adquisicion confiable y volver a capturar, no en la comparacion SMART.
+
+Estos checks minimizan falsos positivos pero tambien pueden aumentar los
+falsos negativos, lo cual es intencional cuando no hay prueba de identidad
+fisica. La funcionalidad sigue siendo solo vista previa y no ejecuta
+operaciones ni comparte datos reales.
