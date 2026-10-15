@@ -16,16 +16,20 @@ public enum DiagnosticAssessmentStatus
 
 public sealed record EvidenceExpectation
 {
-    public EvidenceExpectation(string factKey, EvidenceValue expected)
+    public EvidenceExpectation(DiagnosticSubjectId subjectId, string factKey, EvidenceValue expected)
     {
+        if (!subjectId.IsValid)
+            throw new ArgumentException("Expected fact needs an explicit subject.", nameof(subjectId));
         if (string.IsNullOrWhiteSpace(factKey))
             throw new ArgumentException("Fact key is required.", nameof(factKey));
         ArgumentNullException.ThrowIfNull(expected);
 
+        SubjectId = subjectId;
         FactKey = factKey;
         Expected = expected;
     }
 
+    public DiagnosticSubjectId SubjectId { get; }
     public string FactKey { get; }
     public EvidenceValue Expected { get; }
 }
@@ -57,9 +61,9 @@ public sealed class DiagnosticRule
             throw new ArgumentException("A rule requires 1-64 non-null facts.",
                 nameof(requiredFacts));
 
-        if (requirements.Select(item => item.FactKey)
-            .Distinct(StringComparer.Ordinal).Count() != requirements.Length)
-            throw new ArgumentException("Required fact keys must be unique.",
+        if (requirements.Select(item => (item.SubjectId, item.FactKey))
+            .Distinct().Count() != requirements.Length)
+            throw new ArgumentException("Subject/fact key combinations must be unique.",
                 nameof(requiredFacts));
 
         RuleId = ruleId;
@@ -162,8 +166,9 @@ public static class DeterministicDiagnosticEvaluator
         foreach (var requirement in rule.RequiredFacts)
         {
             var candidates = unique.Values
-                .Where(item => string.Equals(item.FactKey, requirement.FactKey,
-                    StringComparison.Ordinal)).ToArray();
+                .Where(item => item.SubjectId == requirement.SubjectId
+                    && string.Equals(item.FactKey, requirement.FactKey,
+                        StringComparison.Ordinal)).ToArray();
 
             // Clock inconsistencies invalidate a rule conclusion until reviewed.
             if (candidates.Any(item => item.ObservedAtUtc > atUtc))
