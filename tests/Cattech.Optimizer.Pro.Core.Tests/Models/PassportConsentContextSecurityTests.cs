@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Cattech.Optimizer.Pro.Core.Models.Evidence;
 using Cattech.Optimizer.Pro.UI.ViewModels;
+using Cattech.Optimizer.Pro.UI.Views;
 
 namespace Cattech.Optimizer.Pro.Core.Tests.Models;
 
@@ -55,6 +56,21 @@ public sealed class PassportConsentContextSecurityTests
         Assert.DoesNotContain(CaseA.Value.ToString(),
             JsonSerializer.Serialize(passport), StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("ContextId", JsonSerializer.Serialize(passport));
+    }
+
+    [Fact]
+    public void WpfReviewSurfaceCannotOmitActiveSelectionProvider()
+    {
+        // Reflection only: do not instantiate WPF or invoke Windows clipboard.
+        var publicCtor = Assert.Single(
+            typeof(TechnicalPassportReviewView).GetConstructors());
+        var parameters = publicCtor.GetParameters();
+
+        Assert.Equal(2, parameters.Length);
+        Assert.Equal(typeof(TechnicalPassportArtifact),
+            parameters[0].ParameterType);
+        Assert.Equal(typeof(Func<DiagnosticContextId>),
+            parameters[1].ParameterType);
     }
 
     [Fact]
