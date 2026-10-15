@@ -173,12 +173,12 @@ public sealed class SmartInventoryReconciliationTests
     }
 
     [Theory]
-    [InlineData("SN\\nABC")]
-    [InlineData("SN\\rABC")]
-    [InlineData("SN\\tABC")]
-    [InlineData("SN\\u200BABC")]
-    [InlineData("SN\\u202EABC")]
-    [InlineData("SN\\u2066ABC")]
+    [InlineData("SN\nABC")]
+    [InlineData("SN\rABC")]
+    [InlineData("SN\tABC")]
+    [InlineData("SN\u200BABC")]
+    [InlineData("SN\u202EABC")]
+    [InlineData("SN\u2066ABC")]
     [InlineData("FFFFFFFFFFFF")]
     [InlineData("XXXXXXXXXXXX")]
     public void UntrustedSerialControlOrRepeatedMarker_NeverSuggestsContinuity(string serial)
@@ -197,9 +197,9 @@ public sealed class SmartInventoryReconciliationTests
     {
         var before = Snapshot(CaseA, PriorTime, Disk());
         var invalidModel = Snapshot(CaseA, CurrentTime,
-            Disk(model: "EXAMPLE\\u202E NVME"));
+            Disk(model: "EXAMPLE\u202E NVME"));
         var invalidTransport = Snapshot(CaseA, CurrentTime,
-            Disk(transport: "NVME\\u200B"));
+            Disk(transport: "NVME\u200B"));
 
         foreach (var current in new[] { invalidModel, invalidTransport })
         {
