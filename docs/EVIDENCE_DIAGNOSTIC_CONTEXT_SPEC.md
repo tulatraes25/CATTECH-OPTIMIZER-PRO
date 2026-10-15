@@ -78,3 +78,30 @@ until Windows interactive QA and trusted session lifecycle are certified.
 
 **Remaining blocker:** real UI session change, trusted acquisition adapter,
 historical record migration and QA are not implemented here.
+
+
+## UI follow-up — Session-aware clipboard review (isolated component)
+
+The WPF `TechnicalPassportReviewViewModel` no longer permits an unscoped
+two-argument constructor. Its caller must pass a trusted
+`Func<DiagnosticContextId>` reflecting the **currently selected** service
+session. CanExecute and actual clipboard invocation compare this value to the
+frozen `TechnicalPassportArtifact.ContextId`. An exception in the scope
+provider denies clipboard disclosure.
+
+The future navigation/controller layer MUST call
+`InvalidateForCaseSelectionChange()` when changing customer, equipment or
+diagnostic session. Revocation is irreversible for that preview, including if
+a previous session is selected again; a new snapshot and fresh consent are
+required.
+
+If the scope changes during a synchronous clipboard callback, the component
+does not report safe completion and explicitly warns that the clipboard
+**may already contain the old JSON**. It does not attempt to claim a rollback
+or silently clear the operating system clipboard.
+
+**Integration boundary:** the view is still not registered in navigation
+and no trusted live session coordinator has been built. The callback and
+notification are contract requirements, not proof that a real UI case switch
+has been handled. Treat any missing notification hookup as a release blocker.
+WPF interactive/clipboard QA remains mandatory.
