@@ -130,6 +130,7 @@ public partial class MainViewModel : ObservableObject
             "Hardware" => CreateHardwareView(),
             "SmartDisk" => CreateSmartDiskView(),
             "Diagnostics" => CreateQuickDiagnosticView(),
+            "DecisionCenterDemo" => CreateDecisionCenterDemoView(),
             "BlueScreens" => CreateCrashEvidenceView(),
             "RepairCenter" => CreateRepairCenterView(),
             "TempCleanup" => CreateTempCleanupView(),
@@ -176,6 +177,14 @@ public partial class MainViewModel : ObservableObject
             DataContext = _quickDiagnosticViewModel
         };
     }
+
+    // Isolated demonstration: never receives real hardware providers,
+    // client records or services and never initiates system changes.
+    private static object CreateDecisionCenterDemoView() =>
+        new DecisionCenterDemoView
+        {
+            DataContext = new DecisionCenterDemoViewModel()
+        };
 
     private object CreateCrashEvidenceView()
     {
