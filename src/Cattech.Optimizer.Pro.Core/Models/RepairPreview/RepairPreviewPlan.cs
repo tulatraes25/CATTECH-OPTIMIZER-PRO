@@ -136,6 +136,6 @@ public sealed class RepairPreviewPlan
 
     public bool HasUncertainReversibility => Steps.Any(step =>
         step.Kind == PreviewStepKind.SystemChange
-        && step.Reversibility is PreviewReversibility.Unknown
-            or PreviewReversibility.NotReversible);
+        && (step.Reversibility is PreviewReversibility.Unknown
+            or PreviewReversibility.NotReversible));
 }
