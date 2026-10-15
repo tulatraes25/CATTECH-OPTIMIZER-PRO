@@ -68,6 +68,7 @@ public sealed record EvidenceRecord
     private EvidenceRecord(
         Guid id,
         DiagnosticContextId contextId,
+        DiagnosticSubjectId subjectId,
         string sourceId,
         string factKey,
         DateTimeOffset observedAtUtc,
@@ -79,6 +80,7 @@ public sealed record EvidenceRecord
     {
         Id = id;
         ContextId = contextId;
+        SubjectId = subjectId;
         SourceId = sourceId;
         FactKey = factKey;
         ObservedAtUtc = observedAtUtc.ToUniversalTime();
@@ -91,6 +93,7 @@ public sealed record EvidenceRecord
 
     public Guid Id { get; }
     public DiagnosticContextId ContextId { get; }
+    public DiagnosticSubjectId SubjectId { get; }
     public string SourceId { get; }
     public string FactKey { get; }
     public DateTimeOffset ObservedAtUtc { get; }
@@ -101,18 +104,18 @@ public sealed record EvidenceRecord
     public string Limitations { get; }
 
     public static EvidenceRecord Observed(
-        Guid id, DiagnosticContextId contextId, string sourceId, string factKey, DateTimeOffset observedAt,
+        Guid id, DiagnosticContextId contextId, DiagnosticSubjectId subjectId, string sourceId, string factKey, DateTimeOffset observedAt,
         EvidenceValue value, string provenance, EvidencePrivacyClass privacyClass,
         string limitations = "")
     {
         ArgumentNullException.ThrowIfNull(value);
-        Validate(id, contextId, sourceId, factKey, provenance, privacyClass, limitations);
-        return new EvidenceRecord(id, contextId, sourceId, factKey, observedAt,
+        Validate(id, contextId, subjectId, sourceId, factKey, provenance, privacyClass, limitations);
+        return new EvidenceRecord(id, contextId, subjectId, sourceId, factKey, observedAt,
             EvidenceAvailability.Observed, value, provenance, privacyClass, limitations);
     }
 
     public static EvidenceRecord Missing(
-        Guid id, DiagnosticContextId contextId, string sourceId, string factKey, DateTimeOffset observedAt,
+        Guid id, DiagnosticContextId contextId, DiagnosticSubjectId subjectId, string sourceId, string factKey, DateTimeOffset observedAt,
         EvidenceAvailability reason, string provenance,
         EvidencePrivacyClass privacyClass, string limitations)
     {
@@ -121,17 +124,17 @@ public sealed record EvidenceRecord
             throw new ArgumentOutOfRangeException(nameof(reason),
                 "Missing observations require a known non-observed status.");
 
-        Validate(id, contextId, sourceId, factKey, provenance, privacyClass, limitations);
+        Validate(id, contextId, subjectId, sourceId, factKey, provenance, privacyClass, limitations);
         if (string.IsNullOrWhiteSpace(limitations))
             throw new ArgumentException("Unavailable evidence requires an explanation.",
                 nameof(limitations));
 
-        return new EvidenceRecord(id, contextId, sourceId, factKey, observedAt,
+        return new EvidenceRecord(id, contextId, subjectId, sourceId, factKey, observedAt,
             reason, null, provenance, privacyClass, limitations);
     }
 
     private static void Validate(
-        Guid id, DiagnosticContextId contextId, string sourceId, string factKey, string provenance,
+        Guid id, DiagnosticContextId contextId, DiagnosticSubjectId subjectId, string sourceId, string factKey, string provenance,
         EvidencePrivacyClass privacyClass, string limitations)
     {
         if (id == Guid.Empty)
@@ -139,6 +142,9 @@ public sealed record EvidenceRecord
         if (!contextId.IsValid)
             throw new ArgumentException("Evidence must belong to a known diagnostic context.",
                 nameof(contextId));
+        if (!subjectId.IsValid)
+            throw new ArgumentException("Evidence must identify a concrete diagnostic subject.",
+                nameof(subjectId));
         if (string.IsNullOrWhiteSpace(sourceId))
             throw new ArgumentException("Source is required.", nameof(sourceId));
         if (string.IsNullOrWhiteSpace(factKey))
