@@ -4,6 +4,9 @@ namespace Cattech.Optimizer.Pro.Core.Tests.Models;
 
 public class RepairOutcomeEvaluatorTests
 {
+    private static readonly DiagnosticSubjectId Subject =
+        new(Guid.Parse("77777777-7777-4777-8777-777777777777"));
+
     private static readonly DiagnosticContextId Context =
         new(Guid.Parse("99999999-9999-4999-8999-999999999999"));
 
@@ -20,7 +23,7 @@ public class RepairOutcomeEvaluatorTests
 
     private static EvidenceRecord Observed(Guid id, string value,
         DateTimeOffset time, string source = "diagnostic-check") =>
-        EvidenceRecord.Observed(id, Context, source, "windows.component.health",
+        EvidenceRecord.Observed(id, Context, Subject, source, "windows.component.health",
             time, EvidenceValue.FromText(value), "synthetic-only",
             EvidencePrivacyClass.Equipment);
 
@@ -63,7 +66,7 @@ public class RepairOutcomeEvaluatorTests
     [Fact]
     public void AccessDeniedAfterRepair_DoesNotClaimSuccess()
     {
-        var missing = EvidenceRecord.Missing(AfterId, Context, "diagnostic-check",
+        var missing = EvidenceRecord.Missing(AfterId, Context, Subject, "diagnostic-check",
             "windows.component.health", BaselineTime.AddMinutes(30),
             EvidenceAvailability.AccessDenied, "synthetic-only",
             EvidencePrivacyClass.Equipment, "No access.");
@@ -103,7 +106,7 @@ public class RepairOutcomeEvaluatorTests
     [Fact]
     public void DifferentValueKinds_AreNotComparable()
     {
-        var post = EvidenceRecord.Observed(AfterId, Context, "diagnostic-check",
+        var post = EvidenceRecord.Observed(AfterId, Context, Subject, "diagnostic-check",
             "windows.component.health", BaselineTime.AddMinutes(30),
             EvidenceValue.FromBoolean(true), "synthetic-only",
             EvidencePrivacyClass.Equipment);
@@ -121,10 +124,10 @@ public class RepairOutcomeEvaluatorTests
         const string privateMarker = "SYNTHETIC-PRIVATE-POSTCONDITION";
         var rule = new RepairOutcomeRule("private", "1", "private.marker",
             EvidenceValue.FromText(privateMarker));
-        var before = EvidenceRecord.Observed(BeforeId, Context, "fixture", "private.marker",
+        var before = EvidenceRecord.Observed(BeforeId, Context, Subject, "fixture", "private.marker",
             BaselineTime, EvidenceValue.FromText("not-ready"), "synthetic",
             EvidencePrivacyClass.Sensitive);
-        var after = EvidenceRecord.Observed(AfterId, Context, "fixture", "private.marker",
+        var after = EvidenceRecord.Observed(AfterId, Context, Subject, "fixture", "private.marker",
             BaselineTime.AddMinutes(30), EvidenceValue.FromText(privateMarker),
             "synthetic", EvidencePrivacyClass.Sensitive);
         var result = RepairOutcomeEvaluator.Compare(rule, before, after);
