@@ -140,6 +140,38 @@ public sealed class SmartInventoryReconciliationTests
         Assert.Null(match.PreviousSubjectId);
     }
 
+    [Theory]
+    [InlineData("0")]
+    [InlineData("000")]
+    [InlineData("0000000000000000")]
+    [InlineData("default string")]
+    [InlineData("TO BE FILLED BY OEM")]
+    [InlineData("SYSTEM SERIAL NUMBER")]
+    [InlineData("UNKNOWN SERIAL")]
+    [InlineData("NOT APPLICABLE")]
+    public void FirmwarePlaceholderSerial_RequiresIndependentVerification(string serial)
+    {
+        var prior = Snapshot(CaseA, PriorTime, Disk(serial: serial));
+        var now = Snapshot(CaseA, CurrentTime, Disk(serial: serial));
+        var result = Assert.Single(SmartInventorySnapshot.Preview(
+            prior, now, new[] { DiskA }, EvaluationTime));
+
+        Assert.Equal(SmartInventoryMatchStatus.UnverifiableIdentity, result.Status);
+        Assert.Null(result.PreviousSubjectId);
+    }
+
+    [Fact]
+    public void RealisticZeroPrefixedSerial_IsNotMistakenForAllZeroPlaceholder()
+    {
+        var prior = Snapshot(CaseA, PriorTime, Disk(serial: "0000A123"));
+        var now = Snapshot(CaseA, CurrentTime, Disk(serial: "0000A123"));
+        var result = Assert.Single(SmartInventorySnapshot.Preview(
+            prior, now, new[] { DiskA }, EvaluationTime));
+
+        Assert.Equal(SmartInventoryMatchStatus.CandidateRequiresReview, result.Status);
+        Assert.Equal(DiskA, result.PreviousSubjectId);
+    }
+
     [Fact]
     public void FailedAnalysis_ZeroCapacity_OrMissingDevice_DoNotClaimIdentity()
     {
