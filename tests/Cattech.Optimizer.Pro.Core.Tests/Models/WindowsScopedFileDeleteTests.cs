@@ -274,6 +274,74 @@ public sealed class WindowsScopedFileDeleteTests
         finally { Directory.Delete(root, recursive: true); }
     }
 
+
+    [Fact]
+    public void VolumeRoot_IsRejectedWithoutAttemptingToDeleteUserFiles()
+    {
+        var fixture = NewFixture();
+        try
+        {
+            var volumeRoot = Path.GetPathRoot(fixture)!;
+            Assert.False(WindowsScopedFileDelete.IsSafeAllowedRoot(volumeRoot));
+            Assert.True(WindowsScopedFileDelete.IsSafeAllowedRoot(fixture));
+
+            var file = Path.Combine(fixture, "keep-synthetic.txt");
+            File.WriteAllText(file, "KEEP-ROOT-SCOPE");
+            File.SetCreationTimeUtc(file, DateTime.UtcNow.AddDays(-8));
+            File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddDays(-8));
+
+            Assert.False(WindowsScopedFileDelete.TryDelete(volumeRoot, file, out var bytes));
+            Assert.Equal(0L, bytes);
+            Assert.Equal("KEEP-ROOT-SCOPE", File.ReadAllText(file));
+        }
+        finally { Directory.Delete(fixture, recursive: true); }
+    }
+
+    [Fact]
+    public void SiblingWithSameDirectoryPrefix_IsNotAnAllowedChild()
+    {
+        var root = NewFixture();
+        var neighbor = root + "-prefix-neighbor";
+        Directory.CreateDirectory(neighbor);
+        try
+        {
+            var file = Path.Combine(neighbor, "synthetic.txt");
+            File.WriteAllText(file, "KEEP-NEIGHBOR");
+            File.SetCreationTimeUtc(file, DateTime.UtcNow.AddDays(-8));
+            File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddDays(-8));
+
+            Assert.False(WindowsScopedFileDelete.TryDelete(root, file, out var bytes));
+            Assert.Equal(0L, bytes);
+            Assert.Equal("KEEP-NEIGHBOR", File.ReadAllText(file));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+            Directory.Delete(neighbor, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void AlternateDataStreamInput_DoesNotDeleteBaseFile()
+    {
+        var root = NewFixture();
+        try
+        {
+            var file = Path.Combine(root, "synthetic-base.txt");
+            File.WriteAllText(file, "KEEP-BASE");
+            File.SetCreationTimeUtc(file, DateTime.UtcNow.AddDays(-8));
+            File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddDays(-8));
+
+            // Colon-bearing input is rejected before any native open. The test
+            // does not need to create an ADS and does not alter user data.
+            Assert.False(WindowsScopedFileDelete.TryDelete(
+                root, file + ":cattech_synthetic_ads", out var bytes));
+            Assert.Equal(0L, bytes);
+            Assert.Equal("KEEP-BASE", File.ReadAllText(file));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
     private static string NewFixture()
     {
         var root = Path.Combine(Path.GetTempPath(),

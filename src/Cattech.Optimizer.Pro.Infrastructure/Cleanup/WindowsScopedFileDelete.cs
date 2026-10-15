@@ -59,6 +59,9 @@ internal static class WindowsScopedFileDelete
             return false;
         }
 
+        if (!IsSafeAllowedRoot(root))
+            return false;
+
         // Fail closed on nested paths. Intermediate child directories could
         // be renamed after a pathname check; until handle-relative traversal
         // is independently reviewed, only delete DIRECT children of a held
@@ -132,6 +135,33 @@ internal static class WindowsScopedFileDelete
         // pathname-based File.Delete() occurs after identity verification.
         deletedBytes = (long)length;
         return true;
+    }
+
+    /// <summary>
+    /// Defense in depth. The native deletion primitive must itself reject
+    /// a volume root even if a future caller bypasses the service allowlist.
+    /// This routine is pure path validation and never opens a file/directory.
+    /// </summary>
+    internal static bool IsSafeAllowedRoot(string? directory)
+    {
+        if (!OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(directory)
+            || directory.StartsWith(@"\\", StringComparison.Ordinal)
+            || !Path.IsPathFullyQualified(directory))
+            return false;
+
+        try
+        {
+            var canonical = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
+            var root = Path.TrimEndingDirectorySeparator(
+                Path.GetPathRoot(canonical) ?? string.Empty);
+            return !string.IsNullOrWhiteSpace(root)
+                && !string.Equals(canonical, root, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException
+            or PathTooLongException)
+        {
+            return false;
+        }
     }
 
     private static bool MatchesFinalPath(SafeFileHandle handle, string expectedPath)

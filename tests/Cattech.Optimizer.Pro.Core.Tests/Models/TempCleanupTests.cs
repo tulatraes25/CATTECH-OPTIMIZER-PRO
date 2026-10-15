@@ -375,7 +375,7 @@ public class TempCleanupTests
         var bytes = new byte[733];
         await File.WriteAllBytesAsync(path, bytes);
         File.SetCreationTimeUtc(path, DateTime.UtcNow.AddDays(-8));
-                File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddDays(-8));
+        File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddDays(-8));
         try
         {
             var target = new TempCleanupTarget { Id = "USER_TEMP", Path = root };
@@ -439,7 +439,7 @@ public class TempCleanupTests
             var file = Path.Combine(root, "thumbcache_fixture.db");
             File.WriteAllBytes(file, new byte[461]);
             File.SetCreationTimeUtc(file, DateTime.UtcNow.AddDays(-8));
-                File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddDays(-8));
+            File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddDays(-8));
             var target = new TempCleanupTarget { Id = "THUMBNAILS", Path = root };
             var summary = new TargetResult { TargetId = target.Id };
             var result = new TempCleanupResult();
@@ -648,7 +648,7 @@ public class TempCleanupTests
             var nestedFile = Path.Combine(nested, "old-user-data.txt");
             File.WriteAllText(nestedFile, "SYNTHETIC-KEEP");
             File.SetCreationTimeUtc(nestedFile, DateTime.UtcNow.AddDays(-8));
-                File.SetLastWriteTimeUtc(nestedFile, DateTime.UtcNow.AddDays(-8));
+            File.SetLastWriteTimeUtc(nestedFile, DateTime.UtcNow.AddDays(-8));
 
             Assert.True(TempCleanupService.TryEnumerateBounded(
                 root, "*", recursive: false, maxFiles: 5,
