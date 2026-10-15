@@ -197,9 +197,19 @@ public sealed class SmartInventorySnapshot
         // entry may still claim the same serial as a complete entry, making
         // the overall inventory ambiguous rather than one-to-one.
         var serial = Normalize(report.SerialNumber);
-        return serial is "UNKNOWN" or "N/D" or "N/A" or "NONE" or "NULL"
-            or "NOT AVAILABLE" or "TO BE FILLED BY O.E.M."
-            or "00000000" or "000000000000" ? null : serial;
+        if (serial is null
+            or "UNKNOWN" or "UNKNOWN SERIAL" or "N/D" or "N/A" or "NONE"
+            or "NULL" or "NOT AVAILABLE" or "NOT APPLICABLE"
+            or "TO BE FILLED BY O.E.M." or "TO BE FILLED BY OEM"
+            or "DEFAULT STRING" or "SYSTEM SERIAL NUMBER")
+            return null;
+
+        // Devices may report all-zero serials of varying lengths rather
+        // than the two common placeholders. None are reliable identifiers.
+        if (serial.All(ch => ch == '0'))
+            return null;
+
+        return serial;
     }
 
     private static string? Normalize(string? raw)
