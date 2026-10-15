@@ -4,6 +4,9 @@ namespace Cattech.Optimizer.Pro.Core.Tests.Models;
 
 public class DeterministicDiagnosticEvaluatorTests
 {
+    private static readonly DiagnosticContextId Context =
+        new(Guid.Parse("99999999-9999-4999-8999-999999999999"));
+
     private static readonly DateTimeOffset AsOf =
         new(2026, 10, 14, 22, 0, 0, TimeSpan.Zero);
 
@@ -21,7 +24,7 @@ public class DeterministicDiagnosticEvaluatorTests
 
     private static EvidenceRecord Crash(Guid id, string code,
         DateTimeOffset? timestamp = null, string source = "wer") =>
-        EvidenceRecord.Observed(id, source, "crash.bugcheck",
+        EvidenceRecord.Observed(id, Context, source, "crash.bugcheck",
             timestamp ?? AsOf.AddHours(-1), EvidenceValue.FromText(code),
             "synthetic-only", EvidencePrivacyClass.Equipment);
 
@@ -37,13 +40,13 @@ public class DeterministicDiagnosticEvaluatorTests
         var facts = new[]
         {
             Crash(IdB, "0x0000009F"),
-            EvidenceRecord.Observed(IdA, "smart", "disk.health",
+            EvidenceRecord.Observed(IdA, Context, "smart", "disk.health",
                 AsOf.AddHours(-1), EvidenceValue.FromText("warning"),
                 "synthetic", EvidencePrivacyClass.Equipment)
         };
 
-        var first = DeterministicDiagnosticEvaluator.Evaluate(rule, facts, AsOf);
-        var reversed = DeterministicDiagnosticEvaluator.Evaluate(
+        var first = DeterministicDiagnosticEvaluator.Evaluate(Context, rule, facts, AsOf);
+        var reversed = DeterministicDiagnosticEvaluator.Evaluate(Context, 
             rule, facts.Reverse(), AsOf);
 
         Assert.Equal(DiagnosticAssessmentStatus.Corroborated, first.Status);
@@ -64,11 +67,11 @@ public class DeterministicDiagnosticEvaluatorTests
                 new EvidenceExpectation("crash.bugcheck", EvidenceValue.FromText("0x0000009F")),
                 new EvidenceExpectation("disk.health", EvidenceValue.FromText("healthy"))
             });
-        var absent = EvidenceRecord.Missing(IdB, "smart", "disk.health",
+        var absent = EvidenceRecord.Missing(IdB, Context, "smart", "disk.health",
             AsOf.AddHours(-1), EvidenceAvailability.AccessDenied,
             "synthetic", EvidencePrivacyClass.Equipment, "Missing SMART permission.");
 
-        var result = DeterministicDiagnosticEvaluator.Evaluate(
+        var result = DeterministicDiagnosticEvaluator.Evaluate(Context, 
             rule, new[] { Crash(IdA, "0x0000009F"), absent }, AsOf);
 
         Assert.Equal(DiagnosticAssessmentStatus.InsufficientEvidence, result.Status);
@@ -80,7 +83,7 @@ public class DeterministicDiagnosticEvaluatorTests
     [Fact]
     public void ConflictingSources_DoNotProduceAnArtificialConfidence()
     {
-        var result = DeterministicDiagnosticEvaluator.Evaluate(OneFactRule(),
+        var result = DeterministicDiagnosticEvaluator.Evaluate(Context, OneFactRule(),
             new[] { Crash(IdA, "0x0000009F", source: "wer"),
                     Crash(IdB, "0x0000007E", source: "dumpchk") }, AsOf);
 
@@ -92,7 +95,7 @@ public class DeterministicDiagnosticEvaluatorTests
     [Fact]
     public void Contradiction_RefutesOnlyTheConfiguredExpectation()
     {
-        var result = DeterministicDiagnosticEvaluator.Evaluate(OneFactRule(),
+        var result = DeterministicDiagnosticEvaluator.Evaluate(Context, OneFactRule(),
             new[] { Crash(IdA, "0x0000007E") }, AsOf);
 
         Assert.Equal(DiagnosticAssessmentStatus.Refuted, result.Status);
@@ -103,7 +106,7 @@ public class DeterministicDiagnosticEvaluatorTests
     [Fact]
     public void FutureDatedRequiredObservation_InvalidatesConclusion()
     {
-        var result = DeterministicDiagnosticEvaluator.Evaluate(OneFactRule(),
+        var result = DeterministicDiagnosticEvaluator.Evaluate(Context, OneFactRule(),
             new[] { Crash(IdA, "0x0000009F", timestamp: AsOf.AddMinutes(3)) }, AsOf);
 
         Assert.Equal(DiagnosticAssessmentStatus.InsufficientEvidence, result.Status);
@@ -115,11 +118,11 @@ public class DeterministicDiagnosticEvaluatorTests
     public void IrrelevantFacts_AndDuplicateIdenticalRecords_DoNotChangeStatus()
     {
         var valid = Crash(IdA, "0x0000009F");
-        var irrelevant = EvidenceRecord.Observed(IdB, "mock", "gpu.temperature",
+        var irrelevant = EvidenceRecord.Observed(IdB, Context, "mock", "gpu.temperature",
             AsOf, EvidenceValue.FromNumber(40), "synthetic",
             EvidencePrivacyClass.Equipment);
 
-        var result = DeterministicDiagnosticEvaluator.Evaluate(OneFactRule(),
+        var result = DeterministicDiagnosticEvaluator.Evaluate(Context, OneFactRule(),
             new[] { irrelevant, valid, valid }, AsOf);
 
         Assert.Equal(DiagnosticAssessmentStatus.Corroborated, result.Status);
@@ -130,7 +133,7 @@ public class DeterministicDiagnosticEvaluatorTests
     public void ReusedEvidenceIdWithDifferentPayload_FailsClosed()
     {
         Assert.Throws<ArgumentException>(() =>
-            DeterministicDiagnosticEvaluator.Evaluate(OneFactRule(),
+            DeterministicDiagnosticEvaluator.Evaluate(Context, OneFactRule(),
                 new[] { Crash(IdA, "0x0000009F"), Crash(IdA, "0x0000007E") },
                 AsOf));
     }
@@ -165,11 +168,11 @@ public class DeterministicDiagnosticEvaluatorTests
             "A different value refutes it.",
             new[] { new EvidenceExpectation("diagnostic.private",
                 EvidenceValue.FromText(sensitive)) });
-        var fact = EvidenceRecord.Observed(IdA, "test", "diagnostic.private",
+        var fact = EvidenceRecord.Observed(IdA, Context, "test", "diagnostic.private",
             AsOf, EvidenceValue.FromText(sensitive), "synthetic",
             EvidencePrivacyClass.Sensitive);
 
-        var result = DeterministicDiagnosticEvaluator.Evaluate(
+        var result = DeterministicDiagnosticEvaluator.Evaluate(Context, 
             rule, new[] { fact }, AsOf);
 
         Assert.Equal(DiagnosticAssessmentStatus.Corroborated, result.Status);
