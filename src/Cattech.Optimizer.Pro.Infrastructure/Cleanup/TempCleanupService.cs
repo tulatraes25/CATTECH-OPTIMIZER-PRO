@@ -455,7 +455,8 @@ public class TempCleanupService : ITempCleanupService
 
     // --- Métodos de escaneo ---
 
-    private static void ScanFolder(TempCleanupTarget target)
+    // Internal for read-only, isolated synthetic scan regressions.
+    internal static void ScanFolder(TempCleanupTarget target)
     {
         var wasSelected = target.IsSelected;
         target.EstimatedSizeBytes = 0;
@@ -483,7 +484,10 @@ public class TempCleanupService : ITempCleanupService
         {
             try
             {
-                target.EstimatedSizeBytes += new FileInfo(file).Length;
+                var info = new FileInfo(file);
+                if (IsProtectedFile(info))
+                    continue;
+                target.EstimatedSizeBytes += info.Length;
                 target.EstimatedFileCount++;
             }
             catch (IOException) { }
@@ -522,7 +526,10 @@ public class TempCleanupService : ITempCleanupService
         {
             try
             {
-                target.EstimatedSizeBytes += new FileInfo(file).Length;
+                var info = new FileInfo(file);
+                if (IsProtectedFile(info))
+                    continue;
+                target.EstimatedSizeBytes += info.Length;
                 target.EstimatedFileCount++;
             }
             catch (IOException) { }
@@ -742,8 +749,12 @@ public class TempCleanupService : ITempCleanupService
         if (ProtectedPatterns.Any(p => name.Contains(p.Replace("*", ""))))
             return true;
 
-        // No borrar archivos muy recientes (últimos 60 segundos)
-        if (file.LastWriteTime > DateTime.Now.AddSeconds(-60))
+        // A file may have old modification time but a recent NTFS creation
+        // time (e.g., extracted archive). Refuse both cases. Native handle
+        // verification repeats this decision immediately before disposition.
+        var retentionCutoff = DateTime.UtcNow.AddDays(-CleanupTargets.MinimumAgeDays);
+        if (file.LastWriteTimeUtc > retentionCutoff
+            || file.CreationTimeUtc > retentionCutoff)
             return true;
 
         return false;

@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
+using Cattech.Optimizer.Pro.Core.Models.Cleanup;
 
 namespace Cattech.Optimizer.Pro.Infrastructure.Cleanup;
 
@@ -26,7 +27,6 @@ internal static class WindowsScopedFileDelete
     private const uint FileAttributeHidden = 0x00000002;
     private const uint FileAttributeReadOnly = 0x00000001;
     private const int FileDispositionInfoClass = 4;
-    private const uint MinFileAgeSeconds = 60;
 
     /// <summary>
     /// Deletes only a handle-verified, old, ordinary DIRECT-CHILD file at its
@@ -98,13 +98,25 @@ internal static class WindowsScopedFileDelete
             || !MatchesFinalPath(fileHandle, candidate))
             return false;
 
-        // All decisions use metadata from the same opened identity.
+        // A recently created file may carry an ancient LastWriteTime after
+        // extraction or copying. Require BOTH ages from this same file handle
+        // to exceed the retention period. Unknown timestamps fail closed.
         var lastWriteTicks = ((long)info.LastWriteTime.High << 32)
             | info.LastWriteTime.Low;
+        var creationTicks = ((long)info.CreationTime.High << 32)
+            | info.CreationTime.Low;
+        if (lastWriteTicks <= 0 || creationTicks <= 0)
+            return false;
         DateTime lastWriteUtc;
-        try { lastWriteUtc = DateTime.FromFileTimeUtc(lastWriteTicks); }
+        DateTime createdUtc;
+        try
+        {
+            lastWriteUtc = DateTime.FromFileTimeUtc(lastWriteTicks);
+            createdUtc = DateTime.FromFileTimeUtc(creationTicks);
+        }
         catch (ArgumentOutOfRangeException) { return false; }
-        if (lastWriteUtc > DateTime.UtcNow.AddSeconds(-MinFileAgeSeconds))
+        var retentionCutoff = DateTime.UtcNow.AddDays(-CleanupTargets.MinimumAgeDays);
+        if (lastWriteUtc > retentionCutoff || createdUtc > retentionCutoff)
             return false;
 
         var length = ((ulong)info.FileSizeHigh << 32) | info.FileSizeLow;

@@ -108,6 +108,10 @@ public class TempCleanupTarget : INotifyPropertyChanged
 /// </summary>
 public static class CleanupTargets
 {
+    // Minimum retention before an explicitly confirmed temporary-file cleanup.
+    // Both NTFS creation and modification times must be older than this limit.
+    public const int MinimumAgeDays = 7;
+
     /// <summary>
     /// TEMP/TMP can redirect Path.GetTempPath. Automatic cleanup requires
     /// the independent OS-known per-user LocalApplicationData\Temp location.
@@ -173,7 +177,7 @@ public static class CleanupTargets
                 Id = "USER_TEMP",
                 DisplayName = "Temporales del usuario",
                 Path = userTemp,
-                Description = "Archivos temporales creados por aplicaciones del usuario. Generalmente seguro de limpiar.",
+                Description = "Solo archivos directos creados y modificados hace al menos 7 días. Revisá la selección antes de borrar.",
                 IsSystemLocation = false,
                 IsOptional = false,
                 IsSelected = userTempIsTrusted,
@@ -186,7 +190,7 @@ public static class CleanupTargets
                 Id = "WINDOWS_TEMP",
                 DisplayName = "Temporales de Windows",
                 Path = windowsTemp,
-                Description = "Archivos temporales del sistema. Puede requerir permisos de administrador.",
+                Description = "Archivos directos con al menos 7 días de antigüedad; puede requerir administrador.",
                 IsSystemLocation = true,
                 IsOptional = false,
                 IsSelected = false,
@@ -212,7 +216,7 @@ public static class CleanupTargets
                 Path = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                     @"Microsoft\Windows\Explorer"),
-                Description = "Caché de miniaturas de imágenes y archivos. Se regenerará automáticamente.",
+                Description = "Caché de miniaturas: solo archivos creados y modificados hace más de 7 días.",
                 IsSystemLocation = false,
                 IsOptional = true,
                 IsSelected = false,

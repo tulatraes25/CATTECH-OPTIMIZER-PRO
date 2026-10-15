@@ -18,7 +18,8 @@ public sealed class WindowsScopedFileDeleteTests
             var file = Path.Combine(root, "verified-old.txt");
             const string payload = "SYNTHETIC-WINDOWS-HANDLE-TEST";
             File.WriteAllText(file, payload);
-            File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddMinutes(-5));
+            File.SetCreationTimeUtc(file, DateTime.UtcNow.AddDays(-8));
+            File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddDays(-8));
             var expectedBytes = new FileInfo(file).Length;
 
             var deleted = WindowsScopedFileDelete.TryDelete(root, file, out var bytes);
@@ -56,7 +57,8 @@ public sealed class WindowsScopedFileDeleteTests
         {
             var file = Path.Combine(outside, "important.txt");
             File.WriteAllText(file, "KEEP-THIS");
-            File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddMinutes(-6));
+            File.SetCreationTimeUtc(file, DateTime.UtcNow.AddDays(-8));
+            File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddDays(-8));
 
             Assert.False(WindowsScopedFileDelete.TryDelete(root, file, out var bytes));
             Assert.Equal(0L, bytes);
@@ -77,7 +79,8 @@ public sealed class WindowsScopedFileDeleteTests
         {
             var file = Path.Combine(root, "locked.txt");
             File.WriteAllText(file, "KEEP-LOCKED");
-            File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddMinutes(-7));
+            File.SetCreationTimeUtc(file, DateTime.UtcNow.AddDays(-8));
+            File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddDays(-8));
             using (var held = new FileStream(file, FileMode.Open, FileAccess.Read,
                 FileShare.Read))
             {
@@ -100,7 +103,8 @@ public sealed class WindowsScopedFileDeleteTests
             var target = Path.Combine(outside, "target.txt");
             var symlink = Path.Combine(root, "link.txt");
             File.WriteAllText(target, "SYNTHETIC-KEEP");
-            File.SetLastWriteTimeUtc(target, DateTime.UtcNow.AddMinutes(-9));
+            File.SetCreationTimeUtc(target, DateTime.UtcNow.AddDays(-8));
+            File.SetLastWriteTimeUtc(target, DateTime.UtcNow.AddDays(-8));
 
             try { File.CreateSymbolicLink(symlink, target); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
@@ -132,7 +136,8 @@ public sealed class WindowsScopedFileDeleteTests
             var target = Path.Combine(outside, "target.txt");
             var link = Path.Combine(root, "linked-folder");
             File.WriteAllText(target, "SAFE-KEEP");
-            File.SetLastWriteTimeUtc(target, DateTime.UtcNow.AddMinutes(-9));
+            File.SetCreationTimeUtc(target, DateTime.UtcNow.AddDays(-8));
+            File.SetLastWriteTimeUtc(target, DateTime.UtcNow.AddDays(-8));
 
             try { Directory.CreateSymbolicLink(link, outside); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
@@ -164,7 +169,8 @@ public sealed class WindowsScopedFileDeleteTests
             Directory.CreateDirectory(nested);
             var file = Path.Combine(nested, "old-nested.txt");
             File.WriteAllText(file, "NESTED-SYNTHETIC-KEEP");
-            File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddMinutes(-8));
+            File.SetCreationTimeUtc(file, DateTime.UtcNow.AddDays(-8));
+            File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddDays(-8));
 
             Assert.False(WindowsScopedFileDelete.TryDelete(root, file, out var bytes));
             Assert.Equal(0L, bytes);
@@ -183,7 +189,8 @@ public sealed class WindowsScopedFileDeleteTests
             var original = Path.Combine(root, "original.txt");
             var alternate = Path.Combine(root, "linked.txt");
             File.WriteAllText(original, "HARDLINK-SYNTHETIC-KEEP");
-            File.SetLastWriteTimeUtc(original, DateTime.UtcNow.AddMinutes(-9));
+            File.SetCreationTimeUtc(original, DateTime.UtcNow.AddDays(-8));
+            File.SetLastWriteTimeUtc(original, DateTime.UtcNow.AddDays(-8));
 
             Assert.True(CreateHardLink(alternate, original, IntPtr.Zero),
                 $"NTFS synthetic hard-link setup failed: {Marshal.GetLastWin32Error()}");
@@ -205,7 +212,8 @@ public sealed class WindowsScopedFileDeleteTests
         try
         {
             File.WriteAllText(file, "READONLY-SYNTHETIC-KEEP");
-            File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddMinutes(-9));
+            File.SetCreationTimeUtc(file, DateTime.UtcNow.AddDays(-8));
+            File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddDays(-8));
             File.SetAttributes(file, File.GetAttributes(file) | FileAttributes.ReadOnly);
 
             Assert.False(WindowsScopedFileDelete.TryDelete(root, file, out var bytes));
@@ -227,6 +235,44 @@ public sealed class WindowsScopedFileDeleteTests
         System.Runtime.InteropServices.UnmanagedType.Bool)]
     private static extern bool CreateHardLink(
         string newFileName, string existingFileName, IntPtr securityAttributes);
+
+
+    [Fact]
+    public void RecentlyCreatedFile_WithSpoofedAncientModification_IsPreserved()
+    {
+        var root = NewFixture();
+        try
+        {
+            var file = Path.Combine(root, "copied-new.txt");
+            File.WriteAllText(file, "KEEP-COPIED-CONTENT");
+            // Copying or extracting a file may preserve an old modified time.
+            // The actual NTFS creation timestamp must still block deletion.
+            File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddDays(-40));
+
+            Assert.False(WindowsScopedFileDelete.TryDelete(root, file, out var bytes));
+            Assert.Equal(0L, bytes);
+            Assert.Equal("KEEP-COPIED-CONTENT", File.ReadAllText(file));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void RecentlyModifiedFile_WithAncientCreation_IsPreserved()
+    {
+        var root = NewFixture();
+        try
+        {
+            var file = Path.Combine(root, "changed-today.txt");
+            File.WriteAllText(file, "KEEP-RECENT-UPDATE");
+            File.SetCreationTimeUtc(file, DateTime.UtcNow.AddDays(-40));
+            File.SetLastWriteTimeUtc(file, DateTime.UtcNow);
+
+            Assert.False(WindowsScopedFileDelete.TryDelete(root, file, out var bytes));
+            Assert.Equal(0L, bytes);
+            Assert.Equal("KEEP-RECENT-UPDATE", File.ReadAllText(file));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
 
     private static string NewFixture()
     {

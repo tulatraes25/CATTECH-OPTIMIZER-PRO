@@ -374,7 +374,8 @@ public class TempCleanupTests
         var path = Path.Combine(root, "old-synthetic-fixture.tmp");
         var bytes = new byte[733];
         await File.WriteAllBytesAsync(path, bytes);
-        File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddMinutes(-5));
+        File.SetCreationTimeUtc(path, DateTime.UtcNow.AddDays(-8));
+                File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddDays(-8));
         try
         {
             var target = new TempCleanupTarget { Id = "USER_TEMP", Path = root };
@@ -437,7 +438,8 @@ public class TempCleanupTests
         {
             var file = Path.Combine(root, "thumbcache_fixture.db");
             File.WriteAllBytes(file, new byte[461]);
-            File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddMinutes(-5));
+            File.SetCreationTimeUtc(file, DateTime.UtcNow.AddDays(-8));
+                File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddDays(-8));
             var target = new TempCleanupTarget { Id = "THUMBNAILS", Path = root };
             var summary = new TargetResult { TargetId = target.Id };
             var result = new TempCleanupResult();
@@ -581,7 +583,8 @@ public class TempCleanupTests
             foreach (var file in files)
             {
                 File.WriteAllText(file, "SYNTHETIC-KEEP");
-                File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddMinutes(-5));
+                File.SetCreationTimeUtc(file, DateTime.UtcNow.AddDays(-8));
+                File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddDays(-8));
             }
 
             var target = new TempCleanupTarget { Id = "USER_TEMP", Path = root };
@@ -612,7 +615,8 @@ public class TempCleanupTests
             foreach (var file in files)
             {
                 File.WriteAllText(file, "SYNTHETIC-KEEP");
-                File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddMinutes(-5));
+                File.SetCreationTimeUtc(file, DateTime.UtcNow.AddDays(-8));
+                File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddDays(-8));
             }
 
             var target = new TempCleanupTarget { Id = "THUMBNAILS", Path = root };
@@ -643,7 +647,8 @@ public class TempCleanupTests
             Directory.CreateDirectory(nested);
             var nestedFile = Path.Combine(nested, "old-user-data.txt");
             File.WriteAllText(nestedFile, "SYNTHETIC-KEEP");
-            File.SetLastWriteTimeUtc(nestedFile, DateTime.UtcNow.AddMinutes(-8));
+            File.SetCreationTimeUtc(nestedFile, DateTime.UtcNow.AddDays(-8));
+                File.SetLastWriteTimeUtc(nestedFile, DateTime.UtcNow.AddDays(-8));
 
             Assert.True(TempCleanupService.TryEnumerateBounded(
                 root, "*", recursive: false, maxFiles: 5,
@@ -660,6 +665,47 @@ public class TempCleanupTests
             Assert.Equal(0L, details.DeletedBytes);
             Assert.Empty(result.Errors);
             Assert.Equal("SYNTHETIC-KEEP", File.ReadAllText(nestedFile));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+
+    [Fact]
+    public void ScanFolder_OnlyEstimatesFilesOlderThanRetention()
+    {
+        var root = Path.Combine(Path.GetTempPath(),
+            "cattech-age-scan-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var eligible = Path.Combine(root, "older-than-seven-days.tmp");
+            var justCopied = Path.Combine(root, "copied-with-old-modified.tmp");
+            var editedToday = Path.Combine(root, "recently-updated.tmp");
+            File.WriteAllBytes(eligible, new byte[719]);
+            File.WriteAllBytes(justCopied, new byte[481]);
+            File.WriteAllBytes(editedToday, new byte[347]);
+
+            File.SetCreationTimeUtc(eligible, DateTime.UtcNow.AddDays(-8));
+            File.SetLastWriteTimeUtc(eligible, DateTime.UtcNow.AddDays(-8));
+            File.SetLastWriteTimeUtc(justCopied, DateTime.UtcNow.AddDays(-40));
+            File.SetCreationTimeUtc(editedToday, DateTime.UtcNow.AddDays(-40));
+            File.SetLastWriteTimeUtc(editedToday, DateTime.UtcNow);
+
+            var target = new TempCleanupTarget
+            {
+                Id = "USER_TEMP",
+                Path = root,
+                IsSelected = true
+            };
+            TempCleanupService.ScanFolder(target);
+            Assert.True(target.IsAccessible);
+            Assert.True(target.IsScanned);
+            Assert.True(target.IsSelected);
+            Assert.Equal(1, target.EstimatedFileCount);
+            Assert.Equal(719L, target.EstimatedSizeBytes);
+            Assert.True(File.Exists(eligible));
+            Assert.True(File.Exists(justCopied));
+            Assert.True(File.Exists(editedToday));
         }
         finally { Directory.Delete(root, recursive: true); }
     }
