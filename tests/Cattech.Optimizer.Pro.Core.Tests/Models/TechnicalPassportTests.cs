@@ -236,4 +236,44 @@ public class TechnicalPassportTests
             Array.Empty<DiagnosticAssessment>(),
             Array.Empty<RepairOutcomeAssessment>()));
     }
+
+    [Fact]
+    public void IncompleteDiagnostics_NeverLeakThroughPublicStatusCounts()
+    {
+        var safe = Observed(FirstId, "healthy");
+
+        // This diagnostic includes safe corroboration, but also an unlinked
+        // missing fact that could describe sensitive customer information.
+        var partial = DeterministicDiagnosticEvaluator.Evaluate(
+            new DiagnosticRule("private-gap", "1", "synthetic", "synthetic", new[]
+            {
+                new EvidenceExpectation("windows.health", EvidenceValue.FromText("healthy")),
+                new EvidenceExpectation("private.customer", EvidenceValue.FromText("present"))
+            }),
+            new[] { safe }, IssuedAt);
+        var missingOnly = DeterministicDiagnosticEvaluator.Evaluate(
+            new DiagnosticRule("missing-only", "1", "synthetic", "synthetic", new[]
+            {
+                new EvidenceExpectation("private.customer", EvidenceValue.FromText("present"))
+            }),
+            Array.Empty<EvidenceRecord>(), IssuedAt);
+
+        Assert.Equal(DiagnosticAssessmentStatus.InsufficientEvidence, partial.Status);
+        Assert.Single(partial.SupportingEvidenceIds);
+        Assert.Single(partial.MissingFactKeys);
+        Assert.Empty(missingOnly.SupportingEvidenceIds);
+        Assert.Single(missingOnly.MissingFactKeys);
+
+        var passport = TechnicalPassportBuilder.Build(ExportId, IssuedAt,
+            new[] { safe }, new[] { partial, missingOnly },
+            Array.Empty<RepairOutcomeAssessment>());
+        using var json = JsonDocument.Parse(passport.PayloadJson);
+
+        Assert.Equal(0, json.RootElement.GetProperty("diagnosticAssessments")
+            .GetArrayLength());
+        Assert.Equal(1, json.RootElement.GetProperty("evidence")
+            .GetProperty("observed").GetInt32());
+    }
+
+
 }
