@@ -235,7 +235,8 @@ public sealed class SmartInventorySnapshot
             // If smartctl explicitly reports a malformed type, falling back
             // to protocol must not erase the unsafe source value.
             || (report.SmartctlDeviceType is { } explicitType
-                && HasUnsafeFirmwareChars(explicitType)))
+                && (explicitType.Length > MaxRawFieldLength
+                    || HasUnsafeFirmwareChars(explicitType))))
             return null;
 
         var serial = ExtractClaimedSerial(report);
