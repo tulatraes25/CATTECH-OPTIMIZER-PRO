@@ -117,3 +117,29 @@ QA, ni se conecta a proveedores mientras #43 siga bloqueado.
 controles de texto no causal, advertencias persistentes, privacidad
 JSON y estabilidad de serialización. CI de este slice debe validarse en
 SHA exacto antes de enlazar WPF.
+
+## DC-05 — Selector interactivo de lectura (demo WPF)
+
+La interfaz muestra botones **Vista técnica** y **Vista para el cliente**,
+con un label que confirma el modo activo. Se muestra el dictamen de
+`DecisionExplanationBuilder` en las mismas tarjetas de evidencia,
+comprobación y próximo paso. Los recuentos técnicos se muestran solo en
+modo técnico y son cadenas vacías para la vista cliente.
+
+El selector `IsClientView` reconstruye únicamente el texto de
+`Explanation` y reutiliza la referencia inmutable de `Summary`:
+**no crea nuevas evidencias, no pide autorización, no ejecuta procesos,
+no altera el resultado ni genera exportaciones**. Cambiar de escenario
+ficticio actualiza el texto de la audiencia que esté seleccionada.
+La leyenda `DEMO CON DATOS FICTICIOS` permanece visible en ambas vistas.
+
+**Aceptación del código:** xUnit para alternancia de audiencia,
+notificaciones MVVM, persistencia de modo al cambiar de escenario,
+ausencia de textos de evidencia cruda o recuentos técnicos en JSON del
+cliente, y equivalencia byte a byte del mismo `Summary` cuando solo
+cambia el lector.
+
+**QA no cumplido todavía:** probar WPF visualmente en Windows 10/11,
+navegación con teclado, lectores de pantalla, escalado, contraste alto,
+pantallas pequeñas y que no se interprete el botón Cliente como
+autorización de compartir. Todos los casos siguen siendo sintéticos.
