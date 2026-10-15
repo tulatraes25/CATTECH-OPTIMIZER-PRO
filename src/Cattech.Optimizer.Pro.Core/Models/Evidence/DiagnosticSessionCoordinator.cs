@@ -142,6 +142,59 @@ public sealed class DiagnosticSessionLease
     [JsonIgnore]
     public bool IsCurrent => _owner.IsCurrent(this);
 
+    /// <summary>
+    /// Subscribe to this particular lease becoming stale, without exposing
+    /// the mutating coordinator to an arbitrary review UI. Register BEFORE
+    /// inspecting IsCurrent, so an intervening selection cannot be missed.
+    /// The callback runs on the thread changing the selection.
+    /// </summary>
+    public IDisposable SubscribeRevocation(Action onRevoked)
+    {
+        ArgumentNullException.ThrowIfNull(onRevoked);
+        EventHandler handler = (_, _) =>
+        {
+            if (!IsCurrent)
+                onRevoked();
+        };
+
+        _owner.SelectionChanged += handler;
+        try
+        {
+            // Cover the transition between initial lease capture and
+            // subscription registration.
+            if (!IsCurrent)
+                onRevoked();
+        }
+        catch
+        {
+            _owner.SelectionChanged -= handler;
+            throw;
+        }
+
+        return new LeaseSubscription(_owner, handler);
+    }
+
     internal DiagnosticSessionCoordinator Owner => _owner;
     internal Guid Epoch => _epoch;
+
+    private sealed class LeaseSubscription : IDisposable
+    {
+        private DiagnosticSessionCoordinator? _source;
+        private readonly EventHandler _handler;
+
+        public LeaseSubscription(
+            DiagnosticSessionCoordinator source, EventHandler handler)
+        {
+            _source = source;
+            _handler = handler;
+        }
+
+        public void Dispose()
+        {
+            var coordinator =
+                System.Threading.Interlocked.Exchange(ref _source, null);
+            if (coordinator is not null)
+                coordinator.SelectionChanged -= _handler;
+        }
+    }
 }
