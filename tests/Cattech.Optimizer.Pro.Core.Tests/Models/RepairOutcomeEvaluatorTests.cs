@@ -168,4 +168,20 @@ public class RepairOutcomeEvaluatorTests
         Assert.Equal(RepairOutcomeReason.ContextMismatch, result.Reason);
     }
 
+
+    [Fact]
+    public void ContextIsNotLeakedByAccidentalOutcomeSerialization()
+    {
+        var result = RepairOutcomeEvaluator.Compare(Rule(),
+            Observed(BeforeId, "unhealthy", BaselineTime),
+            Observed(AfterId, "healthy", BaselineTime.AddMinutes(30)));
+        var json = System.Text.Json.JsonSerializer.Serialize(result);
+
+        Assert.Equal(RepairOutcomeStatus.ObservedImprovement, result.Status);
+        Assert.DoesNotContain(Context.Value.ToString(), json,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("contextId", json,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
 }
