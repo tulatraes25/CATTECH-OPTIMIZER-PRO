@@ -96,9 +96,11 @@ solamente en la igualdad del GUID del caso. El pasaporte conserva su
   `DiagnosticSessionLease`. El antiguo callback
   `Func<DiagnosticContextId>` queda solo como constructor interno
   para tests sinteticos: ya no es una via publica hacia exportaciones.
-- El ViewModel se suscribe a `SelectionChanged` y revoca
-  automaticamente la aprobacion y su JSON visible. `Dispose`
-  revoca y desuscribe; `Unloaded` del UserControl lo ejecuta.
+- El ViewModel utiliza `DiagnosticSessionLease.SubscribeRevocation`:
+  la vista NO obtiene el coordinador mutable ni puede seleccionar casos
+  a traves de la capacidad. La notificacion se emite una sola vez aunque
+  haya multiples transiciones. `Dispose` revoca y cancela la suscripcion;
+  `Unloaded` del UserControl lo ejecuta.
 - Se revalida la capacidad inmediatamente al invocar la copia, y al
   volver del callback; una navegacion que cambia y vuelve en medio
   de un callback ya no puede rehabilitar el permiso.
