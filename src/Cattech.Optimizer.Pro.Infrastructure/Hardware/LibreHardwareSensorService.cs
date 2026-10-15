@@ -77,10 +77,11 @@ public class LibreHardwareSensorService : IHardwareSensorService
         try
         {
             session = TryCreateSession(out var createError);
-            if (createError != null)
+            if (createError != null || session is null)
             {
-                // Un fallo de apertura produce UNA muestra controlada y el stream termina.
-                yield return CreateUnavailableSnapshot(createError);
+                // A null factory result must not produce an endless error stream.
+                yield return CreateUnavailableSnapshot(createError ??
+                    "No se pudo inicializar el monitoreo de hardware.");
                 yield break;
             }
 
@@ -106,6 +107,8 @@ public class LibreHardwareSensorService : IHardwareSensorService
         {
             session = _factory.Create();
             cancellationToken.ThrowIfCancellationRequested();
+            if (session is null)
+                return CreateUnavailableSnapshot("No se pudo inicializar el monitoreo de hardware.");
             session.Refresh();
             return BuildLiveSnapshot(session, cancellationToken);
         }
@@ -113,9 +116,10 @@ public class LibreHardwareSensorService : IHardwareSensorService
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return CreateUnavailableSnapshot($"No se pudo inicializar el monitoreo de hardware: {ex.Message}");
+            // Provider errors may contain personal file paths; show a fixed message.
+            return CreateUnavailableSnapshot("No se pudo inicializar el monitoreo de hardware.");
         }
         finally
         {
@@ -127,16 +131,22 @@ public class LibreHardwareSensorService : IHardwareSensorService
     {
         try
         {
+            var created = _factory.Create();
+            if (created is null)
+            {
+                error = "No se pudo inicializar el monitoreo de hardware.";
+                return null;
+            }
             error = null;
-            return _factory.Create();
+            return created;
         }
         catch (OperationCanceledException)
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            error = $"No se pudo inicializar el monitoreo de hardware: {ex.Message}";
+            error = "No se pudo inicializar el monitoreo de hardware.";
             return null;
         }
     }
@@ -162,9 +172,9 @@ public class LibreHardwareSensorService : IHardwareSensorService
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return CreateUnavailableSnapshot($"No se pudo actualizar la lectura de sensores: {ex.Message}");
+            return CreateUnavailableSnapshot("No se pudo actualizar la lectura de sensores.");
         }
     }
 

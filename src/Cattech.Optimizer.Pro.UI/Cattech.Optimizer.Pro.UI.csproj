@@ -36,6 +36,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="..\..\config\bugcheckcodes.json"
+             Link="config\bugcheckcodes.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
     <Content Include="..\..\config\herramientas.json"
              Link="config\herramientas.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
