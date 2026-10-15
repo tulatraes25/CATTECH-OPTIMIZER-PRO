@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Text.Json.Serialization;
 
 namespace Cattech.Optimizer.Pro.Core.Models.Evidence;
 
@@ -81,6 +82,27 @@ public sealed class DiagnosticRule
 }
 
 /// <summary>
+/// Identifies one expected observation without leaking a raw hardware identifier.
+/// It is internal assessment metadata; the public passport never exports it.
+/// </summary>
+public sealed record DiagnosticFactReference
+{
+    public DiagnosticFactReference(DiagnosticSubjectId subjectId, string factKey)
+    {
+        if (!subjectId.IsValid)
+            throw new ArgumentException("A missing fact must have an explicit subject.",
+                nameof(subjectId));
+        if (string.IsNullOrWhiteSpace(factKey))
+            throw new ArgumentException("Fact key is required.", nameof(factKey));
+        SubjectId = subjectId;
+        FactKey = factKey;
+    }
+
+    public DiagnosticSubjectId SubjectId { get; }
+    public string FactKey { get; }
+}
+
+/// <summary>
 /// Evidence IDs only; sensitive raw values and paths are not copied into an assessment.
 /// </summary>
 public sealed class DiagnosticAssessment
@@ -88,7 +110,8 @@ public sealed class DiagnosticAssessment
     internal DiagnosticAssessment(DiagnosticContextId contextId, DiagnosticRule rule,
         DiagnosticAssessmentStatus status,
         IEnumerable<Guid> supporting, IEnumerable<Guid> contradicting,
-        IEnumerable<string> missing, IEnumerable<string> futureDated)
+        IEnumerable<DiagnosticFactReference> missing,
+        IEnumerable<DiagnosticFactReference> futureDated)
     {
         ContextId = contextId;
         RuleId = rule.RuleId;
@@ -100,12 +123,19 @@ public sealed class DiagnosticAssessment
             supporting.Distinct().OrderBy(x => x).ToArray());
         ContradictingEvidenceIds = Array.AsReadOnly(
             contradicting.Distinct().OrderBy(x => x).ToArray());
-        MissingFactKeys = Array.AsReadOnly(
-            missing.Distinct(StringComparer.Ordinal)
-                .OrderBy(x => x, StringComparer.Ordinal).ToArray());
-        FutureDatedFactKeys = Array.AsReadOnly(
-            futureDated.Distinct(StringComparer.Ordinal)
-                .OrderBy(x => x, StringComparer.Ordinal).ToArray());
+        var missingFacts = missing.Distinct()
+            .OrderBy(x => x.FactKey, StringComparer.Ordinal)
+            .ThenBy(x => x.SubjectId.Value).ToArray();
+        var futureFacts = futureDated.Distinct()
+            .OrderBy(x => x.FactKey, StringComparer.Ordinal)
+            .ThenBy(x => x.SubjectId.Value).ToArray();
+        MissingFactReferences = Array.AsReadOnly(missingFacts);
+        FutureDatedFactReferences = Array.AsReadOnly(futureFacts);
+        // Compatibility views: fact keys alone do not identify a component.
+        MissingFactKeys = Array.AsReadOnly(missingFacts.Select(x => x.FactKey)
+            .Distinct(StringComparer.Ordinal).ToArray());
+        FutureDatedFactKeys = Array.AsReadOnly(futureFacts.Select(x => x.FactKey)
+            .Distinct(StringComparer.Ordinal).ToArray());
     }
 
     public DiagnosticContextId ContextId { get; }
@@ -116,6 +146,10 @@ public sealed class DiagnosticAssessment
     public DiagnosticAssessmentStatus Status { get; }
     public ReadOnlyCollection<Guid> SupportingEvidenceIds { get; }
     public ReadOnlyCollection<Guid> ContradictingEvidenceIds { get; }
+    [JsonIgnore]
+    public ReadOnlyCollection<DiagnosticFactReference> MissingFactReferences { get; }
+    [JsonIgnore]
+    public ReadOnlyCollection<DiagnosticFactReference> FutureDatedFactReferences { get; }
     public ReadOnlyCollection<string> MissingFactKeys { get; }
     public ReadOnlyCollection<string> FutureDatedFactKeys { get; }
 }
@@ -160,8 +194,8 @@ public static class DeterministicDiagnosticEvaluator
         var atUtc = evaluationAt.ToUniversalTime();
         var supporting = new List<Guid>();
         var contradicting = new List<Guid>();
-        var missing = new List<string>();
-        var future = new List<string>();
+        var missing = new List<DiagnosticFactReference>();
+        var future = new List<DiagnosticFactReference>();
 
         foreach (var requirement in rule.RequiredFacts)
         {
@@ -173,7 +207,8 @@ public static class DeterministicDiagnosticEvaluator
             // Clock inconsistencies invalidate a rule conclusion until reviewed.
             if (candidates.Any(item => item.ObservedAtUtc > atUtc))
             {
-                future.Add(requirement.FactKey);
+                future.Add(new DiagnosticFactReference(requirement.SubjectId,
+                    requirement.FactKey));
                 continue;
             }
 
@@ -182,7 +217,8 @@ public static class DeterministicDiagnosticEvaluator
                 .ToArray();
             if (observed.Length == 0)
             {
-                missing.Add(requirement.FactKey);
+                missing.Add(new DiagnosticFactReference(requirement.SubjectId,
+                    requirement.FactKey));
                 continue;
             }
 
