@@ -119,4 +119,30 @@ public class EvidenceRecordTests
             EvidenceId, "sensor", "cpu.valid", ObservedAt,
             null!, "fixture", EvidencePrivacyClass.Equipment));
     }
+
+    [Fact]
+    public void DiagnosticContext_IsOpaqueSessionIdentifierNotHardwareFingerprint()
+    {
+        var id = Guid.Parse("88888888-8888-4888-8888-888888888888");
+        var context = DiagnosticContextId.FromGuid(id);
+        var record = EvidenceRecord.Observed(EvidenceId, "wer", "crash.bugcheck",
+            ObservedAt, EvidenceValue.FromText("0x0000009F"),
+            "synthetic", EvidencePrivacyClass.Equipment, contextId: context);
+
+        Assert.Equal(id, record.ContextId.Value);
+        Assert.True(record.ContextId.IsBound);
+        Assert.False(default(DiagnosticContextId).IsBound);
+        Assert.Throws<ArgumentException>(() => DiagnosticContextId.FromGuid(Guid.Empty));
+    }
+
+    [Fact]
+    public void LegacyEvidenceWithoutExplicitContext_RemainsUnbound()
+    {
+        var legacy = EvidenceRecord.Observed(EvidenceId, "wer", "crash.bugcheck",
+            ObservedAt, EvidenceValue.FromText("0x0000009F"),
+            "synthetic", EvidencePrivacyClass.Equipment);
+
+        Assert.False(legacy.ContextId.IsBound);
+    }
+
 }
