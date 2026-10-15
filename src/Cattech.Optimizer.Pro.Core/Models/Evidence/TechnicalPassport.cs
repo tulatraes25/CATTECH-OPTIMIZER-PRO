@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Cattech.Optimizer.Pro.Core.Models.Evidence;
 
@@ -54,6 +55,7 @@ public sealed class TechnicalPassportArtifact
 
     // Kept only in process memory to support future UI case-change invalidation;
     // excluded entirely from the versioned public JSON.
+    [JsonIgnore]
     public DiagnosticContextId ContextId { get; }
 
     public static bool MatchesDigest(string? payloadJson, string? expectedSha256Hex)
