@@ -220,17 +220,22 @@ public class TechnicalPassportTests
     }
 
     [Fact]
-    public void InvalidOutcomeStatusAndReason_AreRejected()
+    public void OutcomesCannotBeConstructedWithArbitraryStatusesByCallers()
     {
+        // A public constructor could fabricate ObservedImprovement without
+        // any pre/post rule evaluation. Only the evaluator constructs outcomes.
+        Assert.Empty(typeof(RepairOutcomeAssessment).GetConstructors());
+
         var before = Observed(FirstId, "unhealthy");
-        var after = Observed(SecondId, "healthy");
-        var invalid = new RepairOutcomeAssessment("synthetic", "1",
-            "windows.health", FirstId, SecondId,
-            (RepairOutcomeStatus)999, RepairOutcomeReason.ImprovementObserved,
-            Context);
-        Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(
-            ExportId, IssuedAt, new[] { before, after },
-            Array.Empty<DiagnosticAssessment>(), new[] { invalid }));
+        var after = Observed(SecondId, "healthy",
+            observedAt: IssuedAt.AddHours(-1));
+        var measured = Outcome(before, after);
+        Assert.Equal(RepairOutcomeStatus.ObservedImprovement, measured.Status);
+
+        var passport = TechnicalPassportBuilder.Build(ExportId, IssuedAt,
+            new[] { before, after }, Array.Empty<DiagnosticAssessment>(),
+            new[] { measured });
+        Assert.Contains("ObservedImprovement", passport.PayloadJson);
     }
 
     [Fact]
