@@ -149,8 +149,15 @@ public static class TechnicalPassportBuilder
         var visibleEvidence = records.Where(item =>
             item.PrivacyClass != EvidencePrivacyClass.Sensitive).ToArray();
 
+        // A missing/future-dated fact has no trustworthy per-record link to
+        // its potential sensitivity class. Fail closed rather than leak
+        // an incomplete diagnostic status through public aggregate counts.
         var safeAssessments = assessments.Where(item =>
-            !item.SupportingEvidenceIds.Any(sensitiveIds.Contains)
+            item.MissingFactKeys.Count == 0
+            && item.FutureDatedFactKeys.Count == 0
+            && (item.SupportingEvidenceIds.Count > 0
+                || item.ContradictingEvidenceIds.Count > 0)
+            && !item.SupportingEvidenceIds.Any(sensitiveIds.Contains)
             && !item.ContradictingEvidenceIds.Any(sensitiveIds.Contains));
         var safeOutcomes = postchecks.Where(item =>
             !sensitiveIds.Contains(item.BeforeEvidenceId)
