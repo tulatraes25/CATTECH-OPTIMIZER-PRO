@@ -5,6 +5,9 @@ namespace Cattech.Optimizer.Pro.Core.Tests.Models;
 
 public class TechnicalPassportTests
 {
+    private static readonly DiagnosticSubjectId Subject =
+        new(Guid.Parse("77777777-7777-4777-8777-777777777777"));
+
     private static readonly DiagnosticContextId Context =
         new(Guid.Parse("99999999-9999-4999-8999-999999999999"));
 
@@ -22,13 +25,13 @@ public class TechnicalPassportTests
     private static EvidenceRecord Observed(Guid id, string value,
         EvidencePrivacyClass privacy = EvidencePrivacyClass.Equipment,
         string source = "synthetic", DateTimeOffset? observedAt = null) =>
-        EvidenceRecord.Observed(id, Context, source, "windows.health",
+        EvidenceRecord.Observed(id, Context, Subject, source, "windows.health",
             observedAt ?? IssuedAt.AddHours(-2), EvidenceValue.FromText(value),
             "synthetic-test-only", privacy,
             "Only fixture data.");
 
     private static EvidenceRecord Missing(Guid id) =>
-        EvidenceRecord.Missing(id, Context, "synthetic", "windows.health",
+        EvidenceRecord.Missing(id, Context, Subject, "synthetic", "windows.health",
             IssuedAt.AddHours(-1), EvidenceAvailability.AccessDenied,
             "fixture", EvidencePrivacyClass.Equipment,
             "Synthetic access denied.");
@@ -38,7 +41,7 @@ public class TechnicalPassportTests
             new DiagnosticRule("diagnostic-rule", "1", "A diagnostic hypothesis",
                 "A contradicting observation", new[]
                 {
-                    new EvidenceExpectation("windows.health",
+                    new EvidenceExpectation(Subject, "windows.health",
                         EvidenceValue.FromText("healthy"))
                 }), new[] { fact }, IssuedAt);
 
@@ -90,7 +93,7 @@ public class TechnicalPassportTests
     {
         const string marker = "PRIVATE-EMAIL-user@example.invalid-DEVICE-SERIAL-123";
         const string path = @"C:\Users\PrivatePerson\Documents\confidential.dmp";
-        var sensitive = EvidenceRecord.Observed(SensitiveId, Context, marker,
+        var sensitive = EvidenceRecord.Observed(SensitiveId, Context, Subject, marker,
             "windows.health", IssuedAt.AddHours(-2),
             EvidenceValue.FromText(path), marker,
             EvidencePrivacyClass.Sensitive, marker);
@@ -99,7 +102,7 @@ public class TechnicalPassportTests
             observedAt: IssuedAt.AddHours(-1));
         var assessment = DeterministicDiagnosticEvaluator.Evaluate(Context, 
             new DiagnosticRule(marker, "1", marker, marker,
-                new[] { new EvidenceExpectation("windows.health",
+                new[] { new EvidenceExpectation(Subject, "windows.health",
                     EvidenceValue.FromText(path)) }),
             new[] { sensitive }, IssuedAt);
         var sensitiveOutcome = Outcome(sensitive, second);
@@ -207,7 +210,7 @@ public class TechnicalPassportTests
     [Fact]
     public void FutureDatedObservation_IsNotExportedAsVerified()
     {
-        var future = EvidenceRecord.Observed(FirstId, Context, "fixture", "windows.health",
+        var future = EvidenceRecord.Observed(FirstId, Context, Subject, "fixture", "windows.health",
             IssuedAt.AddMinutes(10), EvidenceValue.FromText("healthy"),
             "fixture", EvidencePrivacyClass.Equipment);
 
@@ -224,7 +227,7 @@ public class TechnicalPassportTests
         var after = Observed(SecondId, "healthy");
         var invalid = new RepairOutcomeAssessment("synthetic", "1",
             "windows.health", FirstId, SecondId,
-            (RepairOutcomeStatus)999, RepairOutcomeReason.ImprovementObserved, Context);
+            (RepairOutcomeStatus)999, RepairOutcomeReason.ImprovementObserved, Context, Subject);
         Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(Context, 
             ExportId, IssuedAt, new[] { before, after },
             Array.Empty<DiagnosticAssessment>(), new[] { invalid }));
@@ -250,14 +253,14 @@ public class TechnicalPassportTests
         var partial = DeterministicDiagnosticEvaluator.Evaluate(Context, 
             new DiagnosticRule("private-gap", "1", "synthetic", "synthetic", new[]
             {
-                new EvidenceExpectation("windows.health", EvidenceValue.FromText("healthy")),
-                new EvidenceExpectation("private.customer", EvidenceValue.FromText("present"))
+                new EvidenceExpectation(Subject, "windows.health", EvidenceValue.FromText("healthy")),
+                new EvidenceExpectation(Subject, "private.customer", EvidenceValue.FromText("present"))
             }),
             new[] { safe }, IssuedAt);
         var missingOnly = DeterministicDiagnosticEvaluator.Evaluate(Context, 
             new DiagnosticRule("missing-only", "1", "synthetic", "synthetic", new[]
             {
-                new EvidenceExpectation("private.customer", EvidenceValue.FromText("present"))
+                new EvidenceExpectation(Subject, "private.customer", EvidenceValue.FromText("present"))
             }),
             Array.Empty<EvidenceRecord>(), IssuedAt);
 
