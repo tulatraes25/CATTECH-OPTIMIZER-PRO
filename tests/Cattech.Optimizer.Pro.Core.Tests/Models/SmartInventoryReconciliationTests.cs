@@ -269,4 +269,44 @@ public sealed class SmartInventoryReconciliationTests
         Assert.Throws<ArgumentException>(() => SmartInventorySnapshot.Capture(
             CaseA, PriorTime, Enumerable.Repeat(Disk(), 129)));
     }
+
+    [Fact]
+    public void FailedCurrentReportWithSameClaimedSerial_BlocksValidCandidate()
+    {
+        var valid = Disk(serial: "DUPLICATE-DECLARED", path: "/dev/sda");
+        var incomplete = Disk(serial: "DUPLICATE-DECLARED", path: "/dev/sdb");
+        incomplete.IsAnalysisSuccessful = false;
+        incomplete.ModelName = "";
+
+        var previous = Snapshot(CaseA, PriorTime,
+            Disk(serial: "DUPLICATE-DECLARED"));
+        var current = Snapshot(CaseA, CurrentTime, valid, incomplete);
+        var result = SmartInventorySnapshot.Preview(
+            previous, current, new[] { DiskA }, EvaluationTime);
+
+        Assert.Equal(SmartInventoryMatchStatus.AmbiguousSerial, result[0].Status);
+        Assert.Null(result[0].PreviousSubjectId);
+        Assert.Equal(SmartInventoryMatchStatus.UnverifiableIdentity,
+            result[1].Status);
+    }
+
+    [Fact]
+    public void FailedBaselineReportWithSameClaimedSerial_BlocksRebinding()
+    {
+        var failed = Disk(serial: "BASELINE-DUPLICATE", path: "/dev/sdb");
+        failed.IsAnalysisSuccessful = false;
+
+        var previous = Snapshot(CaseA, PriorTime,
+            Disk(serial: "BASELINE-DUPLICATE", path: "/dev/sda"), failed);
+        var current = Snapshot(CaseA, CurrentTime,
+            Disk(serial: "BASELINE-DUPLICATE", path: "/dev/sdz"));
+        var result = SmartInventorySnapshot.Preview(
+            previous, current, new[] { DiskA, DiskB }, EvaluationTime);
+
+        var match = Assert.Single(result);
+        Assert.Equal(SmartInventoryMatchStatus.AmbiguousSerial, match.Status);
+        Assert.Null(match.PreviousSubjectId);
+    }
+
+
 }
