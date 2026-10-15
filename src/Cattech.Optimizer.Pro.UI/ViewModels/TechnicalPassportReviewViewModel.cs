@@ -11,16 +11,42 @@ namespace Cattech.Optimizer.Pro.UI.ViewModels;
 /// on every equipment/client/session change; the provider check also runs
 /// immediately before copying. No actual clipboard service is created here.
 /// </summary>
-public partial class TechnicalPassportReviewViewModel : ObservableObject
+public partial class TechnicalPassportReviewViewModel : ObservableObject, IDisposable
 {
     private readonly TechnicalPassportArtifact _snapshot;
     private readonly Action<string> _writeClipboard;
     private readonly Func<DiagnosticContextId> _activeContext;
+    private readonly DiagnosticSessionLease? _lease;
+    private readonly DiagnosticSessionCoordinator? _coordinator;
     private bool _consumed;
     private bool _revoked;
     private bool _copyInProgress;
+    private bool _disposed;
 
+    /// <summary>
+    /// Production-facing constructor requires a capture from the actual
+    /// coordinator, not an arbitrary function returning a potentially stale
+    /// or fabricated GUID. Automatically revokes on selection changes.
+    /// </summary>
     public TechnicalPassportReviewViewModel(
+        TechnicalPassportArtifact snapshot, Action<string> writeClipboard,
+        DiagnosticSessionLease lease)
+        : this(snapshot, writeClipboard, LeaseScopeReader(lease))
+    {
+        _lease = lease;
+        _coordinator = lease.Owner;
+        _coordinator.SelectionChanged += OnCoordinatorSelectionChanged;
+
+        // Cover a selection transition between construction and subscription.
+        if (!lease.IsCurrent)
+            InvalidateForCaseSelectionChange();
+    }
+
+    /// <summary>
+    /// Kept internal for synthetic legacy fixtures only. Never use this
+    /// unversioned provider for live customer/equipment case selection.
+    /// </summary>
+    internal TechnicalPassportReviewViewModel(
         TechnicalPassportArtifact snapshot, Action<string> writeClipboard,
         Func<DiagnosticContextId> activeContext)
     {
@@ -49,6 +75,43 @@ public partial class TechnicalPassportReviewViewModel : ObservableObject
 
     [ObservableProperty]
     private string _previewSha256 = string.Empty;
+
+    private static Func<DiagnosticContextId> LeaseScopeReader(
+        DiagnosticSessionLease lease)
+    {
+        ArgumentNullException.ThrowIfNull(lease);
+        return () => lease.IsCurrent ? lease.ContextId : default;
+    }
+
+    private void OnCoordinatorSelectionChanged(object? sender, EventArgs args)
+    {
+        if (_disposed || _lease is null || _lease.IsCurrent)
+            return;
+
+        // WPF bound properties must be changed on the owning UI dispatcher.
+        // The epoch gate becomes invalid immediately, even when dispatch
+        // must defer clearing the visual preview to the UI thread.
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is not null && !dispatcher.CheckAccess())
+            dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (!_disposed && _lease is { IsCurrent: false })
+                    InvalidateForCaseSelectionChange();
+            }));
+        else
+            InvalidateForCaseSelectionChange();
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+        if (_coordinator is not null)
+            _coordinator.SelectionChanged -= OnCoordinatorSelectionChanged;
+        InvalidateForCaseSelectionChange();
+    }
 
     public bool HasCopiedToClipboard => _consumed;
     public bool IsConsentRevoked => _revoked;
@@ -107,7 +170,8 @@ public partial class TechnicalPassportReviewViewModel : ObservableObject
     }
 
     private bool CanCopyApprovedPayload() =>
-        !_consumed
+        !_disposed
+        && !_consumed
         && !_revoked
         && !_copyInProgress
         && HasReviewedPreview
