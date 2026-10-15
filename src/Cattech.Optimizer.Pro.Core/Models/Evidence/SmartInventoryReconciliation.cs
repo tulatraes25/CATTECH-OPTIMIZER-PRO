@@ -22,18 +22,59 @@ public enum SmartInventoryMatchStatus
 /// </summary>
 public sealed class SmartInventoryMatchPreview
 {
+    private readonly Guid _baselineCaptureToken;
+    private readonly Guid _currentCaptureToken;
+    private readonly int _baselineIndex;
+
     internal SmartInventoryMatchPreview(int currentIndex, SmartInventoryMatchStatus status,
-        DiagnosticSubjectId? previousSubjectId)
+        DiagnosticSubjectId? previousSubjectId, int baselineIndex,
+        Guid baselineCaptureToken, Guid currentCaptureToken)
     {
         CurrentIndex = currentIndex;
         Status = status;
         PreviousSubjectId = previousSubjectId;
+        _baselineIndex = baselineIndex;
+        _baselineCaptureToken = baselineCaptureToken;
+        _currentCaptureToken = currentCaptureToken;
     }
 
     public int CurrentIndex { get; }
     public SmartInventoryMatchStatus Status { get; }
     [JsonIgnore]
     public DiagnosticSubjectId? PreviousSubjectId { get; }
+
+    /// <summary>
+    /// Advisory freshness check for the exact two captured inventories and
+    /// baseline subject map. It does not authenticate a physical disk,
+    /// authorize evidence, or constitute technician consent.
+    /// </summary>
+    public bool IsCurrentCandidateFor(
+        SmartInventorySnapshot baseline, SmartInventorySnapshot current,
+        IReadOnlyList<DiagnosticSubjectId> baselineSubjects,
+        int selectedCurrentIndex)
+    {
+        ArgumentNullException.ThrowIfNull(baseline);
+        ArgumentNullException.ThrowIfNull(current);
+        ArgumentNullException.ThrowIfNull(baselineSubjects);
+
+        if (Status != SmartInventoryMatchStatus.CandidateRequiresReview
+            || !PreviousSubjectId.HasValue || _baselineIndex < 0
+            || selectedCurrentIndex != CurrentIndex
+            || _baselineCaptureToken != baseline.CaptureToken
+            || _currentCaptureToken != current.CaptureToken
+            || baseline.ContextId != current.ContextId
+            || _baselineIndex >= baseline.DeviceCount
+            || CurrentIndex < 0 || CurrentIndex >= current.DeviceCount)
+            return false;
+
+        var subjects = baselineSubjects.ToArray();
+        if (subjects.Length != baseline.DeviceCount
+            || subjects.Any(id => !id.IsValid)
+            || subjects.Distinct().Count() != subjects.Length)
+            return false;
+
+        return subjects[_baselineIndex] == PreviousSubjectId.Value;
+    }
 }
 
 /// <summary>
@@ -55,6 +96,7 @@ public sealed class SmartInventorySnapshot
     {
         ContextId = contextId;
         CapturedAtUtc = capturedAtUtc.ToUniversalTime();
+        CaptureToken = Guid.NewGuid();
         _identities = identities;
         _claimedSerials = claimedSerials;
     }
@@ -63,6 +105,9 @@ public sealed class SmartInventorySnapshot
     public DiagnosticContextId ContextId { get; }
     public DateTimeOffset CapturedAtUtc { get; }
     public int DeviceCount => _identities.Length;
+    // Local in-memory capture identity, not a hardware fingerprint.
+    [JsonIgnore]
+    internal Guid CaptureToken { get; }
 
     public static SmartInventorySnapshot Capture(
         DiagnosticContextId contextId, DateTimeOffset capturedAt,
@@ -105,9 +150,11 @@ public sealed class SmartInventorySnapshot
             || current.CapturedAtUtc > evaluatedAt.ToUniversalTime())
             throw new ArgumentException("Inventory chronology requires review.",
                 nameof(current));
-        if (baselineSubjects.Count != baseline.DeviceCount
-            || baselineSubjects.Any(id => !id.IsValid)
-            || baselineSubjects.Distinct().Count() != baselineSubjects.Count)
+        // Freeze the potentially mutable input subject map for this preview.
+        var subjectSnapshot = baselineSubjects.ToArray();
+        if (subjectSnapshot.Length != baseline.DeviceCount
+            || subjectSnapshot.Any(id => !id.IsValid)
+            || subjectSnapshot.Distinct().Count() != subjectSnapshot.Length)
             throw new ArgumentException(
                 "Baseline subjects must be unique and bound one-to-one.",
                 nameof(baselineSubjects));
@@ -118,13 +165,18 @@ public sealed class SmartInventorySnapshot
         var baselineSerialCounts = CountSerials(baseline._claimedSerials);
         var currentSerialCounts = CountSerials(current._claimedSerials);
         var previews = new SmartInventoryMatchPreview[current.DeviceCount];
+        SmartInventoryMatchPreview ForCurrent(int index,
+            SmartInventoryMatchStatus status,
+            DiagnosticSubjectId? previousSubject = null, int baselineIndex = -1) =>
+            new(index, status, previousSubject, baselineIndex,
+                baseline.CaptureToken, current.CaptureToken);
 
         for (var i = 0; i < current._identities.Length; i++)
         {
             var identity = current._identities[i];
             if (identity is null)
             {
-                previews[i] = new SmartInventoryMatchPreview(
+                previews[i] = ForCurrent(
                     i, SmartInventoryMatchStatus.UnverifiableIdentity, null);
                 continue;
             }
@@ -135,7 +187,7 @@ public sealed class SmartInventorySnapshot
                 || (baselineSerialCounts.TryGetValue(identity.Serial, out var count)
                     && count != 1))
             {
-                previews[i] = new SmartInventoryMatchPreview(
+                previews[i] = ForCurrent(
                     i, SmartInventoryMatchStatus.AmbiguousSerial, null);
                 continue;
             }
@@ -144,21 +196,21 @@ public sealed class SmartInventorySnapshot
                 prior => prior is not null && prior.Serial == identity.Serial);
             if (priorIndex < 0)
             {
-                previews[i] = new SmartInventoryMatchPreview(
+                previews[i] = ForCurrent(
                     i, SmartInventoryMatchStatus.NewDevice, null);
                 continue;
             }
 
             if (baseline._identities[priorIndex] != identity)
             {
-                previews[i] = new SmartInventoryMatchPreview(
+                previews[i] = ForCurrent(
                     i, SmartInventoryMatchStatus.ChangedIdentity, null);
                 continue;
             }
 
-            previews[i] = new SmartInventoryMatchPreview(
+            previews[i] = ForCurrent(
                 i, SmartInventoryMatchStatus.CandidateRequiresReview,
-                baselineSubjects[priorIndex]);
+                subjectSnapshot[priorIndex], priorIndex);
         }
 
         return Array.AsReadOnly(previews);
