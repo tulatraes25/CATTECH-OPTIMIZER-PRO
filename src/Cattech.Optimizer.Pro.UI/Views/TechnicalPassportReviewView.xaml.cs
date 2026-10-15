@@ -6,16 +6,23 @@ using Cattech.Optimizer.Pro.UI.ViewModels;
 namespace Cattech.Optimizer.Pro.UI.Views;
 
 /// <summary>
-/// EE-05B reusable review surface. It accepts only an already-built snapshot.
-/// Not registered in MainViewModel navigation until a validated live evidence
-/// provider is available; never substitutes synthetic or empty patient data.
+/// EE-05B reusable consent surface. Its trusted caller must provide the active
+/// context and signal case selection changes. Not yet registered in navigation.
 /// </summary>
 public partial class TechnicalPassportReviewView : UserControl
 {
-    public TechnicalPassportReviewView(TechnicalPassportArtifact passport)
+    public TechnicalPassportReviewView(
+        TechnicalPassportArtifact passport,
+        Func<DiagnosticContextId> activeContext)
     {
         InitializeComponent();
         DataContext = new TechnicalPassportReviewViewModel(
-            passport, payload => Clipboard.SetText(payload));
+            passport, payload => Clipboard.SetText(payload), activeContext);
+    }
+
+    public void InvalidateForCaseSelectionChange()
+    {
+        if (DataContext is TechnicalPassportReviewViewModel model)
+            model.InvalidateForCaseSelectionChange();
     }
 }
