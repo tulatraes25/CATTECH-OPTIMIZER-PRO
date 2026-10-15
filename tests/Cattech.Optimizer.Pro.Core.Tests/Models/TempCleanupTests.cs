@@ -16,6 +16,59 @@ public class TempCleanupTests
 
 
     [Fact]
+    public async Task Scan_BackgroundWorker_DoesNotBlockInvokingThread()
+    {
+        // RECYCLE_BIN is intentionally disabled; no filesystem scan, cleanup
+        // or deletion is performed in this threading-only test.
+        var target = new TempCleanupTarget
+        {
+            Id = "RECYCLE_BIN",
+            Path = "synthetic-never-accessed",
+            IsSelected = false
+        };
+        using var started = new ManualResetEventSlim(false);
+        using var release = new ManualResetEventSlim(false);
+        int reportThreadId = -1;
+        var callerThreadId = Environment.CurrentManagedThreadId;
+
+        var reporter = new InlineProgress(percent =>
+        {
+            if (percent != 10)
+                return;
+
+            reportThreadId = Environment.CurrentManagedThreadId;
+            started.Set();
+            if (!release.Wait(TimeSpan.FromSeconds(10)))
+                throw new TimeoutException("Synthetic scan reporter was not released.");
+        });
+
+        Task<List<TempCleanupTarget>>? task = null;
+        try
+        {
+            task = TempCleanupService.ScanTargetsAsync(
+                new List<TempCleanupTarget> { target }, reporter);
+            Assert.True(started.Wait(TimeSpan.FromSeconds(5)));
+            Assert.NotEqual(callerThreadId, reportThreadId);
+            Assert.False(task.IsCompleted);
+        }
+        finally
+        {
+            release.Set();
+        }
+
+        var scanned = await task!.WaitAsync(TimeSpan.FromSeconds(5));
+        var recycle = Assert.Single(scanned);
+        Assert.True(recycle.IsScanned);
+        Assert.False(recycle.IsSelected);
+        Assert.False(recycle.IsAccessible);
+    }
+
+    private sealed class InlineProgress(Action<int> onReport) : IProgress<int>
+    {
+        public void Report(int value) => onReport(value);
+    }
+
+    [Fact]
     public async Task Scan_TrustedDefaultSelection_IsPreservedOnlyWhenAccessible()
     {
         // Scan-only: never invokes CleanupAsync or removes any real files.

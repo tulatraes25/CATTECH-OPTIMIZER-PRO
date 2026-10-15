@@ -40,10 +40,24 @@ public class TempCleanupService : ITempCleanupService
     }
 
     /// <inheritdoc/>
-    public Task<List<TempCleanupTarget>> ScanAsync(IProgress<int>? progress = null)
-    {
-        var targets = CleanupTargets.GetDefaultTargets();
+    public Task<List<TempCleanupTarget>> ScanAsync(IProgress<int>? progress = null) =>
+        ScanTargetsAsync(CleanupTargets.GetDefaultTargets(), progress);
 
+    /// <summary>
+    /// Offload potentially expensive bounded enumeration to a worker thread.
+    /// WPF owns the fresh target objects only after the awaited task completes.
+    /// Progress<T> continues to marshal reports to the captured UI context.
+    /// </summary>
+    internal static Task<List<TempCleanupTarget>> ScanTargetsAsync(
+        List<TempCleanupTarget> targets, IProgress<int>? progress = null)
+    {
+        ArgumentNullException.ThrowIfNull(targets);
+        return Task.Run(() => ScanTargets(targets, progress));
+    }
+
+    private static List<TempCleanupTarget> ScanTargets(
+        List<TempCleanupTarget> targets, IProgress<int>? progress)
+    {
         progress?.Report(10);
 
         for (int i = 0; i < targets.Count; i++)
@@ -88,7 +102,7 @@ public class TempCleanupService : ITempCleanupService
         }
 
         progress?.Report(100);
-        return Task.FromResult(targets);
+        return targets;
     }
 
     /// <summary>
