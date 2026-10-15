@@ -17,6 +17,7 @@ public enum RepairOutcomeReason
     NoDemonstratedChange,
     MissingMeasurement,
     IncompatibleMeasurement,
+    IncompatibleContext,
     InvalidTimeline
 }
 
@@ -58,7 +59,8 @@ public sealed record RepairOutcomeAssessment(
     Guid BeforeEvidenceId,
     Guid AfterEvidenceId,
     RepairOutcomeStatus Status,
-    RepairOutcomeReason Reason);
+    RepairOutcomeReason Reason,
+    DiagnosticContextId ContextId);
 
 /// <summary>
 /// Compare two observations of the same measurement with an explicit postcondition.
@@ -76,7 +78,17 @@ public static class RepairOutcomeEvaluator
         RepairOutcomeAssessment Result(RepairOutcomeStatus status,
             RepairOutcomeReason reason) =>
             new(rule.RuleId, rule.Version, rule.FactKey,
-                before.Id, after.Id, status, reason);
+                before.Id, after.Id, status, reason, before.ContextId);
+
+        // Reject comparisons across equipment service contexts before any
+        // apparent improvement is considered. Mismatches have no valid
+        // assessment context and cannot be attached to a public passport.
+        if (before.ContextId != after.ContextId
+            || !before.ContextId.IsValid || !after.ContextId.IsValid)
+            return new RepairOutcomeAssessment(rule.RuleId, rule.Version,
+                rule.FactKey, before.Id, after.Id,
+                RepairOutcomeStatus.Indeterminate,
+                RepairOutcomeReason.IncompatibleContext, default);
 
         // Different subjects, sources, identities or an inverted timeline are
         // not comparable. A failed comparison must never be reported as healthy.
