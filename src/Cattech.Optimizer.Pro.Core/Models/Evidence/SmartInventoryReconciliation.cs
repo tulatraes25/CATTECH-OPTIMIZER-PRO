@@ -47,14 +47,16 @@ public sealed class SmartInventorySnapshot
     private const int MaxFieldLength = 256;
 
     private readonly DiskIdentity?[] _identities;
+    private readonly string?[] _claimedSerials;
 
     private SmartInventorySnapshot(
         DiagnosticContextId contextId, DateTimeOffset capturedAtUtc,
-        DiskIdentity?[] identities)
+        DiskIdentity?[] identities, string?[] claimedSerials)
     {
         ContextId = contextId;
         CapturedAtUtc = capturedAtUtc.ToUniversalTime();
         _identities = identities;
+        _claimedSerials = claimedSerials;
     }
 
     [JsonIgnore]
@@ -79,7 +81,8 @@ public sealed class SmartInventorySnapshot
         // Snapshot source models are mutable; extract just the identity fields
         // now so caller edits cannot silently change a preview after review.
         return new SmartInventorySnapshot(contextId, capturedAt,
-            snapshot.Select(ExtractIdentity).ToArray());
+            snapshot.Select(ExtractIdentity).ToArray(),
+            snapshot.Select(ExtractClaimedSerial).ToArray());
     }
 
     /// <summary>
@@ -109,8 +112,11 @@ public sealed class SmartInventorySnapshot
                 "Baseline subjects must be unique and bound one-to-one.",
                 nameof(baselineSubjects));
 
-        var baselineSerialCounts = CountSerials(baseline._identities);
-        var currentSerialCounts = CountSerials(current._identities);
+        // Include any usable serial claim, even from a failed/incomplete report.
+        // Otherwise an untrusted duplicate could hide behind a null identity
+        // while a second record with that serial is matched as unique.
+        var baselineSerialCounts = CountSerials(baseline._claimedSerials);
+        var currentSerialCounts = CountSerials(current._claimedSerials);
         var previews = new SmartInventoryMatchPreview[current.DeviceCount];
 
         for (var i = 0; i < current._identities.Length; i++)
@@ -158,10 +164,10 @@ public sealed class SmartInventorySnapshot
         return Array.AsReadOnly(previews);
     }
 
-    private static Dictionary<string, int> CountSerials(DiskIdentity?[] items)
+    private static Dictionary<string, int> CountSerials(string?[] items)
     {
-        return items.Where(identity => identity is not null)
-            .Select(identity => identity!.Serial)
+        return items.Where(serial => serial is not null)
+            .Select(serial => serial!)
             .GroupBy(serial => serial, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.Count(),
                 StringComparer.Ordinal);
@@ -172,20 +178,28 @@ public sealed class SmartInventorySnapshot
         if (!report.IsAnalysisSuccessful || string.IsNullOrWhiteSpace(report.Device))
             return null;
 
-        var serial = Normalize(report.SerialNumber);
+        var serial = ExtractClaimedSerial(report);
         var model = Normalize(report.ModelName);
         var transport = Normalize(
             string.IsNullOrWhiteSpace(report.SmartctlDeviceType)
                 ? report.Protocol : report.SmartctlDeviceType);
 
         if (serial is null || model is null || transport is null
-            || report.CapacityBytes <= 0
-            || serial is "UNKNOWN" or "N/D" or "N/A" or "NONE" or "NULL"
-                or "NOT AVAILABLE" or "TO BE FILLED BY O.E.M."
-                or "00000000" or "000000000000")
+            || report.CapacityBytes <= 0)
             return null;
 
         return new DiskIdentity(serial, model, report.CapacityBytes, transport);
+    }
+
+    private static string? ExtractClaimedSerial(SmartDiskReport report)
+    {
+        // Deliberately do not rely on IsAnalysisSuccessful here: a failed
+        // entry may still claim the same serial as a complete entry, making
+        // the overall inventory ambiguous rather than one-to-one.
+        var serial = Normalize(report.SerialNumber);
+        return serial is "UNKNOWN" or "N/D" or "N/A" or "NONE" or "NULL"
+            or "NOT AVAILABLE" or "TO BE FILLED BY O.E.M."
+            or "00000000" or "000000000000" ? null : serial;
     }
 
     private static string? Normalize(string? raw)
