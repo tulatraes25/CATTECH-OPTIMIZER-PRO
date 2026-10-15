@@ -17,7 +17,8 @@ public enum RepairOutcomeReason
     NoDemonstratedChange,
     MissingMeasurement,
     IncompatibleMeasurement,
-    InvalidTimeline
+    InvalidTimeline,
+    ContextMismatch
 }
 
 /// <summary>
@@ -58,7 +59,8 @@ public sealed record RepairOutcomeAssessment(
     Guid BeforeEvidenceId,
     Guid AfterEvidenceId,
     RepairOutcomeStatus Status,
-    RepairOutcomeReason Reason);
+    RepairOutcomeReason Reason,
+    DiagnosticContextId ContextId = default);
 
 /// <summary>
 /// Compare two observations of the same measurement with an explicit postcondition.
@@ -73,10 +75,20 @@ public static class RepairOutcomeEvaluator
         ArgumentNullException.ThrowIfNull(before);
         ArgumentNullException.ThrowIfNull(after);
 
+        var sameContext = before.ContextId.IsBound
+            && before.ContextId == after.ContextId;
+
         RepairOutcomeAssessment Result(RepairOutcomeStatus status,
             RepairOutcomeReason reason) =>
             new(rule.RuleId, rule.Version, rule.FactKey,
-                before.Id, after.Id, status, reason);
+                before.Id, after.Id, status, reason,
+                sameContext ? before.ContextId : default);
+
+        // Scope mismatch is checked first: a matching fact/source/time from two
+        // machines must never become an apparent improvement.
+        if (!sameContext)
+            return Result(RepairOutcomeStatus.Indeterminate,
+                RepairOutcomeReason.ContextMismatch);
 
         // Different subjects, sources, identities or an inverted timeline are
         // not comparable. A failed comparison must never be reported as healthy.
