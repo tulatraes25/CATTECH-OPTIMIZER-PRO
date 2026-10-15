@@ -4,6 +4,9 @@ namespace Cattech.Optimizer.Pro.Core.Tests.Models;
 
 public class EvidenceRecordTests
 {
+    private static readonly DiagnosticSubjectId Subject =
+        new(Guid.Parse("77777777-7777-4777-8777-777777777777"));
+
     private static readonly DiagnosticContextId Context =
         new(Guid.Parse("99999999-9999-4999-8999-999999999999"));
 
@@ -17,7 +20,7 @@ public class EvidenceRecordTests
     public void Observed_PreservesStableIdAndNormalizesUtc()
     {
         var item = EvidenceRecord.Observed(
-            EvidenceId, Context, "windows-event-log", "crash.bugcheck",
+            EvidenceId, Context, Subject, "windows-event-log", "crash.bugcheck",
             ObservedAt, EvidenceValue.FromText("0x0000009F"),
             "synthetic-event-fixture", EvidencePrivacyClass.Equipment);
 
@@ -38,7 +41,7 @@ public class EvidenceRecordTests
     public void Missing_AlwaysHasNoValueAndExplainsTheGap(EvidenceAvailability reason)
     {
         var item = EvidenceRecord.Missing(
-            EvidenceId, Context, "smart", "disk.temperature", ObservedAt,
+            EvidenceId, Context, Subject, "smart", "disk.temperature", ObservedAt,
             reason, "synthetic-fixture", EvidencePrivacyClass.Equipment,
             "Provider did not return a usable reading.");
 
@@ -51,11 +54,11 @@ public class EvidenceRecordTests
     public void Missing_CannotMasqueradeAsObserved()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => EvidenceRecord.Missing(
-            EvidenceId, Context, "smart", "disk.temperature", ObservedAt,
+            EvidenceId, Context, Subject, "smart", "disk.temperature", ObservedAt,
             EvidenceAvailability.Observed, "fixture",
             EvidencePrivacyClass.Equipment, "No reading."));
         Assert.Throws<ArgumentOutOfRangeException>(() => EvidenceRecord.Missing(
-            EvidenceId, Context, "smart", "disk.temperature", ObservedAt,
+            EvidenceId, Context, Subject, "smart", "disk.temperature", ObservedAt,
             (EvidenceAvailability)99, "fixture",
             EvidencePrivacyClass.Equipment, "No reading."));
     }
@@ -64,7 +67,7 @@ public class EvidenceRecordTests
     public void Missing_RequiresExplanation()
     {
         Assert.Throws<ArgumentException>(() => EvidenceRecord.Missing(
-            EvidenceId, Context, "smart", "disk.temperature", ObservedAt,
+            EvidenceId, Context, Subject, "smart", "disk.temperature", ObservedAt,
             EvidenceAvailability.Unavailable, "fixture",
             EvidencePrivacyClass.Equipment, " "));
     }
@@ -99,19 +102,19 @@ public class EvidenceRecordTests
     {
         var value = EvidenceValue.FromBoolean(true);
         Assert.Throws<ArgumentException>(() => EvidenceRecord.Observed(
-            Guid.Empty, Context, "sensor", "cpu.valid", ObservedAt,
+            Guid.Empty, Context, Subject, "sensor", "cpu.valid", ObservedAt,
             value, "fixture", EvidencePrivacyClass.Equipment));
         Assert.Throws<ArgumentException>(() => EvidenceRecord.Observed(
-            EvidenceId, Context, "", "cpu.valid", ObservedAt,
+            EvidenceId, Context, Subject, "", "cpu.valid", ObservedAt,
             value, "fixture", EvidencePrivacyClass.Equipment));
         Assert.Throws<ArgumentException>(() => EvidenceRecord.Observed(
-            EvidenceId, Context, "sensor", " ", ObservedAt,
+            EvidenceId, Context, Subject, "sensor", " ", ObservedAt,
             value, "fixture", EvidencePrivacyClass.Equipment));
         Assert.Throws<ArgumentException>(() => EvidenceRecord.Observed(
-            EvidenceId, Context, "sensor", "cpu.valid", ObservedAt,
+            EvidenceId, Context, Subject, "sensor", "cpu.valid", ObservedAt,
             value, " ", EvidencePrivacyClass.Equipment));
         Assert.Throws<ArgumentOutOfRangeException>(() => EvidenceRecord.Observed(
-            EvidenceId, Context, "sensor", "cpu.valid", ObservedAt,
+            EvidenceId, Context, Subject, "sensor", "cpu.valid", ObservedAt,
             value, "fixture", (EvidencePrivacyClass)99));
     }
 
@@ -119,7 +122,7 @@ public class EvidenceRecordTests
     public void Observed_RequiresAValue()
     {
         Assert.Throws<ArgumentNullException>(() => EvidenceRecord.Observed(
-            EvidenceId, Context, "sensor", "cpu.valid", ObservedAt,
+            EvidenceId, Context, Subject, "sensor", "cpu.valid", ObservedAt,
             null!, "fixture", EvidencePrivacyClass.Equipment));
     }
 }
