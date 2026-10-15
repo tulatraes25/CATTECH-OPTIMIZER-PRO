@@ -151,9 +151,11 @@ public sealed class DiagnosticSessionLease
     public IDisposable SubscribeRevocation(Action onRevoked)
     {
         ArgumentNullException.ThrowIfNull(onRevoked);
+        var notified = 0;
         EventHandler handler = (_, _) =>
         {
-            if (!IsCurrent)
+            if (!IsCurrent && System.Threading.Interlocked.Exchange(
+                ref notified, 1) == 0)
                 onRevoked();
         };
 
@@ -162,7 +164,8 @@ public sealed class DiagnosticSessionLease
         {
             // Cover the transition between initial lease capture and
             // subscription registration.
-            if (!IsCurrent)
+            if (!IsCurrent && System.Threading.Interlocked.Exchange(
+                ref notified, 1) == 0)
                 onRevoked();
         }
         catch
