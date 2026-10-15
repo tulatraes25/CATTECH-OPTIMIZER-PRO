@@ -18,6 +18,7 @@ public enum RepairOutcomeReason
     MissingMeasurement,
     IncompatibleMeasurement,
     IncompatibleContext,
+    IncompatibleSubject,
     InvalidTimeline
 }
 
@@ -60,7 +61,8 @@ public sealed record RepairOutcomeAssessment(
     Guid AfterEvidenceId,
     RepairOutcomeStatus Status,
     RepairOutcomeReason Reason,
-    DiagnosticContextId ContextId);
+    DiagnosticContextId ContextId,
+    DiagnosticSubjectId SubjectId);
 
 /// <summary>
 /// Compare two observations of the same measurement with an explicit postcondition.
@@ -78,7 +80,8 @@ public static class RepairOutcomeEvaluator
         RepairOutcomeAssessment Result(RepairOutcomeStatus status,
             RepairOutcomeReason reason) =>
             new(rule.RuleId, rule.Version, rule.FactKey,
-                before.Id, after.Id, status, reason, before.ContextId);
+                before.Id, after.Id, status, reason, before.ContextId,
+                before.SubjectId);
 
         // Reject comparisons across equipment service contexts before any
         // apparent improvement is considered. Mismatches have no valid
@@ -88,7 +91,15 @@ public static class RepairOutcomeEvaluator
             return new RepairOutcomeAssessment(rule.RuleId, rule.Version,
                 rule.FactKey, before.Id, after.Id,
                 RepairOutcomeStatus.Indeterminate,
-                RepairOutcomeReason.IncompatibleContext, default);
+                RepairOutcomeReason.IncompatibleContext, default, default);
+
+        // Same machine does not imply the same disk or physical component.
+        if (before.SubjectId != after.SubjectId
+            || !before.SubjectId.IsValid || !after.SubjectId.IsValid)
+            return new RepairOutcomeAssessment(rule.RuleId, rule.Version,
+                rule.FactKey, before.Id, after.Id,
+                RepairOutcomeStatus.Indeterminate,
+                RepairOutcomeReason.IncompatibleSubject, before.ContextId, default);
 
         // Different subjects, sources, identities or an inverted timeline are
         // not comparable. A failed comparison must never be reported as healthy.
