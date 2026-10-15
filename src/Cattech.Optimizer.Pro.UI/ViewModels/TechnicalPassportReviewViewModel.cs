@@ -43,8 +43,14 @@ public partial class TechnicalPassportReviewViewModel : ObservableObject
             InvalidateForCaseSelectionChange();
     }
 
-    public string PreviewJson { get; }
-    public string PreviewSha256 { get; }
+    // Revoke the ON-SCREEN preview too: an old customer/equipment case must
+    // not remain visible when the active selection changes.
+    [ObservableProperty]
+    private string _previewJson = string.Empty;
+
+    [ObservableProperty]
+    private string _previewSha256 = string.Empty;
+
     public bool HasCopiedToClipboard => _consumed;
     public bool IsConsentRevoked => _revoked;
 
@@ -92,6 +98,8 @@ public partial class TechnicalPassportReviewViewModel : ObservableObject
     public void InvalidateForCaseSelectionChange()
     {
         _revoked = true;
+        PreviewJson = string.Empty;
+        PreviewSha256 = string.Empty;
         HasReviewedPreview = false;
         ConsentsToClipboard = false;
         CopyApprovedPayloadCommand.NotifyCanExecuteChanged();
