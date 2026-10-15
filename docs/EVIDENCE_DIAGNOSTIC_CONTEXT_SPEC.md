@@ -105,3 +105,21 @@ and no trusted live session coordinator has been built. The callback and
 notification are contract requirements, not proof that a real UI case switch
 has been handled. Treat any missing notification hookup as a release blocker.
 WPF interactive/clipboard QA remains mandatory.
+
+
+## Adversarial provenance hardening — RepairOutcomeAssessment
+
+`RepairOutcomeAssessment` no longer exposes a public positional constructor.
+In normal typed application code, `RepairOutcomeEvaluator.Compare` is the
+entry point that computes status, reason, evidence references and context.
+This prevents accidental construction of `ObservedImprovement` with a
+caller-assigned flag. Unknown/foreign contexts remain `Indeterminate`.
+
+The outcome context is excluded from generic JSON serialization. The public
+Technical Passport still exports only filtered status aggregates.
+
+**Limitations:** This is an ordinary API-invariant defense, not tamper-proof
+attestation. Malicious in-process code, reflection or forged input observations
+can still deceive a process; authentication, signed evidence and trusted
+providers are separate projects. No evidence of a successful physical Windows
+repair is provided by synthetic CI.
