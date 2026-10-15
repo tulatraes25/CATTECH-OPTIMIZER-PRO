@@ -5,6 +5,9 @@ namespace Cattech.Optimizer.Pro.Core.Tests.Models;
 
 public class TechnicalPassportTests
 {
+    private static readonly DiagnosticContextId Context =
+        new(Guid.Parse("99999999-9999-4999-8999-999999999999"));
+
     private static readonly Guid ExportId =
         Guid.Parse("92929292-2222-4222-8222-929292929292");
     private static readonly Guid FirstId =
@@ -19,19 +22,19 @@ public class TechnicalPassportTests
     private static EvidenceRecord Observed(Guid id, string value,
         EvidencePrivacyClass privacy = EvidencePrivacyClass.Equipment,
         string source = "synthetic", DateTimeOffset? observedAt = null) =>
-        EvidenceRecord.Observed(id, source, "windows.health",
+        EvidenceRecord.Observed(id, Context, source, "windows.health",
             observedAt ?? IssuedAt.AddHours(-2), EvidenceValue.FromText(value),
             "synthetic-test-only", privacy,
             "Only fixture data.");
 
     private static EvidenceRecord Missing(Guid id) =>
-        EvidenceRecord.Missing(id, "synthetic", "windows.health",
+        EvidenceRecord.Missing(id, Context, "synthetic", "windows.health",
             IssuedAt.AddHours(-1), EvidenceAvailability.AccessDenied,
             "fixture", EvidencePrivacyClass.Equipment,
             "Synthetic access denied.");
 
     private static DiagnosticAssessment Diagnostic(EvidenceRecord fact) =>
-        DeterministicDiagnosticEvaluator.Evaluate(
+        DeterministicDiagnosticEvaluator.Evaluate(Context, 
             new DiagnosticRule("diagnostic-rule", "1", "A diagnostic hypothesis",
                 "A contradicting observation", new[]
                 {
@@ -55,10 +58,10 @@ public class TechnicalPassportTests
         var diagnostic = Diagnostic(healthy);
         var outcome = Outcome(unhealthy, healthy);
 
-        var first = TechnicalPassportBuilder.Build(ExportId, IssuedAt,
+        var first = TechnicalPassportBuilder.Build(Context, ExportId, IssuedAt,
             new[] { healthy, missing, unhealthy }, new[] { diagnostic },
             new[] { outcome });
-        var second = TechnicalPassportBuilder.Build(ExportId, IssuedAt,
+        var second = TechnicalPassportBuilder.Build(Context, ExportId, IssuedAt,
             new[] { unhealthy, healthy, missing }, new[] { diagnostic },
             new[] { outcome });
 
@@ -87,14 +90,14 @@ public class TechnicalPassportTests
     {
         const string marker = "PRIVATE-EMAIL-user@example.invalid-DEVICE-SERIAL-123";
         const string path = @"C:\Users\PrivatePerson\Documents\confidential.dmp";
-        var sensitive = EvidenceRecord.Observed(SensitiveId, marker,
+        var sensitive = EvidenceRecord.Observed(SensitiveId, Context, marker,
             "windows.health", IssuedAt.AddHours(-2),
             EvidenceValue.FromText(path), marker,
             EvidencePrivacyClass.Sensitive, marker);
         var safe = Observed(FirstId, "unhealthy", source: marker);
         var second = Observed(SecondId, "healthy",
             observedAt: IssuedAt.AddHours(-1));
-        var assessment = DeterministicDiagnosticEvaluator.Evaluate(
+        var assessment = DeterministicDiagnosticEvaluator.Evaluate(Context, 
             new DiagnosticRule(marker, "1", marker, marker,
                 new[] { new EvidenceExpectation("windows.health",
                     EvidenceValue.FromText(path)) }),
@@ -102,7 +105,7 @@ public class TechnicalPassportTests
         var sensitiveOutcome = Outcome(sensitive, second);
         var safeOutcome = Outcome(safe, second);
 
-        var report = TechnicalPassportBuilder.Build(ExportId, IssuedAt,
+        var report = TechnicalPassportBuilder.Build(Context, ExportId, IssuedAt,
             new[] { safe, sensitive, second }, new[] { assessment },
             new[] { sensitiveOutcome, safeOutcome });
 
@@ -122,7 +125,7 @@ public class TechnicalPassportTests
     [Fact]
     public void MissingEvidence_IsNotReportedAsObserved()
     {
-        var report = TechnicalPassportBuilder.Build(ExportId, IssuedAt,
+        var report = TechnicalPassportBuilder.Build(Context, ExportId, IssuedAt,
             new[] { Missing(FirstId) }, Array.Empty<DiagnosticAssessment>(),
             Array.Empty<RepairOutcomeAssessment>());
 
@@ -138,7 +141,7 @@ public class TechnicalPassportTests
     [Fact]
     public void DigestDetectsPayloadEdits_ButIsNotAnAuthenticitySignature()
     {
-        var report = TechnicalPassportBuilder.Build(ExportId, IssuedAt,
+        var report = TechnicalPassportBuilder.Build(Context, ExportId, IssuedAt,
             new[] { Observed(FirstId, "healthy") },
             Array.Empty<DiagnosticAssessment>(),
             Array.Empty<RepairOutcomeAssessment>());
@@ -157,7 +160,7 @@ public class TechnicalPassportTests
     public void Export_NormalizesIssuedAtToUtc()
     {
         var issuedLocal = IssuedAt.ToOffset(TimeSpan.FromHours(-3));
-        var report = TechnicalPassportBuilder.Build(ExportId, issuedLocal,
+        var report = TechnicalPassportBuilder.Build(Context, ExportId, issuedLocal,
             new[] { Observed(FirstId, "healthy") },
             Array.Empty<DiagnosticAssessment>(),
             Array.Empty<RepairOutcomeAssessment>());
@@ -172,15 +175,15 @@ public class TechnicalPassportTests
     public void DuplicateEvidenceIdsAndReusedExportIdentity_FailClosed()
     {
         var record = Observed(FirstId, "healthy");
-        Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(
+        Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(Context, 
             ExportId, IssuedAt, new[] { record, record },
             Array.Empty<DiagnosticAssessment>(),
             Array.Empty<RepairOutcomeAssessment>()));
-        Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(
+        Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(Context, 
             FirstId, IssuedAt, new[] { record },
             Array.Empty<DiagnosticAssessment>(),
             Array.Empty<RepairOutcomeAssessment>()));
-        Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(
+        Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(Context, 
             Guid.Empty, IssuedAt, new[] { record },
             Array.Empty<DiagnosticAssessment>(),
             Array.Empty<RepairOutcomeAssessment>()));
@@ -191,11 +194,11 @@ public class TechnicalPassportTests
     {
         var first = Observed(FirstId, "unhealthy");
         var second = Observed(SecondId, "healthy");
-        Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(
+        Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(Context, 
             ExportId, IssuedAt, new[] { first },
             Array.Empty<DiagnosticAssessment>(),
             new[] { Outcome(first, second) }));
-        Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(
+        Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(Context, 
             ExportId, IssuedAt, new[] { first },
             new[] { Diagnostic(second) },
             Array.Empty<RepairOutcomeAssessment>()));
@@ -204,11 +207,11 @@ public class TechnicalPassportTests
     [Fact]
     public void FutureDatedObservation_IsNotExportedAsVerified()
     {
-        var future = EvidenceRecord.Observed(FirstId, "fixture", "windows.health",
+        var future = EvidenceRecord.Observed(FirstId, Context, "fixture", "windows.health",
             IssuedAt.AddMinutes(10), EvidenceValue.FromText("healthy"),
             "fixture", EvidencePrivacyClass.Equipment);
 
-        Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(
+        Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(Context, 
             ExportId, IssuedAt, new[] { future },
             Array.Empty<DiagnosticAssessment>(),
             Array.Empty<RepairOutcomeAssessment>()));
@@ -221,8 +224,8 @@ public class TechnicalPassportTests
         var after = Observed(SecondId, "healthy");
         var invalid = new RepairOutcomeAssessment("synthetic", "1",
             "windows.health", FirstId, SecondId,
-            (RepairOutcomeStatus)999, RepairOutcomeReason.ImprovementObserved);
-        Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(
+            (RepairOutcomeStatus)999, RepairOutcomeReason.ImprovementObserved, Context);
+        Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(Context, 
             ExportId, IssuedAt, new[] { before, after },
             Array.Empty<DiagnosticAssessment>(), new[] { invalid }));
     }
@@ -231,7 +234,7 @@ public class TechnicalPassportTests
     public void TooManyEvidenceRows_RefuseUnboundedSnapshot()
     {
         var record = Observed(FirstId, "healthy");
-        Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(
+        Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(Context, 
             ExportId, IssuedAt, Enumerable.Repeat(record, 10_001),
             Array.Empty<DiagnosticAssessment>(),
             Array.Empty<RepairOutcomeAssessment>()));
@@ -244,14 +247,14 @@ public class TechnicalPassportTests
 
         // This diagnostic includes safe corroboration, but also an unlinked
         // missing fact that could describe sensitive customer information.
-        var partial = DeterministicDiagnosticEvaluator.Evaluate(
+        var partial = DeterministicDiagnosticEvaluator.Evaluate(Context, 
             new DiagnosticRule("private-gap", "1", "synthetic", "synthetic", new[]
             {
                 new EvidenceExpectation("windows.health", EvidenceValue.FromText("healthy")),
                 new EvidenceExpectation("private.customer", EvidenceValue.FromText("present"))
             }),
             new[] { safe }, IssuedAt);
-        var missingOnly = DeterministicDiagnosticEvaluator.Evaluate(
+        var missingOnly = DeterministicDiagnosticEvaluator.Evaluate(Context, 
             new DiagnosticRule("missing-only", "1", "synthetic", "synthetic", new[]
             {
                 new EvidenceExpectation("private.customer", EvidenceValue.FromText("present"))
@@ -264,7 +267,7 @@ public class TechnicalPassportTests
         Assert.Empty(missingOnly.SupportingEvidenceIds);
         Assert.Single(missingOnly.MissingFactKeys);
 
-        var passport = TechnicalPassportBuilder.Build(ExportId, IssuedAt,
+        var passport = TechnicalPassportBuilder.Build(Context, ExportId, IssuedAt,
             new[] { safe }, new[] { partial, missingOnly },
             Array.Empty<RepairOutcomeAssessment>());
         using var json = JsonDocument.Parse(passport.PayloadJson);
