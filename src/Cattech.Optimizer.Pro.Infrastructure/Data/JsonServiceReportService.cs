@@ -29,26 +29,46 @@ public class JsonServiceReportService : IServiceReportService
     /// <inheritdoc/>
     public async Task<string> SaveReportAsync(ServiceReport report)
     {
-        await _lock.WaitAsync();
+        ArgumentNullException.ThrowIfNull(report);
+        await _lock.WaitAsync().ConfigureAwait(false);
 
         try
         {
             EnsureDirectoryExists();
 
-            var fileName = $"service-report-{report.CreatedAt:yyyyMMdd-HHmmss}.json";
+            // The timestamp and report ID are not sufficient under concurrent
+            // writers, repeated saves or across independent service instances.
+            // Keep arbitrary report IDs out of the filesystem path.
+            var token = Guid.NewGuid().ToString("N");
+            var fileName = $"service-report-{report.CreatedAt:yyyyMMdd-HHmmss}-{token}.json";
             var filePath = Path.Combine(_reportsDirectory, fileName);
-
-            // Si ya existe un archivo con el mismo nombre, agregar sufijo
-            if (File.Exists(filePath))
-            {
-                fileName = $"service-report-{report.CreatedAt:yyyyMMdd-HHmmss}-{report.Id}.json";
-                filePath = Path.Combine(_reportsDirectory, fileName);
-            }
-
+            var stagedPath = Path.Combine(_reportsDirectory, $".cattech-service-{token}.tmp");
             var json = JsonSerializer.Serialize(report, SerializerOptions);
-            await File.WriteAllTextAsync(filePath, json);
 
-            return fileName;
+            try
+            {
+                // A failure before publication can only leave a temporary file.
+                // The final name is published atomically, without overwriting.
+                await using (var stream = new FileStream(stagedPath, FileMode.CreateNew,
+                    FileAccess.Write, FileShare.None, 8192, useAsync: true))
+                await using (var writer = new StreamWriter(stream, System.Text.Encoding.UTF8))
+                {
+                    await writer.WriteAsync(json).ConfigureAwait(false);
+                }
+
+                File.Move(stagedPath, filePath);
+                return fileName;
+            }
+            finally
+            {
+                try
+                {
+                    if (File.Exists(stagedPath))
+                        File.Delete(stagedPath);
+                }
+                catch (IOException) { /* Keep the original failure. */ }
+                catch (UnauthorizedAccessException) { /* Keep the original failure. */ }
+            }
         }
         finally
         {
