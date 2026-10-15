@@ -85,3 +85,35 @@ redimensionado y navegación al cambiar sección.
 **Gate de producto**: compilar/demo sintético no equivale a
 certificación de datos reales, privacidad para clientes ni release.
 No habilitar adquisición ni exportación automática sin #27/#30/#33/#43.
+
+## DC-04 — Dos audiencias sin doble diagnóstico (Issue #47)
+
+La mejora `DecisionExplanationBuilder.Build(summary, audience)` utiliza
+**exactamente el mismo DecisionCenterSummary** para construir dos lecturas
+diferentes con vocabulario cerrado (sin copiar textos libres de sensores
+ni de hipótesis).
+
+**Vista técnica:** hipótesis consistentes, refutadas, faltantes o en
+conflicto, comprobación antes/después, próximos pasos, recuentos y límites
+de atribución causal.
+
+**Vista para el cliente:** títulos claros, explicación sin jerga,
+sin recuentos técnicos, sin seriales ni códigos. No presume que una mejoría
+observada sea prueba de reparación. Si una medición mejoró pero la
+hipótesis está incompleta/refutada/contradictoria, el texto presenta esa
+variación como insuficiente para concluir un caso resuelto.
+
+La selección de audiencia no transfiere información, solicita permisos,
+genera archivos ni reevalúa los hechos. Las explicaciones son objetos
+inmutables, sin identidad de cliente/equipo. La demo WPF podrá alternar
+entre ambas, siempre rotulada como **DEMO CON DATOS FICTICIOS**.
+
+**Riesgo residual:** la mera ausencia de seriales no autoriza compartir
+un informe real: recuentos y estados de un equipo pueden ser sensibles.
+No se habilita imprimir/copiar/exportar hasta revisión, consentimiento y
+QA, ni se conecta a proveedores mientras #43 siga bloqueado.
+
+**Pruebas:** 20 combinaciones de estado diagnóstico x postcheck,
+controles de texto no causal, advertencias persistentes, privacidad
+JSON y estabilidad de serialización. CI de este slice debe validarse en
+SHA exacto antes de enlazar WPF.
