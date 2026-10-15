@@ -12,10 +12,13 @@ namespace Cattech.Optimizer.Pro.UI.Views;
 /// </summary>
 public partial class TechnicalPassportReviewView : UserControl
 {
-    public TechnicalPassportReviewView(TechnicalPassportArtifact passport)
+    public TechnicalPassportReviewView(
+        TechnicalPassportArtifact passport,
+        Func<DiagnosticContextId> activeContext)
     {
+        ArgumentNullException.ThrowIfNull(activeContext);
         InitializeComponent();
         DataContext = new TechnicalPassportReviewViewModel(
-            passport, payload => Clipboard.SetText(payload));
+            passport, payload => Clipboard.SetText(payload), activeContext);
     }
 }
