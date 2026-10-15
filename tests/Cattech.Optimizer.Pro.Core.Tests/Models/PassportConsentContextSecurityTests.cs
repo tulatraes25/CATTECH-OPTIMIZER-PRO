@@ -69,7 +69,7 @@ public sealed class PassportConsentContextSecurityTests
         Assert.Equal(2, parameters.Length);
         Assert.Equal(typeof(TechnicalPassportArtifact),
             parameters[0].ParameterType);
-        Assert.Equal(typeof(Func<DiagnosticContextId>),
+        Assert.Equal(typeof(DiagnosticSessionLease),
             parameters[1].ParameterType);
     }
 
@@ -79,10 +79,15 @@ public sealed class PassportConsentContextSecurityTests
         var passport = MakePassport(CaseA);
 
         Assert.Throws<ArgumentNullException>(() =>
-            new TechnicalPassportReviewViewModel(passport, _ => { }, null!));
+            new TechnicalPassportReviewViewModel(passport, _ => { },
+                (DiagnosticSessionLease)null!));
         Assert.DoesNotContain(
             typeof(TechnicalPassportReviewViewModel).GetConstructors(),
             ctor => ctor.GetParameters().Length == 2);
+        Assert.DoesNotContain(
+            typeof(TechnicalPassportReviewViewModel).GetConstructors(),
+            ctor => ctor.GetParameters().Any(parameter =>
+                parameter.ParameterType == typeof(Func<DiagnosticContextId>)));
     }
 
     [Fact]
