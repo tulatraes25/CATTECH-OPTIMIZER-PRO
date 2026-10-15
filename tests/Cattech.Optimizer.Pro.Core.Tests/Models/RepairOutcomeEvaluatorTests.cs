@@ -136,4 +136,24 @@ public class RepairOutcomeEvaluatorTests
         Assert.DoesNotContain(privateMarker,
             System.Text.Json.JsonSerializer.Serialize(result));
     }
+    [Fact]
+    public void PlainOutcomeJson_DoesNotRevealEvidenceCaseOrComponentIds()
+    {
+        var result = RepairOutcomeEvaluator.Compare(Rule(),
+            Observed(BeforeId, "unhealthy", BaselineTime),
+            Observed(AfterId, "healthy", BaselineTime.AddMinutes(30)));
+
+        var json = System.Text.Json.JsonSerializer.Serialize(result);
+        Assert.Equal(RepairOutcomeStatus.ObservedImprovement, result.Status);
+        Assert.DoesNotContain(BeforeId.ToString(), json,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(AfterId.ToString(), json,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(Context.Value.ToString(), json,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(Subject.Value.ToString(), json,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ObservedImprovement", json);
+    }
+
 }
