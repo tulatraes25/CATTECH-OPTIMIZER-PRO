@@ -16,6 +16,53 @@ public class TempCleanupTests
 
 
     [Theory]
+    [InlineData("THUMBNAILS")]
+    [InlineData("USER_TEMP")]
+    [InlineData("WINDOWS_TEMP")]
+    [InlineData("UNRECOGNIZED")]
+    public async Task Scan_ForgedRoot_IsRejectedBeforeReadingAnyCandidate(string targetId)
+    {
+        var root = Path.Combine(Path.GetTempPath(),
+            "cattech-scan-forgery-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var sentinel = Path.Combine(root, "thumbcache_synthetic.db");
+            await File.WriteAllTextAsync(sentinel, new string('x', 100));
+            File.SetCreationTimeUtc(sentinel, DateTime.UtcNow.AddDays(-9));
+            File.SetLastWriteTimeUtc(sentinel, DateTime.UtcNow.AddDays(-9));
+            var target = new TempCleanupTarget
+            {
+                Id = targetId,
+                Path = root,
+                IsScanned = true,
+                IsAccessible = true,
+                IsSelected = true,
+                EstimatedFileCount = 999,
+                EstimatedSizeBytes = 999
+            };
+
+            var scanned = await TempCleanupService.ScanTargetsAsync(
+                new List<TempCleanupTarget> { target });
+
+            var actual = Assert.Single(scanned);
+            Assert.Same(target, actual);
+            Assert.True(actual.IsScanned);
+            Assert.False(actual.IsAccessible);
+            Assert.False(actual.IsSelected);
+            Assert.Equal(0, actual.EstimatedFileCount);
+            Assert.Equal(0, actual.EstimatedSizeBytes);
+            Assert.StartsWith("No disponible:", actual.ScanNotes);
+            Assert.True(File.Exists(sentinel));
+            Assert.Equal(100, new FileInfo(sentinel).Length);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Theory]
     [InlineData("io")]
     [InlineData("access")]
     [InlineData("security")]
