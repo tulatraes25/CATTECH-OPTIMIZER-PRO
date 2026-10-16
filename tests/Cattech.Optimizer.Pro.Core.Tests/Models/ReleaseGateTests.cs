@@ -93,14 +93,14 @@ public class ReleaseGateTests
     }
 
     [Fact]
-    public void Runner_MissingConfig_NoCrash()
+    public async Task Runner_MissingConfig_NoCrash()
     {
         var dir = CreateTempDir();
         try
         {
             var runner = new SmartctlRunner(baseDirectory: dir);
 
-            var availability = runner.CheckAvailabilityAsync().GetAwaiter().GetResult();
+            var availability = await runner.CheckAvailabilityAsync();
 
             Assert.False(availability.IsAvailable);
             Assert.NotEmpty(availability.ErrorMessage);
