@@ -855,7 +855,13 @@ public class TempCleanupService : ITempCleanupService
 
     private static bool IsProtectedFile(FileInfo file)
     {
-        if ((file.Attributes & FileAttributes.ReparsePoint) != 0)
+        // The native handle-level delete rejects ReadOnly, Hidden and System
+        // files too. Exclude them from the reclaim estimate, not only at
+        // deletion time; never promise bytes the safe gate will refuse.
+        const FileAttributes nativeExcluded =
+            FileAttributes.ReparsePoint | FileAttributes.ReadOnly
+            | FileAttributes.Hidden | FileAttributes.System;
+        if ((file.Attributes & nativeExcluded) != 0)
             return true;
 
         // Use one shared filename policy in managed scan, cleanup and native

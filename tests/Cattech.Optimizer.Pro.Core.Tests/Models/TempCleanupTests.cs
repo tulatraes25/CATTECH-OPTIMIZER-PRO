@@ -839,6 +839,73 @@ public class TempCleanupTests
     }
 
 
+    [Theory]
+    [InlineData("USER_TEMP", "old-eligible.tmp", "old-readonly.tmp")]
+    [InlineData("THUMBNAILS", "thumbcache_eligible.db", "thumbcache_readonly.db")]
+    public async Task OldReadOnlyFiles_AreExcludedFromBothEstimateAndDeletion(
+        string id, string eligibleName, string readOnlyName)
+    {
+        // Read/write only inside an isolated synthetic fixture; the public
+        // cleanup allowlist is never bypassed to operate on user files.
+        var root = Path.Combine(Path.GetTempPath(),
+            "cattech-readonly-parity-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var eligible = Path.Combine(root, eligibleName);
+        var protectedFile = Path.Combine(root, readOnlyName);
+        try
+        {
+            await File.WriteAllBytesAsync(eligible, new byte[727]);
+            await File.WriteAllTextAsync(protectedFile, "PRESERVE-READONLY");
+            foreach (var file in new[] { eligible, protectedFile })
+            {
+                File.SetCreationTimeUtc(file, DateTime.UtcNow.AddDays(-9));
+                File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddDays(-9));
+            }
+            File.SetAttributes(protectedFile, FileAttributes.ReadOnly);
+
+            var target = new TempCleanupTarget
+            {
+                Id = id,
+                Path = root,
+                IsSelected = true
+            };
+            if (id == "THUMBNAILS")
+                TempCleanupService.ScanThumbnailsFolder(target);
+            else
+                TempCleanupService.ScanFolder(target);
+
+            Assert.True(target.IsScanned);
+            Assert.True(target.IsAccessible);
+            Assert.Equal(1, target.EstimatedFileCount);
+            Assert.Equal(727L, target.EstimatedSizeBytes);
+
+            var summary = new TargetResult { TargetId = id };
+            var audit = new TempCleanupResult();
+            if (id == "THUMBNAILS")
+                TempCleanupService.CleanThumbnailsFolder(target, summary, audit);
+            else
+                await new TempCleanupService(root)
+                    .CleanFolderAsync(target, summary, audit);
+
+            Assert.False(File.Exists(eligible));
+            Assert.Equal("PRESERVE-READONLY",
+                await File.ReadAllTextAsync(protectedFile));
+            Assert.Equal(1, summary.DeletedFiles);
+            Assert.Equal(727L, summary.DeletedBytes);
+            Assert.Equal(1, summary.SkippedFiles);
+            Assert.Equal(1, audit.DeletedFiles);
+            Assert.Equal(727L, audit.DeletedBytes);
+            Assert.Equal(1, audit.SkippedFiles);
+            Assert.Empty(audit.Errors);
+        }
+        finally
+        {
+            if (File.Exists(protectedFile))
+                File.SetAttributes(protectedFile, FileAttributes.Normal);
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Fact]
     public void ScanFolder_OnlyEstimatesFilesOlderThanRetention()
     {
