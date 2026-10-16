@@ -264,7 +264,7 @@ public class SmartDiskReportTests
 
         // No debe fallar, pero el estado será Unknown o Good sin datos
         Assert.True(report.IsAnalysisSuccessful);
-        Assert.NotNull(report.HealthStatus);
+        Assert.NotEqual(SmartHealthStatus.Critical, report.HealthStatus);
     }
 
     [Fact]
