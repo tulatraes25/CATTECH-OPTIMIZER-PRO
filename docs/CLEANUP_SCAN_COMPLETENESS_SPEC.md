@@ -39,3 +39,27 @@ warnings are tracked separately.
 
 STATUS: DRAFT / CI PENDING. Stack follows PR #62 certified source,
 and must never be directly merged into published main.
+
+## Stage 2: only authorized roots may be scanned
+
+The selection UI is not an authorization boundary. Previously,
+`ScanTargetsAsync` rejected redirected USER_TEMP and WINDOWS_TEMP, but
+still called `ScanThumbnailsFolder` on any path labeled THUMBNAILS
+and `ScanFolder` for an unknown target ID. This could enumerate data
+outside the intended cleanup scope, even though later deletion was denied.
+
+Scan and delete now share `GetTargetRejectionReason` with a
+`requireCompletedScan=false` mode during preflight. This checks the
+existing allowlist, exact canonical known-folder root, safe ancestor
+chain, Windows requirement and target existence **before** enumerating.
+During final cleanup the default true mode still requires an actual
+successful scan. The public test fixture `ScanFolder` internal helper
+is not an authorization API and remains used solely on temporary data.
+
+Four synthetic cases (THUMBNAILS, USER_TEMP, WINDOWS_TEMP and unknown ID)
+verify forged roots remain unavailable, unchecked and return zero counts,
+with no file deletion or exposure in scan notes.
+
+Neither the new preflight nor the earlier metadata check is an
+identity-preserving filesystem transaction: races still require separate
+Windows hardware/file-handle acceptance tests.
