@@ -8,7 +8,7 @@ namespace Cattech.Optimizer.Pro.Infrastructure.Data;
 /// Implementación de IServiceReportService que persiste reportes en JSON.
 /// Los archivos se guardan en data/service-reports/service-report-YYYYMMDD-HHMMSS.json
 /// </summary>
-public class JsonServiceReportService : IServiceReportService
+public class JsonServiceReportService : IServiceReportService, IServiceReportInventoryReader
 {
     private readonly string _reportsDirectory;
     private readonly SemaphoreSlim _lock = new(1, 1);
@@ -328,12 +328,3 @@ public class JsonServiceReportService : IServiceReportService
     }
 }
 
-/// <summary>
-/// Privacy-minimized snapshot of report storage health. Not an authorization token.
-/// </summary>
-public sealed record ServiceReportInventory(
-    int TotalFiles, int UniqueEntries, int AmbiguousEntries,
-    int InvalidEntries, bool ScanFailed)
-{
-    public bool RequiresReview => ScanFailed || AmbiguousEntries != 0 || InvalidEntries != 0;
-}
