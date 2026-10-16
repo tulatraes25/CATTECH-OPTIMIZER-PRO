@@ -107,6 +107,101 @@ public sealed class ClientEquipmentRecordIsolationTests
         vm.EquipmentType = "Notebook";
     }
 
+    [Theory]
+    [InlineData("name")]
+    [InlineData("brand")]
+    [InlineData("model")]
+    [InlineData("serial")]
+    [InlineData("type")]
+    public async Task ChangingCaseIdentity_RevokesPreviouslyDetectedHardware(string dimension)
+    {
+        var storage = new CapturingReportService();
+        var vm = NewViewModel(storage, new FakeHardwareService());
+        PopulateRequiredFields(vm, "Synthetic Client A");
+
+        await vm.DetectHardwareCommand.ExecuteAsync(null);
+        Assert.True(vm.HasDetectedData);
+        Assert.Contains("Synthetic OS A", vm.DetectedOS);
+
+        switch (dimension)
+        {
+            case "name": vm.ClientName = "Synthetic Client B"; break;
+            case "brand": vm.EquipmentBrand = "Other synthetic brand"; break;
+            case "model": vm.EquipmentModel = "Other synthetic model"; break;
+            case "serial": vm.SerialNumber = "DIFFERENT-SYNTHETIC-SERIAL"; break;
+            case "type": vm.EquipmentType = "PC de escritorio"; break;
+        }
+
+        Assert.False(vm.HasDetectedData);
+        Assert.False(vm.IsDetecting);
+        Assert.Equal("Sin detectar", vm.DetectionStatus);
+        Assert.Empty(vm.DetectedOS);
+        Assert.Empty(vm.DetectedDisk);
+        Assert.Empty(vm.DetectedComputerName);
+        Assert.Empty(vm.DetectedUser);
+
+        await vm.SaveCommand.ExecuteAsync(null);
+        var saved = Assert.Single(storage.Saved);
+        Assert.Equal(string.Empty, saved.Equipment.WindowsVersion);
+        Assert.False(saved.Equipment.DiskFreeSpaceKnown);
+        Assert.Equal(string.Empty, saved.Equipment.PrimaryDisk);
+    }
+
+    [Fact]
+    public async Task ChangingClientWhileHardwareCallPending_DiscardsOldResponse()
+    {
+        var storage = new CapturingReportService();
+        var hardware = new FakeHardwareService
+        {
+            Pending = new TaskCompletionSource<HardwareReport>(
+                TaskCreationOptions.RunContinuationsAsynchronously)
+        };
+        var vm = NewViewModel(storage, hardware);
+        PopulateRequiredFields(vm, "Synthetic Client A");
+
+        var pending = vm.DetectHardwareCommand.ExecuteAsync(null);
+        Assert.True(vm.IsDetecting);
+        vm.ClientName = "Synthetic Client B";
+
+        Assert.False(vm.IsDetecting);
+        hardware.Pending.SetResult(CreateHardware());
+        await pending;
+
+        Assert.False(vm.HasDetectedData);
+        Assert.Equal("Sin detectar", vm.DetectionStatus);
+        Assert.Empty(vm.DetectedOS);
+        Assert.Empty(vm.DetectedDisk);
+        await vm.SaveCommand.ExecuteAsync(null);
+        var saved = Assert.Single(storage.Saved);
+        Assert.Equal("Synthetic Client B", saved.Client.Name);
+        Assert.Equal(string.Empty, saved.Equipment.WindowsVersion);
+        Assert.False(saved.Equipment.DiskFreeSpaceKnown);
+    }
+
+    [Fact]
+    public async Task ChangingEquipmentWhileHardwareCallPending_DiscardsOldFailure()
+    {
+        var hardware = new FakeHardwareService
+        {
+            Pending = new TaskCompletionSource<HardwareReport>(
+                TaskCreationOptions.RunContinuationsAsynchronously)
+        };
+        var vm = NewViewModel(new CapturingReportService(), hardware);
+        PopulateRequiredFields(vm, "Synthetic Client A");
+
+        var pending = vm.DetectHardwareCommand.ExecuteAsync(null);
+        vm.SerialNumber = "NEW-SYNTHETIC-EQUIPMENT";
+        hardware.Pending.SetException(new IOException(
+            @"C:\Users\PRIVATE\previous-machine.json"));
+        await pending;
+
+        Assert.False(vm.HasError);
+        Assert.False(vm.HasDetectedData);
+        Assert.False(vm.IsDetecting);
+        Assert.Equal("Sin detectar", vm.DetectionStatus);
+        Assert.DoesNotContain("PRIVATE", vm.ErrorMessage);
+    }
+
     [Fact]
     public async Task SaveStartedForOldClient_DoesNotMarkNewClientFormAsSaved()
     {
