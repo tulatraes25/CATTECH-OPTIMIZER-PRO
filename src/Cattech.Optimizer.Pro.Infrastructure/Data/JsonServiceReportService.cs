@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Cattech.Optimizer.Pro.Core.Interfaces;
 using Cattech.Optimizer.Pro.Core.Models.Reports;
@@ -11,6 +12,8 @@ namespace Cattech.Optimizer.Pro.Infrastructure.Data;
 public class JsonServiceReportService : IServiceReportService, IServiceReportInventoryReader
 {
     private readonly string _reportsDirectory;
+    private readonly string _storeLeasePath;
+    private static readonly TimeSpan StoreLeaseTimeout = TimeSpan.FromSeconds(15);
     private readonly SemaphoreSlim _lock = new(1, 1);
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -24,6 +27,7 @@ public class JsonServiceReportService : IServiceReportService, IServiceReportInv
             baseDirectory ?? AppDomain.CurrentDomain.BaseDirectory,
             "data",
             "service-reports");
+        _storeLeasePath = Path.Combine(_reportsDirectory, ".cattech-service-reports.lock");
     }
 
     /// <inheritdoc/>
@@ -44,6 +48,10 @@ public class JsonServiceReportService : IServiceReportService, IServiceReportInv
         try
         {
             EnsureDirectoryExists();
+            // The entire write is coordinated with cooperating CATTECH
+            // instances, not just callers sharing this SemaphoreSlim.
+            await using var lease = await AcquireStoreLeaseAsync(
+                _storeLeasePath, StoreLeaseTimeout).ConfigureAwait(false);
 
             // The timestamp and report ID are not sufficient under concurrent
             // writers, repeated saves or across independent service instances.
@@ -92,6 +100,8 @@ public class JsonServiceReportService : IServiceReportService, IServiceReportInv
             if (!Directory.Exists(_reportsDirectory))
                 return null;
 
+            await using var lease = await AcquireStoreLeaseAsync(
+                _storeLeasePath, StoreLeaseTimeout).ConfigureAwait(false);
             // The first matching logical ID is NEVER sufficient: older
             // report IDs may be only eight hex characters, and a snapshot
             // may have been saved more than once with the same ID.
@@ -120,6 +130,8 @@ public class JsonServiceReportService : IServiceReportService, IServiceReportInv
             if (maxResults <= 0)
                 return summaries;
 
+            await using var lease = await AcquireStoreLeaseAsync(
+                _storeLeasePath, StoreLeaseTimeout).ConfigureAwait(false);
             // Corrupt files must not consume the limit and hide valid entries.
             // The legacy list is not a certificate of safe load/delete.
             var files = Directory.GetFiles(_reportsDirectory, "service-report-*.json")
@@ -175,6 +187,9 @@ public class JsonServiceReportService : IServiceReportService, IServiceReportInv
             if (!Directory.Exists(_reportsDirectory))
                 return new ServiceReportInventory(0, 0, 0, 0, false);
 
+            // Never publish "healthy" while a cooperating writer is mid-save.
+            await using var lease = await AcquireStoreLeaseAsync(
+                _storeLeasePath, StoreLeaseTimeout).ConfigureAwait(false);
             string[] files;
             try
             {
@@ -230,6 +245,8 @@ public class JsonServiceReportService : IServiceReportService, IServiceReportInv
             if (!Directory.Exists(_reportsDirectory))
                 return false;
 
+            await using var lease = await AcquireStoreLeaseAsync(
+                _storeLeasePath, StoreLeaseTimeout).ConfigureAwait(false);
             // Never delete the first apparent match: multiple stored files
             // can carry the same logical Id. This is a best-effort local
             // uniqueness gate, NOT an inter-process atomic identity lock.
@@ -357,6 +374,38 @@ public class JsonServiceReportService : IServiceReportService, IServiceReportInv
             found = true;
         }
         return true;
+    }
+
+    /// <summary>
+    /// Cooperative cross-process gate for the service-report store. A marker
+    /// file is deliberately retained: an abandoned process releases its OS
+    /// handle, so neither PID files nor risky stale-lock deletion are needed.
+    /// This does not pin each report file handle against uncooperative writes.
+    /// </summary>
+    internal static async Task<FileStream> AcquireStoreLeaseAsync(
+        string leasePath, TimeSpan timeout)
+    {
+        if (timeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(timeout));
+
+        var watch = Stopwatch.StartNew();
+        while (true)
+        {
+            try
+            {
+                return new FileStream(leasePath, FileMode.OpenOrCreate,
+                    FileAccess.ReadWrite, FileShare.None, 1, FileOptions.None);
+            }
+            catch (IOException ex) when ((ex.HResult & 0xFFFF) is 32 or 33)
+            {
+                if (watch.Elapsed >= timeout)
+                    throw new TimeoutException(
+                        "Otro proceso está usando el almacenamiento de informes. No se modificó.", ex);
+
+                await Task.Delay(TimeSpan.FromMilliseconds(35))
+                    .ConfigureAwait(false);
+            }
+        }
     }
 
     private void EnsureDirectoryExists()
