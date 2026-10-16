@@ -19,6 +19,7 @@ public partial class ClientEquipmentViewModel : ObservableObject
     private double _detectedSystemVolumeFreeGb;
     private int _hardwareDetectionGeneration;
     private long _formRevision;
+    private readonly Action? _rotateLogicalCase;
 
     // --- Campos del formulario: Cliente ---
 
@@ -135,11 +136,13 @@ public partial class ClientEquipmentViewModel : ObservableObject
     public ClientEquipmentViewModel(
         IServiceReportService reportService,
         ISettingsService settingsService,
-        IHardwareService hardwareService)
+        IHardwareService hardwareService,
+        Action? rotateLogicalCase = null)
     {
         _reportService = reportService;
         _settingsService = settingsService;
         _hardwareService = hardwareService;
+        _rotateLogicalCase = rotateLogicalCase;
     }
 
     /// <summary>
@@ -293,6 +296,9 @@ public partial class ClientEquipmentViewModel : ObservableObject
     [RelayCommand]
     private void NewRecord()
     {
+        // The previous logical service case's leases must be revoked even
+        // when a blank form is reopened with exactly the same field values.
+        _rotateLogicalCase?.Invoke();
         // Even a blank/unchanged new record is a new selection revision.
         ++_formRevision;
         // Invalidate outstanding async detection before touching bound fields.
@@ -506,6 +512,9 @@ public partial class ClientEquipmentViewModel : ObservableObject
     private void MarkIdentityChanged()
     {
         InvalidateHardwareForIdentityChange();
+        // A client/equipment identity edit is a new logical selection. Do
+        // not infer that either case belongs to the observed physical PC.
+        _rotateLogicalCase?.Invoke();
         MarkDirty();
     }
 
