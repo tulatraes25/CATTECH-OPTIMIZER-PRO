@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.ComponentModel;
 using System.IO;
 using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -204,6 +206,40 @@ public partial class ReportViewModel : ObservableObject
         _restorePointService = restorePointService;
         _smartDiskService = smartDiskService;
         _smartTestService = smartTestService;
+        AvailableSmartTestSessions.CollectionChanged += OnSmartTestCollectionChanged;
+    }
+
+    /// <summary>
+    /// SMART tests are checkboxes on child view-models rather than a scalar
+    /// property of this report view-model. Each change invalidates the
+    /// previous "current" HTML/PDF without deleting historical files.
+    /// </summary>
+    private void OnSmartTestCollectionChanged(
+        object? sender, NotifyCollectionChangedEventArgs args)
+    {
+        // Reconcile all subscriptions after Add/Remove/Replace/Reset.
+        // In particular, Reset has no OldItems in ObservableCollection.
+        var current = AvailableSmartTestSessions.ToHashSet();
+        foreach (var old in _observedSmartTestSelections.Except(current).ToArray())
+        {
+            old.PropertyChanged -= OnSmartTestSelectionPropertyChanged;
+            _observedSmartTestSelections.Remove(old);
+        }
+
+        foreach (var item in current.Except(_observedSmartTestSelections))
+        {
+            item.PropertyChanged += OnSmartTestSelectionPropertyChanged;
+            _observedSmartTestSelections.Add(item);
+        }
+
+        InvalidateGeneratedArtifacts();
+    }
+
+    private void OnSmartTestSelectionPropertyChanged(
+        object? sender, PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName == nameof(SmartTestSessionSelectionItem.IsSelected))
+            InvalidateGeneratedArtifacts();
     }
 
     /// <summary>
@@ -259,6 +295,7 @@ public partial class ReportViewModel : ObservableObject
     // an in-flight export, even if the operator later restores the same choice.
     // WPF updates these properties on its dispatcher; no global storage writes.
     private long _customerSelectionRevision;
+    private readonly HashSet<SmartTestSessionSelectionItem> _observedSmartTestSelections = new();
 
     partial void OnSelectedServiceReportChanged(ServiceReport? value)
     {
