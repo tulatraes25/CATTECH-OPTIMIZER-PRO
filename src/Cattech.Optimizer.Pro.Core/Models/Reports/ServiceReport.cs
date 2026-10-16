@@ -106,6 +106,9 @@ public class EquipmentInfo
     /// </summary>
     public double DiskFreeGB { get; set; }
 
+    /// <summary>Verified space for system volume, not guessed physical capacity.</summary>
+    public bool DiskFreeSpaceKnown { get; set; }
+
     /// <summary>
     /// Tipo aproximado de disco (HDD, SSD, NVMe).
     /// </summary>
@@ -187,7 +190,7 @@ public class ServiceReport
     /// <summary>
     /// ID único del reporte.
     /// </summary>
-    public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8].ToUpper();
+    public string Id { get; set; } = Guid.NewGuid().ToString("N").ToUpperInvariant();
 
     /// <summary>
     /// Información del cliente.

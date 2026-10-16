@@ -5,6 +5,84 @@ namespace Cattech.Optimizer.Pro.Core.Tests;
 
 public class JsonServiceReportServiceTests : IDisposable
 {
+
+    [Fact]
+    public async Task ConcurrentIndependentWriters_SameTimestamp_PreserveAllReports()
+    {
+        const int count = 48;
+        var records = Enumerable.Range(0, count).Select(i =>
+        {
+            var report = CreateTestReport($"Synthetic-QA-{i:D3}");
+            report.CreatedAt = new DateTime(2026, 10, 14, 9, 30, 0);
+            return report;
+        }).ToArray();
+
+        var names = await Task.WhenAll(records.Select(record =>
+            new JsonServiceReportService(_testDir).SaveReportAsync(record)));
+
+        Assert.Equal(count, names.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        var dir = Path.Combine(_testDir, "data", "service-reports");
+        var files = Directory.GetFiles(dir, "service-report-*.json");
+        Assert.Equal(count, files.Length);
+
+        // The persisted JSON uses camelCase. Deserializing without matching
+        // options silently creates default objects (new IDs, empty client names).
+        var options = new System.Text.Json.JsonSerializerOptions
+        {
+            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase
+        };
+        var stored = await Task.WhenAll(files.Select(async file =>
+            System.Text.Json.JsonSerializer.Deserialize<ServiceReport>(
+                await File.ReadAllTextAsync(file), options)));
+        Assert.All(stored, record => Assert.NotNull(record));
+        var byId = stored.ToDictionary(record => record!.Id);
+        Assert.Equal(count, byId.Count);
+        foreach (var original in records)
+        {
+            Assert.True(byId.TryGetValue(original.Id, out var recovered));
+            Assert.Equal(original.Client.Name, recovered!.Client.Name);
+        }
+        Assert.Empty(Directory.GetFiles(dir, ".cattech-service-*.tmp"));
+    }
+
+    [Fact]
+    public async Task RepeatedSave_SameRecordAndTimestamp_NeverClobbersFirstSnapshot()
+    {
+        var service = new JsonServiceReportService(_testDir);
+        var report = CreateTestReport("Synthetic QA");
+        report.CreatedAt = new DateTime(2026, 10, 14, 9, 30, 0);
+        report.Client.Notes = "original";
+
+        var firstName = await service.SaveReportAsync(report);
+        var dir = Path.Combine(_testDir, "data", "service-reports");
+        var firstPath = Path.Combine(dir, firstName);
+        var original = await File.ReadAllTextAsync(firstPath);
+
+        report.Client.Notes = "updated";
+        var secondName = await service.SaveReportAsync(report);
+
+        Assert.NotEqual(firstName, secondName);
+        Assert.Equal(original, await File.ReadAllTextAsync(firstPath));
+        Assert.Contains("updated", await File.ReadAllTextAsync(Path.Combine(dir, secondName)));
+        Assert.Equal(2, Directory.GetFiles(dir, "service-report-*.json").Length);
+    }
+
+    [Fact]
+    public async Task UntrustedReportId_IsNeverPartOfOutputFileName()
+    {
+        var service = new JsonServiceReportService(_testDir);
+        var report = CreateTestReport("Synthetic QA");
+        report.Id = "../nested/invalid:identifier";
+
+        var fileName = await service.SaveReportAsync(report);
+
+        Assert.StartsWith("service-report-", fileName);
+        Assert.DoesNotContain("..", fileName);
+        Assert.DoesNotContain("/", fileName);
+        Assert.DoesNotContain(":", fileName);
+        Assert.Equal(fileName, Path.GetFileName(fileName));
+    }
+
     private readonly string _testDir;
 
     public JsonServiceReportServiceTests()
@@ -169,6 +247,144 @@ public class JsonServiceReportServiceTests : IDisposable
 
         Assert.NotNull(reports);
         Assert.Empty(reports);
+    }
+
+    [Fact]
+    public void NewReports_HaveFullRandomGuidIdentifiers()
+    {
+        var a = CreateTestReport("Synthetic A");
+        var b = CreateTestReport("Synthetic B");
+
+        Assert.Equal(32, a.Id.Length);
+        Assert.True(Guid.TryParseExact(a.Id, "N", out _));
+        Assert.True(Guid.TryParseExact(b.Id, "N", out _));
+        Assert.NotEqual(a.Id, b.Id);
+    }
+
+    [Fact]
+    public async Task DuplicateLogicalIds_CannotLoadOrDeleteAnArbitraryClient()
+    {
+        var service = new JsonServiceReportService(_testDir);
+        var a = CreateTestReport("Synthetic Customer A");
+        var b = CreateTestReport("Synthetic Customer B");
+        b.Id = a.Id;
+
+        var fileA = await service.SaveReportAsync(a);
+        var fileB = await service.SaveReportAsync(b);
+        var dir = Path.Combine(_testDir, "data", "service-reports");
+        Assert.NotEqual(fileA, fileB);
+        var originalA = await File.ReadAllTextAsync(Path.Combine(dir, fileA));
+        var originalB = await File.ReadAllTextAsync(Path.Combine(dir, fileB));
+
+        Assert.Null(await service.LoadReportAsync(a.Id));
+        Assert.False(await service.DeleteReportAsync(a.Id));
+
+        Assert.Equal(originalA, await File.ReadAllTextAsync(Path.Combine(dir, fileA)));
+        Assert.Equal(originalB, await File.ReadAllTextAsync(Path.Combine(dir, fileB)));
+        Assert.Equal(2, Directory.GetFiles(dir, "service-report-*.json").Length);
+    }
+
+    [Fact]
+    public async Task LegacyShortId_RemainsReadableAndDeletableOnlyWhenUnique()
+    {
+        var service = new JsonServiceReportService(_testDir);
+        var old = CreateTestReport("Legacy Customer");
+        old.Id = "ABCD1234";
+        await service.SaveReportAsync(old);
+
+        var loaded = await service.LoadReportAsync(old.Id);
+        Assert.NotNull(loaded);
+        Assert.Equal("Legacy Customer", loaded!.Client.Name);
+        Assert.True(await service.DeleteReportAsync(old.Id));
+        Assert.Null(await service.LoadReportAsync(old.Id));
+    }
+
+    [Fact]
+    public async Task DuplicateLegacyShortId_RefusesBothReadAndDestructiveDelete()
+    {
+        var service = new JsonServiceReportService(_testDir);
+        var a = CreateTestReport("Legacy A");
+        var b = CreateTestReport("Legacy B");
+        a.Id = "DEADBEEF";
+        b.Id = "DEADBEEF";
+        await service.SaveReportAsync(a);
+        await service.SaveReportAsync(b);
+
+        Assert.Null(await service.LoadReportAsync("DEADBEEF"));
+        Assert.False(await service.DeleteReportAsync("DEADBEEF"));
+        Assert.Equal(2, (await service.ListReportsAsync()).Count);
+    }
+
+    [Fact]
+    public async Task RepeatedSaveOfOneRecord_BlocksFirstMatchOperations()
+    {
+        var service = new JsonServiceReportService(_testDir);
+        var report = CreateTestReport("Repeated Snapshot");
+        var first = await service.SaveReportAsync(report);
+        report.Client.Notes = "new distinct snapshot";
+        var second = await service.SaveReportAsync(report);
+
+        Assert.NotEqual(first, second);
+        Assert.Null(await service.LoadReportAsync(report.Id));
+        Assert.False(await service.DeleteReportAsync(report.Id));
+        var dir = Path.Combine(_testDir, "data", "service-reports");
+        Assert.True(File.Exists(Path.Combine(dir, first)));
+        Assert.True(File.Exists(Path.Combine(dir, second)));
+    }
+
+    [Fact]
+    public async Task CorruptUnrelatedReport_BlocksAmbiguousDeletionUntilReviewed()
+    {
+        var service = new JsonServiceReportService(_testDir);
+        var report = CreateTestReport("Good Synthetic Client");
+        var file = await service.SaveReportAsync(report);
+        var dir = Path.Combine(_testDir, "data", "service-reports");
+        var corruptFile = Path.Combine(dir, "service-report-corrupted.json");
+        await File.WriteAllTextAsync(corruptFile, "{ not valid JSON");
+
+        Assert.Null(await service.LoadReportAsync(report.Id));
+        Assert.False(await service.DeleteReportAsync(report.Id));
+        Assert.True(File.Exists(Path.Combine(dir, file)));
+
+        // Repair a synthetic fixture outside CATTECH's storage API.
+        File.Delete(corruptFile);
+        Assert.Equal(report.Id, (await service.LoadReportAsync(report.Id))?.Id);
+        Assert.True(await service.DeleteReportAsync(report.Id));
+    }
+
+    [Fact]
+    public async Task MissingIdField_CannotBeInventedByDeserialization()
+    {
+        var service = new JsonServiceReportService(_testDir);
+        var report = CreateTestReport("Missing Id Fixture");
+        var file = await service.SaveReportAsync(report);
+        var path = Path.Combine(_testDir, "data", "service-reports", file);
+        var original = await File.ReadAllTextAsync(path);
+        var declared = $"\"id\": \"{report.Id}\",";
+        Assert.Contains(declared, original);
+        await File.WriteAllTextAsync(path, original.Replace(declared, string.Empty));
+
+        Assert.Null(await service.LoadReportAsync(report.Id));
+        Assert.False(await service.DeleteReportAsync(report.Id));
+        Assert.True(File.Exists(path));
+    }
+
+    [Fact]
+    public async Task DuplicatedIdJsonProperty_IsAmbiguousEvenWithinOneFile()
+    {
+        var service = new JsonServiceReportService(_testDir);
+        var report = CreateTestReport("Duplicated Json Key Fixture");
+        var file = await service.SaveReportAsync(report);
+        var path = Path.Combine(_testDir, "data", "service-reports", file);
+        var original = await File.ReadAllTextAsync(path);
+        var declared = $"\"id\": \"{report.Id}\",";
+        Assert.Contains(declared, original);
+        await File.WriteAllTextAsync(path,
+            original.Replace(declared, declared + " " + declared));
+
+        Assert.Null(await service.LoadReportAsync(report.Id));
+        Assert.False(await service.DeleteReportAsync(report.Id));
+        Assert.True(File.Exists(path));
     }
 
     private static ServiceReport CreateTestReport(string clientName)
