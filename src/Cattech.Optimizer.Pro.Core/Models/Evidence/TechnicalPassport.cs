@@ -145,6 +145,23 @@ public static class TechnicalPassportBuilder
                 "The export ID must not reuse a source evidence ID.",
                 nameof(freshExportId));
 
+        // Assessments and postchecks are countable events in the public
+        // passport. Without a distinct identity for repeated evaluations,
+        // listing the same logical evaluation twice inflates outcome totals.
+        // Different disks/rules remain legitimate when linked evidence differs.
+        if (assessments.Select(DiagnosticBasisKey)
+            .Distinct(StringComparer.Ordinal).Count() != assessments.Length)
+            throw new ArgumentException(
+                "A passport cannot count a diagnostic basis twice.",
+                nameof(diagnostics));
+
+        if (postchecks.Select(item => (item.RuleId, item.RuleVersion,
+                item.FactKey, item.BeforeEvidenceId, item.AfterEvidenceId))
+            .Distinct().Count() != postchecks.Length)
+            throw new ArgumentException(
+                "A passport cannot count one postcheck pair twice.",
+                nameof(outcomes));
+
         var atUtc = issuedAt.ToUniversalTime();
         if (records.Any(item => item.ObservedAtUtc > atUtc))
             throw new ArgumentException(
@@ -234,6 +251,26 @@ public static class TechnicalPassportBuilder
         return new TechnicalPassportArtifact(
             JsonSerializer.Serialize(payload, JsonOptions), contextId);
     }
+
+    /// <summary>
+    /// In-memory canonical identity for one derived diagnostic based on
+    /// source evidence and fact gaps. No customer ID, serialized keys or
+    /// private rule contents leave this function or enter the public payload.
+    /// The assessment has no evaluation event ID/time, so repeating the same
+    /// basis as two counts would falsely inflate public conclusions.
+    /// </summary>
+    private static string DiagnosticBasisKey(DiagnosticAssessment assessment) =>
+        JsonSerializer.Serialize(new
+        {
+            assessment.RuleId,
+            assessment.RuleVersion,
+            assessment.SupportingEvidenceIds,
+            assessment.ContradictingEvidenceIds,
+            Missing = assessment.MissingFactReferences
+                .Select(item => new { item.SubjectId, item.FactKey }).ToArray(),
+            Future = assessment.FutureDatedFactReferences
+                .Select(item => new { item.SubjectId, item.FactKey }).ToArray()
+        });
 
     private static T[] CaptureBounded<T>(
         IEnumerable<T> source, int maxCount, string paramName) where T : class
