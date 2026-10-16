@@ -616,6 +616,97 @@ public class ReportViewModelTests
         }
     }
 
+    [Fact]
+    public async Task FormEditedWhileHtmlGeneratorAwaits_CannotClaimCurrentReport()
+    {
+        var (vm, generator) = CreateViewModel();
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        vm.IncludeClient = false;
+        vm.IncludeDiagnostic = false;
+        var entered = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        generator.GenerateEntered = entered;
+        generator.ResumeGenerate = release;
+
+        var operation = vm.GenerateReportCommand.ExecuteAsync(null);
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            vm.FinalObservations = "Changed synthetic observations while writing";
+            release.TrySetResult(true);
+            await operation.WaitAsync(TimeSpan.FromSeconds(10));
+
+            Assert.True(vm.HasError);
+            Assert.False(vm.IsSuccess);
+            Assert.False(vm.HasGeneratedReport);
+            Assert.False(vm.HasGeneratedPdf);
+            Assert.Empty(vm.LastReportPath);
+            Assert.Empty(vm.LastPdfPath);
+            Assert.Contains("cambiaron", vm.ErrorMessage,
+                StringComparison.OrdinalIgnoreCase);
+            // The earlier file may exist; do not claim it was rolled back.
+            Assert.True(File.Exists(generator.LastCreatedFilePath));
+            Assert.Null(generator.LastSavedInfo);
+        }
+        finally
+        {
+            release.TrySetResult(true);
+            if (File.Exists(generator.LastCreatedFilePath))
+                File.Delete(generator.LastCreatedFilePath);
+        }
+    }
+
+    [Fact]
+    public async Task FormEditedDuringHeadlessPdfConversion_NeverShowsStaleSuccess()
+    {
+        var exporter = new FakePdfExportService();
+        var (vm, generator) = CreateViewModel(pdfExporter: exporter);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        vm.IncludeClient = false;
+        vm.IncludeDiagnostic = false;
+        var entered = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        exporter.ExportEntered = entered;
+        exporter.ResumeExport = release;
+
+        var operation = vm.ExportPdfCommand.ExecuteAsync(null);
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            vm.FinalObservations = "Different synthetic PDF notes";
+            release.TrySetResult(true);
+            await operation.WaitAsync(TimeSpan.FromSeconds(10));
+
+            Assert.True(vm.HasError);
+            Assert.False(vm.IsSuccess);
+            Assert.False(vm.HasGeneratedReport);
+            Assert.False(vm.HasGeneratedPdf);
+            Assert.Empty(vm.LastReportPath);
+            Assert.Empty(vm.LastPdfPath);
+            Assert.Contains("cambiaron", vm.ErrorMessage,
+                StringComparison.OrdinalIgnoreCase);
+            // The file is recorded truthfully under the original options,
+            // but it cannot be presented as the current form's output.
+            Assert.NotNull(generator.LastSavedInfo);
+            Assert.Equal(string.Empty, generator.LastSavedInfo.Notes);
+        }
+        finally
+        {
+            release.TrySetResult(true);
+            if (File.Exists(exporter.LastExportedHtmlPath))
+                File.Delete(exporter.LastExportedHtmlPath);
+            if (!string.IsNullOrEmpty(exporter.LastExportedHtmlPath))
+            {
+                var pdf = exporter.GetPdfOutputPath(exporter.LastExportedHtmlPath);
+                if (File.Exists(pdf)) File.Delete(pdf);
+            }
+        }
+    }
+
     // ===== TEST E: Missing selection guard (GenerateReport) =====
 
     [Fact]
@@ -909,20 +1000,31 @@ public class ReportViewModelTests
         public int GenerateCallCount { get; private set; }
         public Exception? GenerateFailure { get; set; }
         public Exception? SaveInfoFailure { get; set; }
+        public TaskCompletionSource<bool>? GenerateEntered { get; set; }
+        public TaskCompletionSource<bool>? ResumeGenerate { get; set; }
+        public string? LastCreatedFilePath { get; private set; }
         public int OpenReportCalls { get; private set; }
 
-        public Task<string> GenerateHtmlReportAsync(ReportGenerationOptions options)
+        public async Task<string> GenerateHtmlReportAsync(ReportGenerationOptions options)
         {
             LastCapturedOptions = options;
             GenerateCallCount++;
             if (GenerateFailure is not null)
                 throw GenerateFailure;
+            var gate = ResumeGenerate;
+            if (GenerateEntered is not null)
+            {
+                GenerateEntered.TrySetResult(true);
+                if (gate is not null)
+                    await gate.Task.WaitAsync(TimeSpan.FromSeconds(15));
+            }
 
             var clientName = options.ServiceReport?.Client?.Name ?? "SinCliente";
             var fileName = $"Informe_Tecnico_CATTECH_{clientName}_{DateTime.Now:yyyyMMdd-HHmmss}_{Guid.NewGuid():N}.html";
             var filePath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), fileName);
             File.WriteAllText(filePath, $"<html><body>Test report for {clientName}</body></html>");
-            return Task.FromResult(filePath);
+            LastCreatedFilePath = filePath;
+            return filePath;
         }
 
         public GeneratedReportInfo? LastSavedInfo { get; private set; }
