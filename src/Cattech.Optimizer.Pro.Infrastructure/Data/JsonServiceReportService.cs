@@ -110,9 +110,13 @@ public class JsonServiceReportService : IServiceReportService
             if (!Directory.Exists(_reportsDirectory))
                 return summaries;
 
+            if (maxResults <= 0)
+                return summaries;
+
+            // Corrupt files must not consume the limit and hide valid entries.
+            // The legacy list is not a certificate of safe load/delete.
             var files = Directory.GetFiles(_reportsDirectory, "service-report-*.json")
-                .OrderByDescending(f => File.GetLastWriteTime(f))
-                .Take(maxResults);
+                .OrderByDescending(f => File.GetLastWriteTime(f));
 
             foreach (var file in files)
             {
@@ -133,6 +137,8 @@ public class JsonServiceReportService : IServiceReportService
                             CreatedAt = report.CreatedAt,
                             FileName = Path.GetFileName(file)
                         });
+                        if (summaries.Count >= maxResults)
+                            break;
                     }
                 }
                 catch
