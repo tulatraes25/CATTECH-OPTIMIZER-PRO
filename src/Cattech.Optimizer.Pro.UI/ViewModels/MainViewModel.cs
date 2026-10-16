@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Cattech.Optimizer.Pro.Core.Interfaces;
+using Cattech.Optimizer.Pro.Core.Models.Evidence;
 using Cattech.Optimizer.Pro.Infrastructure.Cleanup;
 using Cattech.Optimizer.Pro.Infrastructure.Data;
 using Cattech.Optimizer.Pro.Infrastructure.Diagnostics;
@@ -58,6 +59,19 @@ public partial class MainViewModel : ObservableObject
     private readonly IWindowsUpdateReadinessService _windowsUpdateReadinessService;
     private readonly ISystemRepairPlanService _systemRepairPlanService;
     private readonly ISystemRepairPreflightService _systemRepairPreflightService;
+
+    // One application-owned logical case authority. Never derive its GUID
+    // from hostname, disk serial, client name or machine fingerprint.
+    private readonly DiagnosticSessionCoordinator _logicalCaseCoordinator = new();
+    private DiagnosticContextId? _activeLogicalCase;
+
+    internal DiagnosticSessionCoordinator LogicalCaseCoordinator => _logicalCaseCoordinator;
+    internal DiagnosticContextId? ActiveLogicalCase => _activeLogicalCase;
+
+    private void StartNewLogicalCase()
+    {
+        _activeLogicalCase = _logicalCaseCoordinator.StartNewCase();
+    }
 
     // ViewModels de secciones
     private CompanySettingsViewModel? _companySettingsViewModel;
@@ -159,8 +173,15 @@ public partial class MainViewModel : ObservableObject
 
     private object CreateClientEquipmentView()
     {
-        _clientEquipmentViewModel ??= new ClientEquipmentViewModel(
-            _reportService, _settingsService, _hardwareService);
+        if (_clientEquipmentViewModel is null)
+        {
+            // First explicit client/equipment view opens one selected case.
+            // Future identity edits and NewRecord rotate its selection epoch.
+            StartNewLogicalCase();
+            _clientEquipmentViewModel = new ClientEquipmentViewModel(
+                _reportService, _settingsService, _hardwareService,
+                StartNewLogicalCase);
+        }
 
         return new ClientEquipmentView
         {
