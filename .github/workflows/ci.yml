@@ -37,6 +37,10 @@ jobs:
         shell: pwsh
         run: ./scripts/qa/Test-WorkflowDispatchScriptInputs.ps1
 
+      - name: Test release preflight inputs (synthetic, no dispatch)
+        shell: pwsh
+        run: ./scripts/qa/Test-ReleasePreflightInputs.ps1
+
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:

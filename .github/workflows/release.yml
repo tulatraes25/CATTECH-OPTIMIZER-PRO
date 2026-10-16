@@ -74,17 +74,22 @@ jobs:
             echo "::error::source_sha must be a 40-char git SHA: $source_sha"
             exit 1
           fi
-          if [[ "$notes_path" != /* && "$notes_path" != *..* && "$notes_path" != http* ]]; then
-            : # ok
-          else
-            echo "::error::Invalid release_notes_path (must be relative, no .., no URL): $notes_path"
+          # Restrict path to a tracked Markdown-like relative name before writing
+          # it to GITHUB_OUTPUT. Newlines/control chars or leading "-" are not data-safe.
+          if [[ ! "$notes_path" =~ ^[A-Za-z0-9_][A-Za-z0-9_./-]*\.md$ ||
+                "$notes_path" == *..* || "$notes_path" == *"/./"* ]]; then
+            echo "::error::release_notes_path must be a safe relative .md path (no traversal, spaces or control characters)"
             exit 1
           fi
-          source_sha_lower=$(echo "$source_sha" | tr 'A-F' 'a-f')
-          echo "tag_name=v$version" >> "$GITHUB_OUTPUT"
-          echo "source_sha=$source_sha_lower" >> "$GITHUB_OUTPUT"
-          echo "release_notes_path=$notes_path" >> "$GITHUB_OUTPUT"
-          echo "dry_run=$dry_run" >> "$GITHUB_OUTPUT"
+          if [[ "$dry_run" != "true" && "$dry_run" != "false" ]]; then
+            echo "::error::dry_run must be true or false"
+            exit 1
+          fi
+          source_sha_lower=$(printf '%s' "$source_sha" | tr 'A-F' 'a-f')
+          printf 'tag_name=v%s\n' "$version" >> "$GITHUB_OUTPUT"
+          printf 'source_sha=%s\n' "$source_sha_lower" >> "$GITHUB_OUTPUT"
+          printf 'release_notes_path=%s\n' "$notes_path" >> "$GITHUB_OUTPUT"
+          printf 'dry_run=%s\n' "$dry_run" >> "$GITHUB_OUTPUT"
           echo "Validated version=$version source_sha=$source_sha_lower"
 
       - name: Resolve main SHA
@@ -135,7 +140,7 @@ jobs:
             exit 1
           fi
           version="${CATTECH_INPUT_VERSION}"
-          if ! head -n 10 "$notes_path" | grep -q "v$version"; then
+          if ! head -n 10 "$notes_path" | grep -Fq -- "v$version"; then
             echo "::error::Release notes do not mention v$version"
             exit 1
           fi
