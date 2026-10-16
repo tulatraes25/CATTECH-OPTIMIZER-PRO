@@ -9,7 +9,9 @@ than misrepresenting "all tests passing" as "100% of product verified".
   No new third-party dependency or auto-upload to an unrelated service.
 - The existing Windows CI performs its normal Restore, Release Build and
   full xUnit suite, now with `--collect:"XPlat Code Coverage"`.
-- The job requires exactly one Cobertura XML emitted by the test project.
+- The job requires at least one Cobertura XML emitted by the test project;
+when multiple collectors produce separate reports, each is shown independently
+rather than being incorrectly presented as one merged coverage statistic.
   It publishes line and branch coverage percentages to GitHub's job summary
   and uploads Cobertura beside its existing TRX artifact for 14 days.
 - Coverage percentages are **observations only**; no invented acceptance
@@ -19,7 +21,8 @@ than misrepresenting "all tests passing" as "100% of product verified".
 ## ACCEPTANCE
 1. CI on the exact PR head restores, compiles Release, runs full xUnit
    with 0 failures or skips, and finishes with SUCCESS.
-2. The job summary includes parseable Cobertura line and branch rates.
+2. The job summary includes parseable Cobertura line and branch rates for
+   every collector report found under the absolute GitHub workspace.
 3. The `cattech-test-results` artifact includes TRX and Cobertura XML.
 4. No real hardware activity, privileged repair commands, destructive
    cleanup, additional data transfers, new third-party services or
@@ -38,5 +41,9 @@ to give a more reassuring dashboard.
 
 ## STATUS
 DRAFT / code committed; pending exact SHA GitHub Windows CI and artifact
-inspection. Previous baseline CI #173: 1569/0/0 and 314 CA1416 warnings.
+inspection. Initial CI #174 ran all 1569 tests successfully but the coverage
+summary required exactly one relative-path report and failed; this stricter
+assumption was replaced with explicit absolute-path discovery and a per-report
+summary. Do NOT mark the measurement verified until the new CI passes.
+Baseline CI #173: 1569/0/0 and 314 CA1416 warnings.
 No merge to main and no release authorized.
