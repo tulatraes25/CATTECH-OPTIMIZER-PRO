@@ -295,6 +295,8 @@ public partial class ReportViewModel : ObservableObject
     // an in-flight export, even if the operator later restores the same choice.
     // WPF updates these properties on its dispatcher; no global storage writes.
     private long _customerSelectionRevision;
+    private long _artifactRevision;
+    private long _activeExportAttempt;
     private readonly HashSet<SmartTestSessionSelectionItem> _observedSmartTestSelections = new();
 
     partial void OnSelectedServiceReportChanged(ServiceReport? value)
@@ -600,15 +602,16 @@ public partial class ReportViewModel : ObservableObject
     private async Task GenerateReportAsync()
     {
         ClearMessages();
-        // A failed new attempt must not leave previous-customer HTML/PDF
-        // exposed as if it described the current selections.
-        InvalidateGeneratedArtifacts();
+        var attempt = BeginExportAttempt();
+        var revision = _artifactRevision;
         IsRunning = true;
         StatusText = "Generando informe...";
 
         try
         {
             var options = await BuildReportOptionsAsync();
+            if (!EnsureExportStillCurrent(attempt, revision))
+                return;
 
             // Validar selecciones obligatorias antes de generar
             if (options.IncludeClient && options.ServiceReport == null)
@@ -623,12 +626,20 @@ public partial class ReportViewModel : ObservableObject
             }
             if (options.IncludeClient && !await VerifySelectedClientBeforeOutputAsync(options))
                 return;
+            if (!EnsureExportStillCurrent(attempt, revision))
+                return;
 
             var filePath = await _reportService.GenerateHtmlReportAsync(options);
+            // The HTML may now exist on disk; a changed form must not give
+            // the old attempt a "current report" button or a success claim.
+            if (!EnsureExportStillCurrent(attempt, revision))
+                return;
 
             var info = CreateGeneratedReportInfo(options, filePath);
 
             await _reportService.SaveReportInfoAsync(info);
+            if (!EnsureExportStillCurrent(attempt, revision))
+                return;
 
             LastReportPath = filePath;
             HasGeneratedReport = true;
@@ -637,14 +648,17 @@ public partial class ReportViewModel : ObservableObject
         }
         catch (Exception)
         {
-            StatusText = "Error al generar";
-            // A report file may have been created before saving its index
-            // failed. Do not disclose exception paths or claim no output exists.
-            ShowError("No se pudo completar el informe. Revisá el almacenamiento y el historial antes de reintentar.");
+            if (attempt == _activeExportAttempt)
+            {
+                StatusText = "Error al generar";
+                // Output may have been written before the index failed.
+                ShowError("No se pudo completar el informe. Revisá el almacenamiento y el historial antes de reintentar.");
+            }
         }
         finally
         {
-            IsRunning = false;
+            if (attempt == _activeExportAttempt)
+                IsRunning = false;
         }
     }
 
@@ -676,9 +690,8 @@ public partial class ReportViewModel : ObservableObject
     private async Task ExportPdfAsync()
     {
         ClearMessages();
-        // Starting or failing a new export must revoke the previous PDF.
-        // This only clears UI state and never deletes historical documents.
-        InvalidateGeneratedArtifacts();
+        var attempt = BeginExportAttempt();
+        var revision = _artifactRevision;
         // Siempre regenerar HTML con el snapshot actual de datos (fix SMOKE-B1R-006)
         // Esto asegura que el PDF refleje las selecciones actuales, no un HTML stale.
         StatusText = "Generando HTML primero...";
@@ -689,6 +702,8 @@ public partial class ReportViewModel : ObservableObject
         try
         {
             options = await BuildReportOptionsAsync();
+            if (!EnsureExportStillCurrent(attempt, revision))
+                return;
 
             // Validar selecciones obligatorias antes de generar
             if (options.IncludeClient && options.ServiceReport == null)
@@ -703,14 +718,19 @@ public partial class ReportViewModel : ObservableObject
             }
             if (options.IncludeClient && !await VerifySelectedClientBeforeOutputAsync(options))
                 return;
+            if (!EnsureExportStillCurrent(attempt, revision))
+                return;
 
             htmlPath = await _reportService.GenerateHtmlReportAsync(options);
+            if (!EnsureExportStillCurrent(attempt, revision))
+                return;
             LastReportPath = htmlPath;
             HasGeneratedReport = true;
         }
         catch (Exception)
         {
-            ShowError("No se pudo preparar el HTML para el PDF. Revisá el almacenamiento y volvé a intentar.");
+            if (attempt == _activeExportAttempt)
+                ShowError("No se pudo preparar el HTML para el PDF. Revisá el almacenamiento y volvé a intentar.");
             return;
         }
 
@@ -733,13 +753,17 @@ public partial class ReportViewModel : ObservableObject
 
             if (success && File.Exists(pdfPath))
             {
+                // Record accurate artifact metadata first. If the form changed
+                // while Edge ran, never present its old PDF as the current one.
+                var info = CreateGeneratedReportInfo(options, htmlPath, pdfPath);
+                await _reportService.SaveReportInfoAsync(info);
+                if (!EnsureExportStillCurrent(attempt, revision))
+                    return;
+
                 LastPdfPath = pdfPath;
                 HasGeneratedPdf = true;
                 PdfStatusText = "PDF generado";
                 ShowSuccess($"PDF guardado: {Path.GetFileName(pdfPath)}");
-
-                var info = CreateGeneratedReportInfo(options, htmlPath, pdfPath);
-                await _reportService.SaveReportInfoAsync(info);
             }
             else
             {
@@ -749,13 +773,17 @@ public partial class ReportViewModel : ObservableObject
         }
         catch (Exception)
         {
-            PdfStatusText = "Error al exportar";
-            // Include neither renderer command lines nor filesystem paths.
-            ShowError("No se pudo completar el PDF. Revisá el almacenamiento y el historial antes de reintentar.");
+            if (attempt == _activeExportAttempt)
+            {
+                PdfStatusText = "Error al exportar";
+                // Include neither renderer command lines nor filesystem paths.
+                ShowError("No se pudo completar el PDF. Revisá el almacenamiento y el historial antes de reintentar.");
+            }
         }
         finally
         {
-            IsExportingPdf = false;
+            if (attempt == _activeExportAttempt)
+                IsExportingPdf = false;
         }
     }
 
@@ -769,6 +797,31 @@ public partial class ReportViewModel : ObservableObject
         {
             await _pdfExportService.OpenPdfAsync(LastPdfPath);
         }
+    }
+
+    /// <summary>
+    /// Export attempts are monotonically numbered. Mutations of any report
+    /// selection call InvalidateGeneratedArtifacts, advancing the revision.
+    /// A superseded older attempt must never overwrite newer UI feedback.
+    /// </summary>
+    private long BeginExportAttempt()
+    {
+        _activeExportAttempt++;
+        InvalidateGeneratedArtifacts();
+        return _activeExportAttempt;
+    }
+
+    private bool EnsureExportStillCurrent(long attempt, long revision)
+    {
+        if (attempt != _activeExportAttempt)
+            return false; // Newer export owns the UI. No old error message.
+
+        if (revision == _artifactRevision)
+            return true;
+
+        // The file may already have been written. No rollback claims.
+        ShowError("La selección o los datos del informe cambiaron durante la generación. Revisá la carpeta y el historial; generá nuevamente el documento actual.");
+        return false;
     }
 
     /// <summary>
@@ -876,6 +929,7 @@ public partial class ReportViewModel : ObservableObject
     /// </summary>
     private void InvalidateGeneratedArtifacts()
     {
+        _artifactRevision++;
         LastReportPath = string.Empty;
         HasGeneratedReport = false;
         LastPdfPath = string.Empty;
