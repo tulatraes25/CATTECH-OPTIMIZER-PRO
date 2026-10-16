@@ -63,6 +63,46 @@ public sealed class CompanySettingsPrivacyTests
         Assert.Equal(1, fake.Saves);
     }
 
+    [Theory]
+    [InlineData("#FFF")]
+    [InlineData("#123abc")]
+    [InlineData(" #ABCDEF ")]
+    public async Task ValidBrandColor_IsAcceptedAndSaved(string color)
+    {
+        var fake = new ThrowingSettingsService();
+        var vm = new CompanySettingsViewModel(fake)
+        {
+            CompanyName = "Synthetic Shop",
+            TechnicianName = "Synthetic Technician",
+            PrimaryColor = color
+        };
+        await vm.SaveCommand.ExecuteAsync(null);
+        Assert.True(vm.IsSuccess);
+        Assert.Equal(1, fake.Saves);
+    }
+
+    [Theory]
+    [InlineData("red")]
+    [InlineData("#12345")]
+    [InlineData("#12345678")]
+    [InlineData("#12';color:red")]
+    [InlineData("")]
+    public async Task InvalidBrandColor_IsRejectedBeforeWritingSettings(string color)
+    {
+        var fake = new ThrowingSettingsService();
+        var vm = new CompanySettingsViewModel(fake)
+        {
+            CompanyName = "Synthetic Shop",
+            TechnicianName = "Synthetic Technician",
+            PrimaryColor = color
+        };
+        await vm.SaveCommand.ExecuteAsync(null);
+        Assert.Equal(0, fake.Saves);
+        Assert.True(vm.HasError);
+        Assert.True(vm.HasUnsavedChanges);
+        Assert.Contains("hexadecimal", vm.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
     private sealed class ThrowingSettingsService : ISettingsService
     {
         public Exception? LoadFailure { get; set; }
