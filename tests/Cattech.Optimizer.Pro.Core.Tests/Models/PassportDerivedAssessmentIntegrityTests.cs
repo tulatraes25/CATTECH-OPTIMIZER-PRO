@@ -20,6 +20,9 @@ public sealed class PassportDerivedAssessmentIntegrityTests
     private static readonly DateTimeOffset AsOf =
         new(2026, 10, 16, 12, 0, 0, TimeSpan.Zero);
 
+    private static Guid SyntheticId(int sequence) =>
+        Guid.Parse($"11111111-1111-4111-8111-{sequence:D12}");
+
     private static EvidenceRecord Read(
         Guid id, DiagnosticSubjectId disk, string value,
         int minutesBefore = 10) =>
@@ -50,7 +53,7 @@ public sealed class PassportDerivedAssessmentIntegrityTests
     [Fact]
     public void SameDiagnosticObjectRepeated_MustNotInflatePublicCount()
     {
-        var fact = Read(Guid.NewGuid(), DiskA, "healthy");
+        var fact = Read(SyntheticId(1), DiskA, "healthy");
         var first = Assess(fact);
         Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(
             Case, ExportId, AsOf, new[] { fact }, new[] { first, first },
@@ -60,7 +63,7 @@ public sealed class PassportDerivedAssessmentIntegrityTests
     [Fact]
     public void SeparatelyEvaluatedSameDiagnosticBasis_IsStillOneLogicalEvaluation()
     {
-        var fact = Read(Guid.NewGuid(), DiskA, "healthy");
+        var fact = Read(SyntheticId(2), DiskA, "healthy");
         var first = Assess(fact);
         var repeated = Assess(fact);
         Assert.NotSame(first, repeated);
@@ -72,8 +75,8 @@ public sealed class PassportDerivedAssessmentIntegrityTests
     [Fact]
     public void SamePostcheckObjectRepeated_MustNotInflateRecoveryCount()
     {
-        var before = Read(Guid.NewGuid(), DiskA, "unhealthy", 25);
-        var after = Read(Guid.NewGuid(), DiskA, "healthy", 5);
+        var before = Read(SyntheticId(3), DiskA, "unhealthy", 25);
+        var after = Read(SyntheticId(4), DiskA, "healthy", 5);
         var first = Postcheck(before, after);
         Assert.Equal(RepairOutcomeStatus.ObservedImprovement, first.Status);
 
@@ -85,8 +88,8 @@ public sealed class PassportDerivedAssessmentIntegrityTests
     [Fact]
     public void SeparatelyEvaluatedSamePostcheckPair_IsStillOneLogicalPostcheck()
     {
-        var before = Read(Guid.NewGuid(), DiskA, "unhealthy", 25);
-        var after = Read(Guid.NewGuid(), DiskA, "healthy", 5);
+        var before = Read(SyntheticId(5), DiskA, "unhealthy", 25);
+        var after = Read(SyntheticId(6), DiskA, "healthy", 5);
         var first = Postcheck(before, after);
         var repeated = Postcheck(before, after);
         Assert.NotSame(first, repeated);
@@ -99,8 +102,8 @@ public sealed class PassportDerivedAssessmentIntegrityTests
     [Fact]
     public void SameRuleOnDifferentDisks_StillCountsTwoGenuineDiagnostics()
     {
-        var a = Read(Guid.NewGuid(), DiskA, "healthy");
-        var b = Read(Guid.NewGuid(), DiskB, "healthy");
+        var a = Read(SyntheticId(7), DiskA, "healthy");
+        var b = Read(SyntheticId(8), DiskB, "healthy");
         var passport = TechnicalPassportBuilder.Build(
             Case, ExportId, AsOf, new[] { a, b },
             new[] { Assess(a), Assess(b) },
@@ -116,10 +119,10 @@ public sealed class PassportDerivedAssessmentIntegrityTests
     [Fact]
     public void SamePostcheckRuleOnDifferentDisks_AllowsTwoDistinctEvidencePairs()
     {
-        var a0 = Read(Guid.NewGuid(), DiskA, "unhealthy", 25);
-        var a1 = Read(Guid.NewGuid(), DiskA, "healthy", 5);
-        var b0 = Read(Guid.NewGuid(), DiskB, "unhealthy", 25);
-        var b1 = Read(Guid.NewGuid(), DiskB, "healthy", 5);
+        var a0 = Read(SyntheticId(9), DiskA, "unhealthy", 25);
+        var a1 = Read(SyntheticId(10), DiskA, "healthy", 5);
+        var b0 = Read(SyntheticId(11), DiskB, "unhealthy", 25);
+        var b1 = Read(SyntheticId(12), DiskB, "healthy", 5);
         var first = Postcheck(a0, a1);
         var second = Postcheck(b0, b1);
         Assert.Equal(RepairOutcomeStatus.ObservedImprovement, first.Status);
