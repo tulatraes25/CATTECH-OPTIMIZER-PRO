@@ -485,14 +485,14 @@ public partial class HardwareViewModel : ObservableObject
         InventoryStatusText = "Leyendo inventario...";
         try
         {
-            var result = await Task.Run(ReadInventory);
+            var result = await Task.Run(ReadInventoryAsync);
             ApplyInventory(result);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            // Fallo exterior de la operación completa: errores del momento, sin acumular,
-            // y sin falsear la fecha de la última lectura exitosa.
-            ReplaceInventoryErrors([$"Error de inventario: {ex.Message}"]);
+            // Hardware providers can include local paths and identifiers in
+            // exception messages; do not send them to bound UI collections.
+            ReplaceInventoryErrors(["Error de inventario: no se pudo completar la lectura."]);
             InventoryStatusText = "Inventario no disponible";
         }
         finally
@@ -505,44 +505,44 @@ public partial class HardwareViewModel : ObservableObject
     /// Ejecuta las consultas estáticas de forma secuencial en background.
     /// Cada sección está protegida individualmente: un fallo no cancela el resto.
     /// </summary>
-    private HardwareInventoryResult ReadInventory()
+    private async Task<HardwareInventoryResult> ReadInventoryAsync()
     {
         var result = new HardwareInventoryResult();
 
         try
         {
-            result.Cpu = _hardwareService.GetCpuInfoAsync().GetAwaiter().GetResult();
+            result.Cpu = await _hardwareService.GetCpuInfoAsync().ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            result.Errors.Add($"CPU: {ex.Message}");
-        }
-
-        try
-        {
-            result.Gpus = _hardwareService.GetGpuInfoAsync().GetAwaiter().GetResult();
-        }
-        catch (Exception ex)
-        {
-            result.Errors.Add($"GPU: {ex.Message}");
+            result.Errors.Add("CPU: no se pudo consultar el hardware.");
         }
 
         try
         {
-            result.Memory = _hardwareService.GetMemoryInfoAsync().GetAwaiter().GetResult();
+            result.Gpus = await _hardwareService.GetGpuInfoAsync().ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            result.Errors.Add($"RAM: {ex.Message}");
+            result.Errors.Add("GPU: no se pudo consultar el hardware.");
         }
 
         try
         {
-            result.Motherboard = _hardwareService.GetMotherboardInfoAsync().GetAwaiter().GetResult();
+            result.Memory = await _hardwareService.GetMemoryInfoAsync().ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            result.Errors.Add($"Placa madre: {ex.Message}");
+            result.Errors.Add("RAM: no se pudo consultar el hardware.");
+        }
+
+        try
+        {
+            result.Motherboard = await _hardwareService.GetMotherboardInfoAsync().ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            result.Errors.Add("Placa madre: no se pudo consultar el hardware.");
         }
 
         return result;

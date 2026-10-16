@@ -140,13 +140,13 @@ public class PdfExportTests
     // === Tests de validación de PDF real ===
 
     [Fact]
-    public async Task ValidatePdfFile_ValidPdf_StartsWithPercentPDF()
+    public async Task ValidatePdfFile_HeaderAndTerminalEof_ReturnsTrue()
     {
         // Crear un archivo PDF válido mínimo
         var tempFile = Path.GetTempFileName();
         try
         {
-            var pdfContent = "%PDF-1.4 test content";
+            var pdfContent = "%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n";
             await File.WriteAllTextAsync(tempFile, pdfContent, Encoding.ASCII);
 
             var isValid = await PdfExportService.ValidatePdfFileAsync(tempFile);
@@ -223,13 +223,13 @@ public class PdfExportTests
     }
 
     [Fact]
-    public async Task ValidatePdfFile_PdfWithValidHeader_ReturnsTrue()
+    public async Task ValidatePdfFile_SecondEnvelopeWithEof_ReturnsTrue()
     {
         var tempFile = Path.GetTempFileName();
         try
         {
             // PDF válido con cabecera correcta
-            var pdfBytes = Encoding.ASCII.GetBytes("%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n");
+            var pdfBytes = Encoding.ASCII.GetBytes("%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n");
             await File.WriteAllBytesAsync(tempFile, pdfBytes);
 
             var isValid = await PdfExportService.ValidatePdfFileAsync(tempFile);
@@ -239,6 +239,24 @@ public class PdfExportTests
         finally
         {
             File.Delete(tempFile);
+        }
+    }
+
+    [Theory]
+    [InlineData("%PDF-1.7\n1 0 obj\n<<>>\nendobj\n")]
+    [InlineData("%PDF-1.7\n%%EOF\nGARBAGE")]
+    [InlineData("%PDF-1.7\n%%EOF\npartial")]
+    public async Task ValidatePdfFile_TruncatedOrTrailingGarbage_ReturnsFalse(string content)
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllTextAsync(path, content, Encoding.ASCII);
+            Assert.False(await PdfExportService.ValidatePdfFileAsync(path));
+        }
+        finally
+        {
+            File.Delete(path);
         }
     }
 
@@ -268,11 +286,11 @@ public class PdfExportTests
     }
 
     [Fact]
-    public void PdfExportService_IsAvailable_ViaCanExport()
+    public async Task PdfExportService_IsAvailable_ViaCanExport()
     {
         // Test que el servicio existe y CanExport no lanza excepción
         var service = new PdfExportService();
-        var info = service.CanExportAsync().Result;
+        var info = await service.CanExportAsync();
 
         Assert.NotNull(info);
         Assert.IsType<PdfExporterInfo>(info);
@@ -304,12 +322,12 @@ public class PdfExportTests
     }
 
     [Fact]
-    public void PdfExporterInfo_EdgeDetection_MatchesIsAvailable()
+    public async Task PdfExporterInfo_EdgeDetection_MatchesIsAvailable()
     {
         // Verificar que CanExportAsync es consistente con IsEdgeAvailable
         var service = new PdfExportService();
         var syncResult = PdfExportService.IsEdgeAvailable();
-        var asyncResult = service.CanExportAsync().Result.IsAvailable;
+        var asyncResult = (await service.CanExportAsync()).IsAvailable;
 
         Assert.Equal(syncResult, asyncResult);
     }
@@ -363,4 +381,70 @@ public class PdfExportTests
             if (File.Exists(tempPdf)) File.Delete(tempPdf);
         }
     }
+    [Fact]
+    public void EdgeStartInfo_PreservesArgumentBoundaries_AndKeepsSandboxEnabled()
+    {
+        var html = Path.Combine(Path.GetTempPath(), "Synthetic QA & client file.html");
+        var pdf = Path.Combine(Path.GetTempPath(), "Synthetic QA & final.pdf");
+        var start = PdfExportService.BuildEdgeStartInfo(
+            @"C:\Program Files\Microsoft\Edge\Application\msedge.exe", html, pdf);
+
+        Assert.False(start.UseShellExecute);
+        Assert.True(start.CreateNoWindow);
+        Assert.Equal(5, start.ArgumentList.Count);
+        Assert.DoesNotContain("--no-sandbox", start.ArgumentList);
+        Assert.Equal("--print-to-pdf=" + pdf, start.ArgumentList[2]);
+        Assert.Equal(new Uri(Path.GetFullPath(html)).AbsoluteUri,
+            start.ArgumentList[4]);
+    }
+
+    [Fact]
+    public void PublishPdf_ExistingDestination_NeverReplacesPriorContent()
+    {
+        var root = Path.Combine(Path.GetTempPath(),
+            "cattech-pdf-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var staged = Path.Combine(root, "staged.pdf");
+            var existing = Path.Combine(root, "final.pdf");
+            File.WriteAllText(staged, "%PDF-1.7 new");
+            File.WriteAllText(existing, "%PDF-1.7 ORIGINAL");
+
+            Assert.Throws<IOException>(() =>
+                PdfExportService.PublishPdfWithoutOverwrite(staged, existing));
+
+            Assert.Equal("%PDF-1.7 ORIGINAL", File.ReadAllText(existing));
+            Assert.Equal("%PDF-1.7 new", File.ReadAllText(staged));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void PublishPdf_NewDestination_MovesStagedFileWithoutChangingBytes()
+    {
+        var root = Path.Combine(Path.GetTempPath(),
+            "cattech-pdf-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var staged = Path.Combine(root, "staged.pdf");
+            var output = Path.Combine(root, "final.pdf");
+            var contents = new byte[] { 37, 80, 68, 70, 45, 49, 46, 55 };
+            File.WriteAllBytes(staged, contents);
+
+            PdfExportService.PublishPdfWithoutOverwrite(staged, output);
+
+            Assert.False(File.Exists(staged));
+            Assert.Equal(contents, File.ReadAllBytes(output));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
 }
