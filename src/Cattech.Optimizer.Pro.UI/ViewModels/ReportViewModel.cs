@@ -54,6 +54,12 @@ public partial class ReportViewModel : ObservableObject
     [ObservableProperty]
     private string _errorMessage = string.Empty;
 
+    [ObservableProperty]
+    private bool _hasReportInventoryWarning;
+
+    [ObservableProperty]
+    private string _reportInventoryMessage = string.Empty;
+
     // --- Datos cargados ---
 
     [ObservableProperty]
@@ -200,6 +206,106 @@ public partial class ReportViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Advisory read-only check. Never use the snapshot as authorization to
+    /// load, delete or export a specific file without revalidation.
+    /// </summary>
+    private async Task<bool> CheckReportInventoryAsync()
+    {
+        if (_serviceReportService is not IServiceReportInventoryReader reader)
+        {
+            HasReportInventoryWarning = true;
+            ReportInventoryMessage = "La integridad de los informes no se puede comprobar. " +
+                "No se cargarán clientes desde este almacenamiento.";
+            return false;
+        }
+
+        try
+        {
+            var health = await reader.InspectReportInventoryAsync();
+            if (health.ScanFailed)
+            {
+                HasReportInventoryWarning = true;
+                ReportInventoryMessage = "No se pudo completar la comprobación de informes. " +
+                    "No se cargarán datos de clientes hasta revisar el almacenamiento.";
+                return false;
+            }
+
+            if (health.RequiresReview)
+            {
+                HasReportInventoryWarning = true;
+                ReportInventoryMessage =
+                    $"Almacenamiento a revisar: {health.InvalidEntries} archivos inválidos y " +
+                    $"{health.AmbiguousEntries} registros con identificador duplicado. " +
+                    "Se suspendió la selección de clientes; ningún archivo fue eliminado.";
+                return false;
+            }
+
+            HasReportInventoryWarning = false;
+            ReportInventoryMessage = $"Inventario revisado: {health.UniqueEntries} informes sin conflictos detectados.";
+            return true;
+        }
+        catch (Exception)
+        {
+            // Never surface arbitrary file paths or exception text in the UI.
+            HasReportInventoryWarning = true;
+            ReportInventoryMessage = "No fue posible comprobar los informes de servicio. " +
+                "Se suspendió la selección de clientes sin modificar archivos.";
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Advisory pre-output revalidation. Does not guarantee file-handle identity
+    /// or physical equipment identity; stored data may change after this check.
+    /// </summary>
+    private async Task<bool> VerifySelectedClientBeforeOutputAsync()
+    {
+        var selected = SelectedServiceReport;
+        if (selected is null)
+            return false;
+
+        if (!await CheckReportInventoryAsync())
+        {
+            RevokeCustomerSelection("La integridad de los informes cambió. " +
+                "Se canceló la generación con datos de clientes.");
+            return false;
+        }
+
+        try
+        {
+            var live = await _serviceReportService.LoadReportAsync(selected.Id);
+            if (live is not null
+                && string.Equals(live.Id, selected.Id, StringComparison.Ordinal)
+                && string.Equals(live.Client?.Name, selected.Client?.Name, StringComparison.Ordinal)
+                && string.Equals(live.Equipment?.Brand, selected.Equipment?.Brand, StringComparison.Ordinal)
+                && string.Equals(live.Equipment?.Model, selected.Equipment?.Model, StringComparison.Ordinal)
+                && string.Equals(live.Equipment?.SerialNumber, selected.Equipment?.SerialNumber,
+                    StringComparison.Ordinal))
+                return true;
+        }
+        catch (Exception)
+        {
+            // Revalidation failed. No raw file names or exception details shown.
+        }
+
+        RevokeCustomerSelection("El informe seleccionado cambió o dejó de estar disponible. " +
+            "Se suspendió la generación con datos de clientes.");
+        return false;
+    }
+
+    private void RevokeCustomerSelection(string message)
+    {
+        HasReportInventoryWarning = true;
+        ReportInventoryMessage = message;
+        AvailableServiceReports.Clear();
+        SelectedServiceReport = null;
+        HasClientData = false;
+        IncludeClient = false;
+        InvalidateGeneratedArtifacts();
+        ShowError("No se generó un informe con datos de clientes. Revisá el almacenamiento y volvé a cargar.");
+    }
+
+    /// <summary>
     /// Carga todos los datos disponibles.
     /// </summary>
     [RelayCommand]
@@ -208,6 +314,15 @@ public partial class ReportViewModel : ObservableObject
         ClearMessages();
         IsRunning = true;
         StatusText = "Cargando datos...";
+        // Fail closed immediately: stale customer selections must not survive
+        // an unsuccessful refresh or a newly corrupted report store.
+        HasReportInventoryWarning = true;
+        ReportInventoryMessage = "Comprobando integridad de informes...";
+        AvailableServiceReports.Clear();
+        SelectedServiceReport = null;
+        HasClientData = false;
+        IncludeClient = false;
+        InvalidateGeneratedArtifacts();
 
         try
         {
@@ -216,16 +331,38 @@ public partial class ReportViewModel : ObservableObject
             HasCompanyData = !string.IsNullOrWhiteSpace(settings.Company.Name);
             IncludeCompany = HasCompanyData;
 
-            // Clientes
-            var serviceReports = await _serviceReportService.ListReportsAsync(10);
-            AvailableServiceReports.Clear();
-            foreach (var sr in serviceReports)
+            // Clientes: advertise problems before presenting any customer choice.
+            if (await CheckReportInventoryAsync())
             {
-                var fullReport = await _serviceReportService.LoadReportAsync(sr.Id);
-                if (fullReport != null) AvailableServiceReports.Add(fullReport);
+                try
+                {
+                    var serviceReports = await _serviceReportService.ListReportsAsync(10);
+                    foreach (var sr in serviceReports)
+                    {
+                        var fullReport = await _serviceReportService.LoadReportAsync(sr.Id);
+                        if (fullReport is null)
+                        {
+                            // The store may have changed since the read-only scan.
+                            HasReportInventoryWarning = true;
+                            ReportInventoryMessage = "Un informe cambió o no pudo verificarse. " +
+                                "Se suspendió la selección de clientes; no se modificaron archivos.";
+                            AvailableServiceReports.Clear();
+                            break;
+                        }
+                        AvailableServiceReports.Add(fullReport);
+                    }
+                }
+                catch (Exception)
+                {
+                    HasReportInventoryWarning = true;
+                    ReportInventoryMessage = "No se pudo completar la carga de informes. " +
+                        "Se suspendió la selección de clientes sin modificar archivos.";
+                    AvailableServiceReports.Clear();
+                }
             }
-            HasClientData = AvailableServiceReports.Count > 0;
-            if (HasClientData) SelectedServiceReport = AvailableServiceReports.First();
+
+            HasClientData = !HasReportInventoryWarning && AvailableServiceReports.Count > 0;
+            SelectedServiceReport = HasClientData ? AvailableServiceReports.First() : null;
             IncludeClient = HasClientData;
 
             // Diagnósticos
@@ -310,7 +447,8 @@ public partial class ReportViewModel : ObservableObject
             HasSmartTestData = AvailableSmartTestSessions.Count > 0;
             IncludeSmartTests = false; // Selección manual intencional
 
-            StatusText = "Datos cargados";
+            StatusText = HasReportInventoryWarning
+                ? "Informes requieren revisión" : "Datos cargados";
 
             // Invalidar artifacts generados previamente para forzar regeneración
             // con los datos actualmente cargados (fix SMOKE-B1R-006)
@@ -352,14 +490,19 @@ public partial class ReportViewModel : ObservableObject
                 ShowError("Seleccioná un diagnóstico antes de generar el informe.");
                 return;
             }
+            if (options.IncludeClient && !await VerifySelectedClientBeforeOutputAsync())
+                return;
 
             var filePath = await _reportService.GenerateHtmlReportAsync(options);
 
             // Guardar info del informe
             var info = new GeneratedReportInfo
             {
-                ClientName = SelectedServiceReport?.Client?.Name ?? "Sin cliente",
-                EquipmentName = $"{SelectedServiceReport?.Equipment?.Brand} {SelectedServiceReport?.Equipment?.Model}",
+                ClientName = options.IncludeClient
+                    ? options.ServiceReport?.Client?.Name ?? "Sin cliente" : "Sin cliente",
+                EquipmentName = options.IncludeClient
+                    ? $"{options.ServiceReport?.Equipment?.Brand} {options.ServiceReport?.Equipment?.Model}"
+                    : string.Empty,
                 HtmlPath = filePath,
                 Notes = FinalObservations
             };
@@ -423,9 +566,10 @@ public partial class ReportViewModel : ObservableObject
         // Siempre regenerar HTML con el snapshot actual de datos (fix SMOKE-B1R-006)
         // Esto asegura que el PDF refleje las selecciones actuales, no un HTML stale.
         StatusText = "Generando HTML primero...";
+        ReportGenerationOptions options;
         try
         {
-            var options = await BuildReportOptionsAsync();
+            options = await BuildReportOptionsAsync();
 
             // Validar selecciones obligatorias antes de generar
             if (options.IncludeClient && options.ServiceReport == null)
@@ -438,6 +582,8 @@ public partial class ReportViewModel : ObservableObject
                 ShowError("Seleccioná un diagnóstico antes de generar el informe.");
                 return;
             }
+            if (options.IncludeClient && !await VerifySelectedClientBeforeOutputAsync())
+                return;
 
             LastReportPath = await _reportService.GenerateHtmlReportAsync(options);
             HasGeneratedReport = true;
@@ -475,8 +621,11 @@ public partial class ReportViewModel : ObservableObject
                 // Actualizar info del informe
                 var info = new GeneratedReportInfo
                 {
-                    ClientName = SelectedServiceReport?.Client?.Name ?? "Sin cliente",
-                    EquipmentName = $"{SelectedServiceReport?.Equipment?.Brand} {SelectedServiceReport?.Equipment?.Model}",
+                    ClientName = options.IncludeClient
+                    ? options.ServiceReport?.Client?.Name ?? "Sin cliente" : "Sin cliente",
+                    EquipmentName = options.IncludeClient
+                    ? $"{options.ServiceReport?.Equipment?.Brand} {options.ServiceReport?.Equipment?.Model}"
+                    : string.Empty,
                     HtmlPath = LastReportPath,
                     PdfPath = pdfPath,
                     Notes = FinalObservations
@@ -527,7 +676,8 @@ public partial class ReportViewModel : ObservableObject
         return new ReportGenerationOptions
         {
             Settings = await _settingsService.LoadSettingsAsync(),
-            ServiceReport = SelectedServiceReport,
+            // Unchecked customer sections must not carry data into exports.
+            ServiceReport = IncludeClient ? SelectedServiceReport : null,
             DiagnosticReport = SelectedDiagnosticReport,
             StartupAnalysis = SelectedStartupAnalysis,
             CleanupResult = SelectedCleanupResult,
