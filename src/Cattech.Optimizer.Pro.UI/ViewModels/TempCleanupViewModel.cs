@@ -134,6 +134,11 @@ public partial class TempCleanupViewModel : ObservableObject
         IsScanning = true;
         HasScanned = false;
         HasResult = false;
+        // A refresh is not permitted to keep stale approved target rows.
+        // This also clears selections if the new scan throws or is canceled.
+        _targets = [];
+        Targets.Clear();
+        UpdateSelectedCount();
         StatusText = "Escaneando...";
 
         var progress = new Progress<int>(percent => ProgressPercent = percent);
@@ -148,12 +153,21 @@ public partial class TempCleanupViewModel : ObservableObject
 
             HasScanned = true;
             UpdateSelectedCount();
-            StatusText = "Listo para limpiar";
+            // RECYCLE_BIN is intentionally unavailable; don't treat its
+            // mandatory opt-out as a failure of otherwise healthy scans.
+            var candidates = _targets.Where(t => t.Id != "RECYCLE_BIN").ToArray();
+            StatusText = candidates.All(t => !t.IsAccessible)
+                ? "Escaneo sin ubicaciones disponibles"
+                : candidates.Any(t => !t.IsAccessible)
+                    ? "Escaneo completado con ubicaciones no disponibles"
+                    : "Listo para limpiar";
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             StatusText = "Error al escanear";
-            ShowError($"Error durante el escaneo: {ex.Message}");
+            // Paths, user names and provider exception text are not safe
+            // to display in a technician/client-facing status message.
+            ShowError("No se pudo completar el escaneo. Revisá los permisos y las ubicaciones.");
         }
         finally
         {
