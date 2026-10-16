@@ -7,6 +7,65 @@ namespace Cattech.Optimizer.Pro.Core.Tests.Models;
 public sealed class TempCleanupViewModelSelectionTests
 {
     [Fact]
+    public async Task FailedRescan_NeverShowsPrivatePathOrStaleApprovedTargets()
+    {
+        var target = Target("USER_TEMP");
+        target.IsSelected = true;
+        var fake = new SyntheticCleanupService(target);
+        var vm = new TempCleanupViewModel(fake);
+        await vm.ScanCommand.ExecuteAsync(null);
+        Assert.Single(vm.Targets);
+        vm.HasCleanupConsent = true;
+        Assert.True(vm.CanStartCleanup);
+
+        fake.ThrowOnScan = true;
+        await vm.ScanCommand.ExecuteAsync(null);
+
+        Assert.True(vm.HasError);
+        Assert.Equal("Error al escanear", vm.StatusText);
+        Assert.Contains("No se pudo completar", vm.ErrorMessage);
+        Assert.DoesNotContain("PRIVATE", vm.ErrorMessage);
+        Assert.DoesNotContain("Users", vm.ErrorMessage);
+        Assert.Empty(vm.Targets);
+        Assert.Equal(0, vm.SelectedTargetsCount);
+        Assert.False(vm.HasScanned);
+        Assert.False(vm.HasCleanupConsent);
+        Assert.False(vm.CanStartCleanup);
+        Assert.Equal(0, fake.CleanupCalls);
+    }
+
+    [Fact]
+    public async Task AllUnavailableTargets_DoNotClaimReadyToClean()
+    {
+        var target = Target("USER_TEMP");
+        target.IsAccessible = false;
+        target.IsSelected = false;
+        var vm = new TempCleanupViewModel(new SyntheticCleanupService(target));
+        await vm.ScanCommand.ExecuteAsync(null);
+
+        Assert.Equal("Escaneo sin ubicaciones disponibles", vm.StatusText);
+        Assert.True(vm.HasScanned);
+        Assert.False(vm.CanReviewCleanupConsent);
+        Assert.False(vm.CanStartCleanup);
+    }
+
+    [Fact]
+    public async Task DisabledRecycleBin_DoesNotDowngradeOtherwiseHealthyScan()
+    {
+        var temp = Target("USER_TEMP");
+        var recycle = Target("RECYCLE_BIN");
+        recycle.IsAccessible = false;
+        recycle.IsSelected = false;
+        var vm = new TempCleanupViewModel(
+            new SyntheticCleanupService(temp, recycle));
+        await vm.ScanCommand.ExecuteAsync(null);
+
+        Assert.Equal("Listo para limpiar", vm.StatusText);
+        Assert.False(vm.HasError);
+        Assert.False(vm.CanStartCleanup);
+    }
+
+    [Fact]
     public async Task BoundCheckBoxChange_IsNotInvertedByCommand()
     {
         var model = Target("USER_TEMP");
@@ -340,11 +399,14 @@ public sealed class TempCleanupViewModelSelectionTests
         public int CleanupCalls { get; private set; }
         public int SaveCalls { get; private set; }
         public bool ThrowOnSave { get; set; }
+        public bool ThrowOnScan { get; set; }
         public TaskCompletionSource<TempCleanupResult>? PendingCleanup { get; set; }
 
         public Task<List<TempCleanupTarget>> ScanAsync(IProgress<int>? progress = null)
         {
             ScanCalls++;
+            if (ThrowOnScan)
+                throw new IOException(@"Synthetic PRIVATE path C:\Users\PRIVATE\Temp");
             return Task.FromResult(_targets);
         }
 
