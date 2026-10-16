@@ -252,6 +252,115 @@ public class ReportViewModelTests
         Assert.DoesNotContain("PRIVATE_CUSTOMER_PATH_SENTINEL", vm.ReportInventoryMessage);
     }
 
+    private static (TaskCompletionSource<bool> entered, TaskCompletionSource<bool> release)
+        PauseNextCustomerReload(FakeServiceReportService store)
+    {
+        var entered = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        store.LoadEntered = entered;
+        store.ResumeLoad = release;
+        return (entered, release);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CustomerOptOutDuringRevalidation_NeverGeneratesPrivateHtmlOrPdf(bool pdf)
+    {
+        var store = new FakeServiceReportService();
+        var (vm, generator) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        Assert.True(vm.IncludeClient);
+        var (entered, release) = PauseNextCustomerReload(store);
+
+        var export = pdf
+            ? vm.ExportPdfCommand.ExecuteAsync(null)
+            : vm.GenerateReportCommand.ExecuteAsync(null);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        vm.IncludeClient = false;
+        release.TrySetResult(true);
+        await export.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(0, generator.GenerateCallCount);
+        Assert.True(vm.HasError);
+        Assert.False(vm.HasGeneratedReport);
+        Assert.False(vm.HasGeneratedPdf);
+        Assert.Contains("selección", vm.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CustomerSelectionAbaDuringRevalidation_IsNotAccidentallyAccepted()
+    {
+        var store = new FakeServiceReportService();
+        var (vm, generator) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        var original = Assert.IsType<ServiceReport>(vm.SelectedServiceReport);
+        var (entered, release) = PauseNextCustomerReload(store);
+
+        var export = vm.GenerateReportCommand.ExecuteAsync(null);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        vm.SelectedServiceReport = new ServiceReport
+        {
+            Client = new ClientInfo { Name = "Other synthetic customer" }
+        };
+        vm.SelectedServiceReport = original;
+        release.TrySetResult(true);
+        await export.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(0, generator.GenerateCallCount);
+        Assert.True(vm.HasError);
+        Assert.False(vm.HasGeneratedReport);
+    }
+
+    [Fact]
+    public async Task SelectedCustomerMutationDuringRevalidation_IsRejected()
+    {
+        var store = new FakeServiceReportService();
+        var (vm, generator) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        var original = Assert.IsType<ServiceReport>(vm.SelectedServiceReport);
+        var (entered, release) = PauseNextCustomerReload(store);
+
+        var export = vm.GenerateReportCommand.ExecuteAsync(null);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        original.Client.Phone = "synthetic-mutated-while-waiting";
+        release.TrySetResult(true);
+        await export.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(0, generator.GenerateCallCount);
+        Assert.True(vm.HasError);
+        Assert.False(vm.HasGeneratedReport);
+    }
+
+    [Fact]
+    public async Task UnchangedCustomerRevalidation_ExportsDetachedSnapshot()
+    {
+        var store = new FakeServiceReportService();
+        var (vm, generator) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        var original = Assert.IsType<ServiceReport>(vm.SelectedServiceReport);
+        var (entered, release) = PauseNextCustomerReload(store);
+
+        var export = vm.GenerateReportCommand.ExecuteAsync(null);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        release.TrySetResult(true);
+        await export.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.False(vm.HasError);
+        Assert.True(vm.HasGeneratedReport);
+        var copied = Assert.IsType<ServiceReport>(generator.LastCapturedOptions!.ServiceReport);
+        Assert.NotSame(original, copied);
+        Assert.Equal(original.Id, copied.Id);
+        original.Client.Phone = "synthetic-later-form-edit";
+        Assert.NotEqual(original.Client.Phone, copied.Client.Phone);
+
+        if (!string.IsNullOrWhiteSpace(vm.LastReportPath)
+            && File.Exists(vm.LastReportPath))
+            File.Delete(vm.LastReportPath); // Unique synthetic test file only.
+    }
+
     // ===== TEST E: Missing selection guard (GenerateReport) =====
 
     [Fact]
@@ -639,12 +748,21 @@ public class ReportViewModelTests
             });
         }
 
-        public Task<ServiceReport?> LoadReportAsync(string reportId)
-        {
-            if (ReturnNullOnLoad)
-                return Task.FromResult<ServiceReport?>(null);
+        public TaskCompletionSource<bool>? LoadEntered { get; set; }
+        public TaskCompletionSource<bool>? ResumeLoad { get; set; }
 
-            return Task.FromResult<ServiceReport?>(new ServiceReport
+        public async Task<ServiceReport?> LoadReportAsync(string reportId)
+        {
+            if (LoadEntered is not null)
+            {
+                LoadEntered.TrySetResult(true);
+                if (ResumeLoad is not null)
+                    await ResumeLoad.Task.WaitAsync(TimeSpan.FromSeconds(15));
+            }
+            if (ReturnNullOnLoad)
+                return null;
+
+            return new ServiceReport
             {
                 Id = reportId,
                 CreatedAt = StableDate,
@@ -662,7 +780,7 @@ public class ReportViewModelTests
                     ActionsPerformed = ServiceActionOverride is null
                         ? new List<string>() : new List<string> { ServiceActionOverride }
                 }
-            });
+            };
         }
 
         public Task<string> SaveReportAsync(ServiceReport report) => Task.FromResult(report.Id);
