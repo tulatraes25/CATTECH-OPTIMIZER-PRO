@@ -765,7 +765,7 @@ public partial class ReportViewModel : ObservableObject
                 PdfStatusText = "PDF generado";
                 ShowSuccess($"PDF guardado: {Path.GetFileName(pdfPath)}");
             }
-            else
+            else if (attempt == _activeExportAttempt)
             {
                 PdfStatusText = "Error al exportar";
                 ShowError("No se pudo generar el PDF. Verifique que Microsoft Edge esté instalado.");
@@ -808,6 +808,9 @@ public partial class ReportViewModel : ObservableObject
     {
         _activeExportAttempt++;
         InvalidateGeneratedArtifacts();
+        // Superseded operations no longer own the current WPF busy indicators.
+        IsRunning = false;
+        IsExportingPdf = false;
         return _activeExportAttempt;
     }
 
