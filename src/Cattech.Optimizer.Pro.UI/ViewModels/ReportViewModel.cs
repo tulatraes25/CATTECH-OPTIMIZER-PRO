@@ -54,6 +54,12 @@ public partial class ReportViewModel : ObservableObject
     [ObservableProperty]
     private string _errorMessage = string.Empty;
 
+    [ObservableProperty]
+    private bool _hasReportInventoryWarning;
+
+    [ObservableProperty]
+    private string _reportInventoryMessage = string.Empty;
+
     // --- Datos cargados ---
 
     [ObservableProperty]
@@ -200,6 +206,55 @@ public partial class ReportViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Advisory read-only check. Never use the snapshot as authorization to
+    /// load, delete or export a specific file without revalidation.
+    /// </summary>
+    private async Task<bool> CheckReportInventoryAsync()
+    {
+        if (_serviceReportService is not IServiceReportInventoryReader reader)
+        {
+            HasReportInventoryWarning = true;
+            ReportInventoryMessage = "La integridad de los informes no se puede comprobar. " +
+                "No se cargarán clientes desde este almacenamiento.";
+            return false;
+        }
+
+        try
+        {
+            var health = await reader.InspectReportInventoryAsync();
+            if (health.ScanFailed)
+            {
+                HasReportInventoryWarning = true;
+                ReportInventoryMessage = "No se pudo completar la comprobación de informes. " +
+                    "No se cargarán datos de clientes hasta revisar el almacenamiento.";
+                return false;
+            }
+
+            if (health.RequiresReview)
+            {
+                HasReportInventoryWarning = true;
+                ReportInventoryMessage =
+                    $"Almacenamiento a revisar: {health.InvalidEntries} archivos inválidos y " +
+                    $"{health.AmbiguousEntries} registros con identificador duplicado. " +
+                    "Se suspendió la selección de clientes; ningún archivo fue eliminado.";
+                return false;
+            }
+
+            HasReportInventoryWarning = false;
+            ReportInventoryMessage = $"Inventario revisado: {health.UniqueEntries} informes sin conflictos detectados.";
+            return true;
+        }
+        catch (Exception)
+        {
+            // Never surface arbitrary file paths or exception text in the UI.
+            HasReportInventoryWarning = true;
+            ReportInventoryMessage = "No fue posible comprobar los informes de servicio. " +
+                "Se suspendió la selección de clientes sin modificar archivos.";
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Carga todos los datos disponibles.
     /// </summary>
     [RelayCommand]
@@ -208,6 +263,15 @@ public partial class ReportViewModel : ObservableObject
         ClearMessages();
         IsRunning = true;
         StatusText = "Cargando datos...";
+        // Fail closed immediately: stale customer selections must not survive
+        // an unsuccessful refresh or a newly corrupted report store.
+        HasReportInventoryWarning = true;
+        ReportInventoryMessage = "Comprobando integridad de informes...";
+        AvailableServiceReports.Clear();
+        SelectedServiceReport = null;
+        HasClientData = false;
+        IncludeClient = false;
+        InvalidateGeneratedArtifacts();
 
         try
         {
@@ -216,16 +280,38 @@ public partial class ReportViewModel : ObservableObject
             HasCompanyData = !string.IsNullOrWhiteSpace(settings.Company.Name);
             IncludeCompany = HasCompanyData;
 
-            // Clientes
-            var serviceReports = await _serviceReportService.ListReportsAsync(10);
-            AvailableServiceReports.Clear();
-            foreach (var sr in serviceReports)
+            // Clientes: advertise problems before presenting any customer choice.
+            if (await CheckReportInventoryAsync())
             {
-                var fullReport = await _serviceReportService.LoadReportAsync(sr.Id);
-                if (fullReport != null) AvailableServiceReports.Add(fullReport);
+                try
+                {
+                    var serviceReports = await _serviceReportService.ListReportsAsync(10);
+                    foreach (var sr in serviceReports)
+                    {
+                        var fullReport = await _serviceReportService.LoadReportAsync(sr.Id);
+                        if (fullReport is null)
+                        {
+                            // The store may have changed since the read-only scan.
+                            HasReportInventoryWarning = true;
+                            ReportInventoryMessage = "Un informe cambió o no pudo verificarse. " +
+                                "Se suspendió la selección de clientes; no se modificaron archivos.";
+                            AvailableServiceReports.Clear();
+                            break;
+                        }
+                        AvailableServiceReports.Add(fullReport);
+                    }
+                }
+                catch (Exception)
+                {
+                    HasReportInventoryWarning = true;
+                    ReportInventoryMessage = "No se pudo completar la carga de informes. " +
+                        "Se suspendió la selección de clientes sin modificar archivos.";
+                    AvailableServiceReports.Clear();
+                }
             }
-            HasClientData = AvailableServiceReports.Count > 0;
-            if (HasClientData) SelectedServiceReport = AvailableServiceReports.First();
+
+            HasClientData = !HasReportInventoryWarning && AvailableServiceReports.Count > 0;
+            SelectedServiceReport = HasClientData ? AvailableServiceReports.First() : null;
             IncludeClient = HasClientData;
 
             // Diagnósticos
@@ -310,7 +396,8 @@ public partial class ReportViewModel : ObservableObject
             HasSmartTestData = AvailableSmartTestSessions.Count > 0;
             IncludeSmartTests = false; // Selección manual intencional
 
-            StatusText = "Datos cargados";
+            StatusText = HasReportInventoryWarning
+                ? "Informes requieren revisión" : "Datos cargados";
 
             // Invalidar artifacts generados previamente para forzar regeneración
             // con los datos actualmente cargados (fix SMOKE-B1R-006)
