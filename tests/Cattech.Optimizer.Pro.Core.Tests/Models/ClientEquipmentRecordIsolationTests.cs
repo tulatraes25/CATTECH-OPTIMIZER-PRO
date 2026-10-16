@@ -13,11 +13,15 @@ public sealed class ClientEquipmentRecordIsolationTests
     private sealed class CapturingReportService : IServiceReportService
     {
         public List<ServiceReport> Saved { get; } = new();
+        public bool ThrowOnSave { get; set; }
+        public string SavedFileName { get; set; } = "fictitious-qa.json";
 
         public Task<string> SaveReportAsync(ServiceReport report)
         {
+            if (ThrowOnSave)
+                throw new IOException(@"Synthetic PRIVATE C:\Users\PRIVATE\service.json");
             Saved.Add(report);
-            return Task.FromResult("fictitious-qa.json");
+            return Task.FromResult(SavedFileName);
         }
 
         public Task<ServiceReport?> LoadReportAsync(string reportId)
@@ -100,6 +104,44 @@ public sealed class ClientEquipmentRecordIsolationTests
         vm.ClientName = name;
         vm.ServiceReason = "QA regression";
         vm.EquipmentType = "Notebook";
+    }
+
+    [Fact]
+    public async Task SaveFailure_HidesPrivateStoragePathsAndDoesNotClaimAbsentWrite()
+    {
+        var storage = new CapturingReportService { ThrowOnSave = true };
+        var vm = NewViewModel(storage, new FakeHardwareService());
+        PopulateRequiredFields(vm, "Synthetic Client");
+
+        await vm.SaveCommand.ExecuteAsync(null);
+
+        Assert.True(vm.HasError);
+        Assert.False(vm.IsSuccess);
+        Assert.Contains("No se pudo confirmar", vm.ErrorMessage);
+        Assert.Contains("Revisá Informes", vm.ErrorMessage);
+        Assert.DoesNotContain("PRIVATE", vm.ErrorMessage);
+        Assert.DoesNotContain("Users", vm.ErrorMessage);
+        Assert.Empty(storage.Saved);
+    }
+
+    [Fact]
+    public async Task SaveSuccess_DoesNotEchoUntrustedStorageFileName()
+    {
+        var storage = new CapturingReportService
+        {
+            SavedFileName = @"C:\Users\PRIVATE\hidden-client-file.json"
+        };
+        var vm = NewViewModel(storage, new FakeHardwareService());
+        PopulateRequiredFields(vm, "Synthetic Client");
+
+        await vm.SaveCommand.ExecuteAsync(null);
+
+        Assert.False(vm.HasError);
+        Assert.True(vm.IsSuccess);
+        Assert.Contains("Registro guardado correctamente", vm.StatusMessage);
+        Assert.DoesNotContain("PRIVATE", vm.StatusMessage);
+        Assert.DoesNotContain("hidden-client-file", vm.StatusMessage);
+        Assert.Single(storage.Saved);
     }
 
     [Fact]
