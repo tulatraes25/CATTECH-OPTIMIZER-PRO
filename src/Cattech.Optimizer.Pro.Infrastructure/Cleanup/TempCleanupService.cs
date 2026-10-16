@@ -53,14 +53,7 @@ public class TempCleanupService : ITempCleanupService
             // Verificar accesibilidad
             if (target.Id == "RECYCLE_BIN")
             {
-                // Emergency v0.2.2 hotfix: the legacy global deletion is unsafe.
-                // Do not advertise, select, scan or enumerate Recycle Bin.
-                target.IsAccessible = false;
-                target.IsSelected = false;
-                target.IsScanned = true;
-                target.ScanNotes = "No disponible: limpieza de Papelera deshabilitada por seguridad.";
-                target.EstimatedSizeBytes = 0;
-                target.EstimatedFileCount = 0;
+                MarkRecycleBinUnsupported(target);
             }
             else if (target.Id == "THUMBNAILS")
             {
@@ -76,6 +69,24 @@ public class TempCleanupService : ITempCleanupService
 
         progress?.Report(100);
         return Task.FromResult(targets);
+    }
+
+    /// <summary>
+    /// Pure UI-model fail-closed state. Exposed internally only for
+    /// synthetic unit tests, without scanning real Windows directories.
+    /// </summary>
+    internal static void MarkRecycleBinUnsupported(TempCleanupTarget target)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        if (target.Id != "RECYCLE_BIN")
+            throw new ArgumentException("Expected the Recycle Bin target.", nameof(target));
+
+        target.IsAccessible = false;
+        target.IsSelected = false;
+        target.IsScanned = true;
+        target.ScanNotes = "No disponible: limpieza de Papelera deshabilitada por seguridad.";
+        target.EstimatedSizeBytes = 0;
+        target.EstimatedFileCount = 0;
     }
 
     /// <inheritdoc/>
