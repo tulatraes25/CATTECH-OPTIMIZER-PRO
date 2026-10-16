@@ -15,6 +15,62 @@ public class TempCleanupTests
     };
 
 
+    [Theory]
+    [InlineData("io")]
+    [InlineData("access")]
+    [InlineData("security")]
+    [InlineData("argument")]
+    public void CandidateScan_SingleUnreadableFile_RevokesWholeEstimate(string failure)
+    {
+        var inspected = new List<string>();
+        var complete = TempCleanupService.TrySummarizeCandidates(
+            new[] { "fixture-safe", "fixture-invalid" },
+            path =>
+            {
+                inspected.Add(path);
+                if (path == "fixture-safe")
+                    return (false, 500L);
+
+                throw failure switch
+                {
+                    "io" => new IOException("Synthetic unreadable file"),
+                    "access" => new UnauthorizedAccessException("Synthetic denial"),
+                    "security" => new System.Security.SecurityException("Synthetic security"),
+                    _ => new ArgumentException("Synthetic invalid path")
+                };
+            },
+            out var size, out var count);
+
+        Assert.False(complete);
+        Assert.Equal(0, size);
+        Assert.Equal(0, count);
+        Assert.Equal(new[] { "fixture-safe", "fixture-invalid" }, inspected);
+    }
+
+    [Fact]
+    public void CandidateScan_SkipsProtectedEntriesWithoutInventingCounts()
+    {
+        var complete = TempCleanupService.TrySummarizeCandidates(
+            new[] { "synthetic-lock", "synthetic-old" },
+            path => path == "synthetic-lock" ? (true, 10L) : (false, 500L),
+            out var size, out var count);
+        Assert.True(complete);
+        Assert.Equal(500, size);
+        Assert.Equal(1, count);
+    }
+
+    [Fact]
+    public void CandidateScan_OverflowFailsClosedInsteadOfReturningPartialEstimate()
+    {
+        var complete = TempCleanupService.TrySummarizeCandidates(
+            new[] { "first", "second" },
+            path => (false, path == "first" ? long.MaxValue : 1L),
+            out var size, out var count);
+        Assert.False(complete);
+        Assert.Equal(0, size);
+        Assert.Equal(0, count);
+    }
+
     [Fact]
     public async Task Scan_BackgroundWorker_DoesNotBlockInvokingThread()
     {
