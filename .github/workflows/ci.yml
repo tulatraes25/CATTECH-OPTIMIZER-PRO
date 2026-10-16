@@ -50,18 +50,31 @@ jobs:
       - name: Coverage Summary (non-gating baseline)
         shell: pwsh
         run: |
-          $reports = @(Get-ChildItem -Path "TestResults" -Filter "coverage.cobertura.xml" -Recurse -File)
-          if ($reports.Count -ne 1) {
-            throw "Expected one Cobertura report from the test project."
+          $resultsDir = Join-Path $env:GITHUB_WORKSPACE "TestResults"
+          $reports = @(Get-ChildItem -LiteralPath $resultsDir -Recurse -File -ErrorAction Stop |
+            Where-Object { $_.Name -eq "coverage.cobertura.xml" })
+          Write-Host "Cobertura reports found: $($reports.Count)"
+          if ($reports.Count -lt 1) {
+            $names = @(Get-ChildItem -LiteralPath $resultsDir -Recurse -File |
+              Select-Object -ExpandProperty Name)
+            Write-Host "Test output files: $($names -join ', ')"
+            throw "Missing Cobertura coverage report."
           }
-          [xml]$report = Get-Content -Path $reports[0].FullName -Raw
-          $lineRate = [double]::Parse($report.coverage.GetAttribute("line-rate"), [System.Globalization.CultureInfo]::InvariantCulture)
-          $branchRate = [double]::Parse($report.coverage.GetAttribute("branch-rate"), [System.Globalization.CultureInfo]::InvariantCulture)
-          $lines = [math]::Round($lineRate * 100, 2)
-          $branches = [math]::Round($branchRate * 100, 2)
-          $summary = "CATTECH automated coverage baseline: **$lines% lines**, **$branches% branches**. This is not hardware QA or total product coverage."
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $summary
-          Write-Host $summary
+          $index = 0
+          foreach ($reportFile in $reports) {
+            $index++
+            [xml]$coverageXml = Get-Content -LiteralPath $reportFile.FullName -Raw
+            if ($null -eq $coverageXml.coverage) {
+              throw "Invalid Cobertura document structure."
+            }
+            $lineRate = [double]::Parse($coverageXml.coverage.GetAttribute("line-rate"), [System.Globalization.CultureInfo]::InvariantCulture)
+            $branchRate = [double]::Parse($coverageXml.coverage.GetAttribute("branch-rate"), [System.Globalization.CultureInfo]::InvariantCulture)
+            $lines = [math]::Round($lineRate * 100, 2)
+            $branches = [math]::Round($branchRate * 100, 2)
+            $summary = "CATTECH coverage report $index (unmerged test assembly): **$lines% lines**, **$branches% branches**. Not physical hardware or WPF UI certification."
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $summary
+            Write-Host $summary
+          }
 
       - name: Upload Test Results
         if: always()
