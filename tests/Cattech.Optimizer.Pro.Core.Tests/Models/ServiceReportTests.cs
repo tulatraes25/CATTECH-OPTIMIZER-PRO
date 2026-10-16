@@ -152,7 +152,9 @@ public class ServiceReportTests
         var report2 = new ServiceReport();
 
         Assert.NotEqual(report1.Id, report2.Id);
-        Assert.Equal(8, report1.Id.Length);
+        Assert.Equal(32, report1.Id.Length);
+        Assert.True(Guid.TryParseExact(report1.Id, "N", out _));
+        Assert.True(Guid.TryParseExact(report2.Id, "N", out _));
     }
 
     [Fact]

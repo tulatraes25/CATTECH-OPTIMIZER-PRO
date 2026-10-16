@@ -493,7 +493,7 @@ public class NullableTemperatureConverter : IValueConverter
 /// </summary>
 public class NullableNumberConverter : IValueConverter
 {
-    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         if (value is double d)
         {
@@ -530,9 +530,9 @@ public class NullableNumberConverter : IValueConverter
 /// </summary>
 public class EmptyStringToNdConverter : IValueConverter
 {
-    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
-        return string.IsNullOrWhiteSpace(value as string) ? "N/D" : value;
+        return string.IsNullOrWhiteSpace(value as string) ? "N/D" : value ?? "N/D";
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
@@ -547,7 +547,7 @@ public class EmptyStringToNdConverter : IValueConverter
 /// </summary>
 public class PositiveNumberOrNdConverter : IValueConverter
 {
-    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         if (value is double d)
         {
@@ -593,7 +593,7 @@ public class PositiveNumberOrNdConverter : IValueConverter
 /// </summary>
 public class PerformanceMetricTypeTextConverter : IValueConverter
 {
-    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         return value is HardwarePerformanceMetricType type
             ? type switch
@@ -616,7 +616,7 @@ public class PerformanceMetricTypeTextConverter : IValueConverter
 /// </summary>
 public class BatteryMetricTypeTextConverter : IValueConverter
 {
-    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         return value is HardwareBatteryMetricType type
             ? type switch

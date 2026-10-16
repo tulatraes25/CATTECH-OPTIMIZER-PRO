@@ -1,0 +1,86 @@
+[
+  {
+    "code": "0x0000000A",
+    "name": "IRQL_NOT_LESS_OR_EQUAL",
+    "description": "Windows detectó acceso inválido a memoria a un nivel de interrupción elevado.",
+    "typicalAreas": ["drivers", "memoria", "hardware"]
+  },
+  {
+    "code": "0x0000001E",
+    "name": "KMODE_EXCEPTION_NOT_HANDLED",
+    "description": "Una excepción de modo kernel no fue controlada.",
+    "typicalAreas": ["drivers", "kernel", "memoria"]
+  },
+  {
+    "code": "0x0000003B",
+    "name": "SYSTEM_SERVICE_EXCEPTION",
+    "description": "Se produjo una excepción durante la ejecución de una rutina de servicio del sistema.",
+    "typicalAreas": ["drivers", "kernel", "memoria"]
+  },
+  {
+    "code": "0x00000050",
+    "name": "PAGE_FAULT_IN_NONPAGED_AREA",
+    "description": "Windows hizo referencia a memoria no válida en un área que debía permanecer residente.",
+    "typicalAreas": ["memoria", "drivers", "almacenamiento"]
+  },
+  {
+    "code": "0x0000007E",
+    "name": "SYSTEM_THREAD_EXCEPTION_NOT_HANDLED",
+    "description": "Un hilo del sistema generó una excepción que el controlador de errores no pudo procesar.",
+    "typicalAreas": ["drivers", "kernel"]
+  },
+  {
+    "code": "0x0000007F",
+    "name": "UNEXPECTED_KERNEL_MODE_TRAP",
+    "description": "El kernel recibió una trampa que no podía manejar o una condición fatal.",
+    "typicalAreas": ["cpu", "memoria", "hardware"]
+  },
+  {
+    "code": "0x0000009F",
+    "name": "DRIVER_POWER_STATE_FAILURE",
+    "description": "Un componente no completó correctamente una transición de energía dentro del tiempo esperado.",
+    "typicalAreas": ["drivers", "energia", "firmware"]
+  },
+  {
+    "code": "0x000000D1",
+    "name": "DRIVER_IRQL_NOT_LESS_OR_EQUAL",
+    "description": "Código asociado frecuentemente a acceso inválido de memoria desde código de driver a IRQL elevado.",
+    "typicalAreas": ["drivers", "memoria"]
+  },
+  {
+    "code": "0x000000EF",
+    "name": "CRITICAL_PROCESS_DIED",
+    "description": "Un proceso crítico de Windows terminó de forma inesperada.",
+    "typicalAreas": ["sistema", "almacenamiento", "memoria"]
+  },
+  {
+    "code": "0x00000116",
+    "name": "VIDEO_TDR_FAILURE",
+    "description": "Windows no pudo recuperar a tiempo el subsistema gráfico mediante TDR.",
+    "typicalAreas": ["gpu", "driver grafico", "hardware"]
+  },
+  {
+    "code": "0x00000124",
+    "name": "WHEA_UNCORRECTABLE_ERROR",
+    "description": "Windows recibió un error de hardware no corregible reportado mediante WHEA.",
+    "typicalAreas": ["cpu", "memoria", "placa madre", "hardware"]
+  },
+  {
+    "code": "0x00000133",
+    "name": "DPC_WATCHDOG_VIOLATION",
+    "description": "El watchdog detectó que una rutina DPC o ISR excedió el tiempo permitido.",
+    "typicalAreas": ["drivers", "almacenamiento", "firmware"]
+  },
+  {
+    "code": "0x00000139",
+    "name": "KERNEL_SECURITY_CHECK_FAILURE",
+    "description": "El kernel detectó corrupción de una estructura crítica o una comprobación de seguridad fallida.",
+    "typicalAreas": ["drivers", "memoria", "kernel"]
+  },
+  {
+    "code": "0x00000154",
+    "name": "UNEXPECTED_STORE_EXCEPTION",
+    "description": "El componente de almacenamiento del kernel encontró una excepción inesperada.",
+    "typicalAreas": ["almacenamiento", "drivers", "memoria"]
+  }
+]
