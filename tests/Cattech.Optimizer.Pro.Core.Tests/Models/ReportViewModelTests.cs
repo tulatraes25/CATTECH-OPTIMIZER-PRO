@@ -149,6 +149,109 @@ public class ReportViewModelTests
         Assert.Equal("Cliente QA", fakeReportService.LastCapturedOptions.ServiceReport.Client.Name);
     }
 
+    // Private Windows paths and customer identifiers may arrive in exception
+    // messages from IO and headless PDF renderers. None belongs on the UI.
+    private const string PrivateFailureMarker =
+        @"C:\Users\SyntheticClient\Documents\PRIVATE_CUSTOMER_PATH_SENTINEL";
+
+    [Fact]
+    public async Task HtmlGenerationFailure_NeverShowsPrivatePathInUi()
+    {
+        var (vm, generator) = CreateViewModel();
+        vm.IncludeClient = false;
+        vm.IncludeDiagnostic = false;
+        generator.GenerateFailure = new IOException(PrivateFailureMarker);
+
+        await vm.GenerateReportCommand.ExecuteAsync(null);
+
+        Assert.True(vm.HasError);
+        Assert.False(vm.HasGeneratedReport);
+        Assert.Equal(1, generator.GenerateCallCount);
+        Assert.DoesNotContain("PRIVATE_CUSTOMER_PATH_SENTINEL", vm.ErrorMessage);
+        Assert.DoesNotContain(@"C:\Users", vm.ErrorMessage);
+        Assert.Contains("informe", vm.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task FailedReportIndexSave_NeverShowsPrivatePathOrClaimsCompletion()
+    {
+        var (vm, generator) = CreateViewModel();
+        vm.IncludeClient = false;
+        vm.IncludeDiagnostic = false;
+        generator.SaveInfoFailure = new IOException(PrivateFailureMarker);
+
+        await vm.GenerateReportCommand.ExecuteAsync(null);
+
+        Assert.True(vm.HasError);
+        Assert.False(vm.HasGeneratedReport);
+        Assert.Equal(1, generator.GenerateCallCount);
+        Assert.DoesNotContain("PRIVATE_CUSTOMER_PATH_SENTINEL", vm.ErrorMessage);
+        Assert.Contains("historial", vm.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task PdfHtmlPreparationFailure_NeverShowsPrivatePathInUi()
+    {
+        var (vm, generator) = CreateViewModel();
+        vm.IncludeClient = false;
+        vm.IncludeDiagnostic = false;
+        generator.GenerateFailure = new IOException(PrivateFailureMarker);
+
+        await vm.ExportPdfCommand.ExecuteAsync(null);
+
+        Assert.True(vm.HasError);
+        Assert.False(vm.HasGeneratedPdf);
+        Assert.DoesNotContain("PRIVATE_CUSTOMER_PATH_SENTINEL", vm.ErrorMessage);
+        Assert.Contains("HTML", vm.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task PdfRendererFailure_NeverShowsPrivatePathInUi()
+    {
+        var exporter = new FakePdfExportService
+        {
+            ExportFailure = new IOException(PrivateFailureMarker)
+        };
+        var (vm, generator) = CreateViewModel(pdfExporter: exporter);
+        vm.IncludeClient = false;
+        vm.IncludeDiagnostic = false;
+
+        await vm.ExportPdfCommand.ExecuteAsync(null);
+
+        Assert.True(vm.HasError);
+        Assert.False(vm.HasGeneratedPdf);
+        Assert.Equal(1, generator.GenerateCallCount);
+        Assert.DoesNotContain("PRIVATE_CUSTOMER_PATH_SENTINEL", vm.ErrorMessage);
+        Assert.Contains("PDF", vm.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task FailedDataLoad_RevokesStaleClientSelectionAndHidesPrivatePath()
+    {
+        var settings = new FakeSettingsService
+        {
+            LoadFailure = new IOException(PrivateFailureMarker)
+        };
+        var (vm, _) = CreateViewModel(settings: settings);
+        vm.SelectedServiceReport = new ServiceReport();
+        vm.HasClientData = true;
+        vm.IncludeClient = true;
+        vm.LastReportPath = "previous-synthetic.html";
+        vm.HasGeneratedReport = true;
+
+        await vm.LoadDataCommand.ExecuteAsync(null);
+
+        Assert.True(vm.HasError);
+        Assert.True(vm.HasReportInventoryWarning);
+        Assert.False(vm.HasClientData);
+        Assert.False(vm.IncludeClient);
+        Assert.Null(vm.SelectedServiceReport);
+        Assert.False(vm.HasGeneratedReport);
+        Assert.Equal(string.Empty, vm.LastReportPath);
+        Assert.DoesNotContain("PRIVATE_CUSTOMER_PATH_SENTINEL", vm.ErrorMessage);
+        Assert.DoesNotContain("PRIVATE_CUSTOMER_PATH_SENTINEL", vm.ReportInventoryMessage);
+    }
+
     // ===== TEST E: Missing selection guard (GenerateReport) =====
 
     [Fact]
@@ -401,13 +504,13 @@ public class ReportViewModelTests
 
     // ===== Helper =====
 
-    private static (ReportViewModel vm, FakeReportGenerationService fakeReportService) CreateViewModel(FakeServiceReportService? storedReports = null)
+    private static (ReportViewModel vm, FakeReportGenerationService fakeReportService) CreateViewModel(FakeServiceReportService? storedReports = null, FakePdfExportService? pdfExporter = null, FakeSettingsService? settings = null)
     {
         var fakeReportService = new FakeReportGenerationService();
         var vm = new ReportViewModel(
             fakeReportService,
-            new FakePdfExportService(),
-            new FakeSettingsService(),
+            pdfExporter ?? new FakePdfExportService(),
+            settings ?? new FakeSettingsService(),
             storedReports ?? new FakeServiceReportService(),
             new FakeDiagnosticService(),
             new FakeStartupService(),
@@ -440,14 +543,18 @@ public class ReportViewModelTests
     {
         public ReportGenerationOptions? LastCapturedOptions { get; private set; }
         public int GenerateCallCount { get; private set; }
+        public Exception? GenerateFailure { get; set; }
+        public Exception? SaveInfoFailure { get; set; }
 
         public Task<string> GenerateHtmlReportAsync(ReportGenerationOptions options)
         {
             LastCapturedOptions = options;
             GenerateCallCount++;
+            if (GenerateFailure is not null)
+                throw GenerateFailure;
 
             var clientName = options.ServiceReport?.Client?.Name ?? "SinCliente";
-            var fileName = $"Informe_Tecnico_CATTECH_{clientName}_{DateTime.Now:yyyyMMdd-HHmmss}.html";
+            var fileName = $"Informe_Tecnico_CATTECH_{clientName}_{DateTime.Now:yyyyMMdd-HHmmss}_{Guid.NewGuid():N}.html";
             var filePath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), fileName);
             File.WriteAllText(filePath, $"<html><body>Test report for {clientName}</body></html>");
             return Task.FromResult(filePath);
@@ -456,6 +563,8 @@ public class ReportViewModelTests
         public GeneratedReportInfo? LastSavedInfo { get; private set; }
         public Task SaveReportInfoAsync(GeneratedReportInfo info)
         {
+            if (SaveInfoFailure is not null)
+                throw SaveInfoFailure;
             LastSavedInfo = info;
             return Task.CompletedTask;
         }
@@ -466,9 +575,12 @@ public class ReportViewModelTests
 
     private class FakePdfExportService : IPdfExportService
     {
+        public Exception? ExportFailure { get; set; }
         public Task<PdfExporterInfo> CanExportAsync() => Task.FromResult(new PdfExporterInfo { IsAvailable = true });
         public Task<bool> ExportHtmlToPdfAsync(string htmlPath, string outputPdfPath)
         {
+            if (ExportFailure is not null)
+                throw ExportFailure;
             File.WriteAllText(outputPdfPath, "%PDF-1.4 fake");
             return Task.FromResult(true);
         }
@@ -478,11 +590,17 @@ public class ReportViewModelTests
 
     private class FakeSettingsService : ISettingsService
     {
-        public Task<AppSettings> LoadSettingsAsync() => Task.FromResult(new AppSettings
+        public Exception? LoadFailure { get; set; }
+        public Task<AppSettings> LoadSettingsAsync()
         {
-            Company = new CompanyInfo { Name = "CATTECH QA" },
-            Technician = new TechnicianInfo { Name = "Técnico QA" }
-        });
+            if (LoadFailure is not null)
+                throw LoadFailure;
+            return Task.FromResult(new AppSettings
+            {
+                Company = new CompanyInfo { Name = "CATTECH QA" },
+                Technician = new TechnicianInfo { Name = "Técnico QA" }
+            });
+        }
         public Task SaveSettingsAsync(AppSettings settings) => Task.CompletedTask;
         public AppSettings CurrentSettings => new()
         {
