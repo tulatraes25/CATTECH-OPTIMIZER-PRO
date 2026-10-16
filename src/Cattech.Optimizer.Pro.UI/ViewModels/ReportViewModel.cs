@@ -255,6 +255,57 @@ public partial class ReportViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Advisory pre-output revalidation. Does not guarantee file-handle identity
+    /// or physical equipment identity; stored data may change after this check.
+    /// </summary>
+    private async Task<bool> VerifySelectedClientBeforeOutputAsync()
+    {
+        var selected = SelectedServiceReport;
+        if (selected is null)
+            return false;
+
+        if (!await CheckReportInventoryAsync())
+        {
+            RevokeCustomerSelection("La integridad de los informes cambió. " +
+                "Se canceló la generación con datos de clientes.");
+            return false;
+        }
+
+        try
+        {
+            var live = await _serviceReportService.LoadReportAsync(selected.Id);
+            if (live is not null
+                && string.Equals(live.Id, selected.Id, StringComparison.Ordinal)
+                && string.Equals(live.Client?.Name, selected.Client?.Name, StringComparison.Ordinal)
+                && string.Equals(live.Equipment?.Brand, selected.Equipment?.Brand, StringComparison.Ordinal)
+                && string.Equals(live.Equipment?.Model, selected.Equipment?.Model, StringComparison.Ordinal)
+                && string.Equals(live.Equipment?.SerialNumber, selected.Equipment?.SerialNumber,
+                    StringComparison.Ordinal))
+                return true;
+        }
+        catch (Exception)
+        {
+            // Revalidation failed. No raw file names or exception details shown.
+        }
+
+        RevokeCustomerSelection("El informe seleccionado cambió o dejó de estar disponible. " +
+            "Se suspendió la generación con datos de clientes.");
+        return false;
+    }
+
+    private void RevokeCustomerSelection(string message)
+    {
+        HasReportInventoryWarning = true;
+        ReportInventoryMessage = message;
+        AvailableServiceReports.Clear();
+        SelectedServiceReport = null;
+        HasClientData = false;
+        IncludeClient = false;
+        InvalidateGeneratedArtifacts();
+        ShowError("No se generó un informe con datos de clientes. Revisá el almacenamiento y volvé a cargar.");
+    }
+
+    /// <summary>
     /// Carga todos los datos disponibles.
     /// </summary>
     [RelayCommand]
@@ -439,6 +490,8 @@ public partial class ReportViewModel : ObservableObject
                 ShowError("Seleccioná un diagnóstico antes de generar el informe.");
                 return;
             }
+            if (options.IncludeClient && !await VerifySelectedClientBeforeOutputAsync())
+                return;
 
             var filePath = await _reportService.GenerateHtmlReportAsync(options);
 
@@ -525,6 +578,8 @@ public partial class ReportViewModel : ObservableObject
                 ShowError("Seleccioná un diagnóstico antes de generar el informe.");
                 return;
             }
+            if (options.IncludeClient && !await VerifySelectedClientBeforeOutputAsync())
+                return;
 
             LastReportPath = await _reportService.GenerateHtmlReportAsync(options);
             HasGeneratedReport = true;
