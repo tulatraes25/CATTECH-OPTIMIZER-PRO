@@ -123,7 +123,7 @@ public class JsonServiceReportService : IServiceReportService, IServiceReportInv
                 try
                 {
                     var json = await File.ReadAllTextAsync(file);
-                    var report = JsonSerializer.Deserialize<ServiceReport>(json, SerializerOptions);
+                    var report = DeserializeValidatedReport(json);
 
                     if (report != null)
                     {
@@ -189,25 +189,8 @@ public class JsonServiceReportService : IServiceReportService, IServiceReportInv
                 try
                 {
                     var json = await File.ReadAllTextAsync(file).ConfigureAwait(false);
-                    using var doc = JsonDocument.Parse(json);
-                    if (doc.RootElement.ValueKind != JsonValueKind.Object)
-                    {
-                        invalid++;
-                        continue;
-                    }
-
-                    var ids = doc.RootElement.EnumerateObject()
-                        .Where(p => p.NameEquals("id")).ToArray();
-                    if (ids.Length != 1 || ids[0].Value.ValueKind != JsonValueKind.String
-                        || string.IsNullOrWhiteSpace(ids[0].Value.GetString()))
-                    {
-                        invalid++;
-                        continue;
-                    }
-
-                    var report = JsonSerializer.Deserialize<ServiceReport>(json, SerializerOptions);
-                    if (report is null || report.Id != ids[0].Value.GetString()
-                        || report.Client is null || report.Equipment is null)
+                    var report = DeserializeValidatedReport(json);
+                    if (report is null)
                     {
                         invalid++;
                         continue;
@@ -284,23 +267,8 @@ public class JsonServiceReportService : IServiceReportService, IServiceReportInv
             {
                 var json = await File.ReadAllTextAsync(file)
                     .ConfigureAwait(false);
-                using var doc = JsonDocument.Parse(json);
-                if (doc.RootElement.ValueKind != JsonValueKind.Object)
-                    return null;
-
-                // A missing or duplicated id can otherwise silently become
-                // a fresh GUID from ServiceReport's property initializer.
-                var ids = doc.RootElement.EnumerateObject()
-                    .Where(property => property.NameEquals("id"))
-                    .ToArray();
-                if (ids.Length != 1
-                    || ids[0].Value.ValueKind != JsonValueKind.String
-                    || string.IsNullOrWhiteSpace(ids[0].Value.GetString()))
-                    return null;
-
-                var report = JsonSerializer.Deserialize<ServiceReport>(
-                    json, SerializerOptions);
-                if (report is null || report.Id != ids[0].Value.GetString())
+                var report = DeserializeValidatedReport(json);
+                if (report is null)
                     return null;
 
                 if (string.Equals(report.Id, reportId,
@@ -317,6 +285,71 @@ public class JsonServiceReportService : IServiceReportService, IServiceReportInv
         }
 
         return match;
+    }
+
+    /// <summary>
+    /// Shared persisted-record contract for inventory, list and load/delete.
+    /// Require exactly one id/client/equipment/service JSON key to avoid
+    /// silently defaulting missing sections. Legacy short IDs are accepted.
+    /// Unknown extra fields and absent optional service arrays are accepted.
+    /// </summary>
+    private static ServiceReport? DeserializeValidatedReport(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        if (!TrySingleProperty(root, "id", JsonValueKind.String, out var id)
+            || string.IsNullOrWhiteSpace(id.GetString())
+            || !TrySingleProperty(root, "client", JsonValueKind.Object, out _)
+            || !TrySingleProperty(root, "equipment", JsonValueKind.Object, out _)
+            || !TrySingleProperty(root, "service", JsonValueKind.Object, out var service)
+            || !ValidOptionalStringArray(service, "actionsPerformed")
+            || !ValidOptionalStringArray(service, "recommendations"))
+            return null;
+
+        var report = JsonSerializer.Deserialize<ServiceReport>(json, SerializerOptions);
+        if (report is null || !string.Equals(report.Id, id.GetString(), StringComparison.Ordinal)
+            || report.Client is null || report.Equipment is null
+            || report.Service is null || report.Service.ActionsPerformed is null
+            || report.Service.Recommendations is null)
+            return null;
+        return report;
+    }
+
+    private static bool TrySingleProperty(
+        JsonElement obj, string name, JsonValueKind expected, out JsonElement value)
+    {
+        value = default;
+        if (obj.ValueKind != JsonValueKind.Object)
+            return false;
+        var found = false;
+        foreach (var property in obj.EnumerateObject())
+        {
+            if (!string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (found || !property.NameEquals(name) || property.Value.ValueKind != expected)
+                return false;
+            value = property.Value;
+            found = true;
+        }
+        return found;
+    }
+
+    private static bool ValidOptionalStringArray(JsonElement obj, string name)
+    {
+        var found = false;
+        foreach (var property in obj.EnumerateObject())
+        {
+            if (!string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (found || !property.NameEquals(name)
+                || property.Value.ValueKind != JsonValueKind.Array)
+                return false;
+            foreach (var element in property.Value.EnumerateArray())
+                if (element.ValueKind != JsonValueKind.String)
+                    return false;
+            found = true;
+        }
+        return true;
     }
 
     private void EnsureDirectoryExists()
