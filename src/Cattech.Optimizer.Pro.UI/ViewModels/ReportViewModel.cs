@@ -498,8 +498,11 @@ public partial class ReportViewModel : ObservableObject
             // Guardar info del informe
             var info = new GeneratedReportInfo
             {
-                ClientName = SelectedServiceReport?.Client?.Name ?? "Sin cliente",
-                EquipmentName = $"{SelectedServiceReport?.Equipment?.Brand} {SelectedServiceReport?.Equipment?.Model}",
+                ClientName = options.IncludeClient
+                    ? options.ServiceReport?.Client?.Name ?? "Sin cliente" : "Sin cliente",
+                EquipmentName = options.IncludeClient
+                    ? $"{options.ServiceReport?.Equipment?.Brand} {options.ServiceReport?.Equipment?.Model}"
+                    : string.Empty,
                 HtmlPath = filePath,
                 Notes = FinalObservations
             };
@@ -563,9 +566,10 @@ public partial class ReportViewModel : ObservableObject
         // Siempre regenerar HTML con el snapshot actual de datos (fix SMOKE-B1R-006)
         // Esto asegura que el PDF refleje las selecciones actuales, no un HTML stale.
         StatusText = "Generando HTML primero...";
+        ReportGenerationOptions options;
         try
         {
-            var options = await BuildReportOptionsAsync();
+            options = await BuildReportOptionsAsync();
 
             // Validar selecciones obligatorias antes de generar
             if (options.IncludeClient && options.ServiceReport == null)
@@ -617,8 +621,11 @@ public partial class ReportViewModel : ObservableObject
                 // Actualizar info del informe
                 var info = new GeneratedReportInfo
                 {
-                    ClientName = SelectedServiceReport?.Client?.Name ?? "Sin cliente",
-                    EquipmentName = $"{SelectedServiceReport?.Equipment?.Brand} {SelectedServiceReport?.Equipment?.Model}",
+                    ClientName = options.IncludeClient
+                    ? options.ServiceReport?.Client?.Name ?? "Sin cliente" : "Sin cliente",
+                    EquipmentName = options.IncludeClient
+                    ? $"{options.ServiceReport?.Equipment?.Brand} {options.ServiceReport?.Equipment?.Model}"
+                    : string.Empty,
                     HtmlPath = LastReportPath,
                     PdfPath = pdfPath,
                     Notes = FinalObservations
@@ -669,7 +676,8 @@ public partial class ReportViewModel : ObservableObject
         return new ReportGenerationOptions
         {
             Settings = await _settingsService.LoadSettingsAsync(),
-            ServiceReport = SelectedServiceReport,
+            // Unchecked customer sections must not carry data into exports.
+            ServiceReport = IncludeClient ? SelectedServiceReport : null,
             DiagnosticReport = SelectedDiagnosticReport,
             StartupAnalysis = SelectedStartupAnalysis,
             CleanupResult = SelectedCleanupResult,
