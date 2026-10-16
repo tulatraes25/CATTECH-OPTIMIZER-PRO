@@ -35,6 +35,11 @@ concurrency:
 
 env:
   GH_TOKEN: ${{ github.token }}
+  CATTECH_INPUT_VERSION: ${{ inputs.version }}
+  CATTECH_INPUT_SOURCE_SHA: ${{ inputs.source_sha }}
+  CATTECH_INPUT_RELEASE_NOTES_PATH: ${{ inputs.release_notes_path }}
+  CATTECH_INPUT_PUBLISH_CONFIRMATION: ${{ inputs.publish_confirmation }}
+  CATTECH_INPUT_DRY_RUN: ${{ inputs.dry_run }}
 
 jobs:
   preflight:
@@ -57,10 +62,10 @@ jobs:
         id: metadata
         shell: bash
         run: |
-          version="${{ inputs.version }}"
-          source_sha="${{ inputs.source_sha }}"
-          notes_path="${{ inputs.release_notes_path }}"
-          dry_run="${{ inputs.dry_run }}"
+          version="${CATTECH_INPUT_VERSION}"
+          source_sha="${CATTECH_INPUT_SOURCE_SHA}"
+          notes_path="${CATTECH_INPUT_RELEASE_NOTES_PATH}"
+          dry_run="${CATTECH_INPUT_DRY_RUN}"
           if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
             echo "::error::Invalid semantic version: $version"
             exit 1
@@ -94,7 +99,6 @@ jobs:
         if: ${{ inputs.dry_run == false }}
         shell: bash
         run: |
-          source_sha="${{ inputs.version }}" # placeholder, replaced below
           source_sha="${{ steps.metadata.outputs.source_sha }}"
           main_sha="${{ steps.main-sha.outputs.main_sha }}"
           if [[ "$source_sha" != "$main_sha" ]]; then
@@ -109,8 +113,8 @@ jobs:
             echo "::error::github.sha does not match source_sha: ${{ github.sha }} != $source_sha"
             exit 1
           fi
-          expected_confirmation="PUBLISH v${{ inputs.version }}"
-          if [[ "${{ inputs.publish_confirmation }}" != "$expected_confirmation" ]]; then
+          expected_confirmation="PUBLISH v${CATTECH_INPUT_VERSION}"
+          if [[ "${CATTECH_INPUT_PUBLISH_CONFIRMATION}" != "$expected_confirmation" ]]; then
             echo "::error::publish_confirmation must equal: $expected_confirmation"
             exit 1
           fi
@@ -125,12 +129,12 @@ jobs:
       - name: Validate release notes
         shell: bash
         run: |
-          notes_path="${{ inputs.release_notes_path }}"
+          notes_path="${CATTECH_INPUT_RELEASE_NOTES_PATH}"
           if [[ ! -f "$notes_path" ]]; then
             echo "::error::Release notes file not found: $notes_path"
             exit 1
           fi
-          version="${{ inputs.version }}"
+          version="${CATTECH_INPUT_VERSION}"
           if ! head -n 10 "$notes_path" | grep -q "v$version"; then
             echo "::error::Release notes do not mention v$version"
             exit 1
@@ -141,7 +145,7 @@ jobs:
         id: tag-check
         shell: bash
         run: |
-          tag="v${{ inputs.version }}"
+          tag="v${CATTECH_INPUT_VERSION}"
           if git ls-remote --tags origin "refs/tags/$tag" | grep -q .; then
             echo "tag_exists=true" >> "$GITHUB_OUTPUT"
             echo "Tag $tag exists"
@@ -156,7 +160,7 @@ jobs:
         id: release-check
         shell: bash
         run: |
-          tag="v${{ inputs.version }}"
+          tag="v${CATTECH_INPUT_VERSION}"
           if gh release view "$tag" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             echo "release_exists=true" >> "$GITHUB_OUTPUT"
             echo "Release $tag exists"
@@ -170,14 +174,14 @@ jobs:
         shell: bash
         run: |
           if [[ "${{ steps.tag-check.outputs.tag_exists }}" == "true" ]]; then
-            echo "::error::Tag v${{ inputs.version }} already exists. No overwrite."
+            echo "::error::Tag v${CATTECH_INPUT_VERSION} already exists. No overwrite."
             exit 1
           fi
           if [[ "${{ steps.release-check.outputs.release_exists }}" == "true" ]]; then
-            echo "::error::Release v${{ inputs.version }} already exists. No overwrite."
+            echo "::error::Release v${CATTECH_INPUT_VERSION} already exists. No overwrite."
             exit 1
           fi
-          echo "No existing tag/release for v${{ inputs.version }}"
+          echo "No existing tag/release for v${CATTECH_INPUT_VERSION}"
 
   package:
     name: Package (reusable)
@@ -209,7 +213,7 @@ jobs:
       - name: Validate package outputs
         shell: bash
         run: |
-          if [[ "${{ needs.package.outputs.source_sha }}" != "${{ inputs.source_sha }}" ]]; then
+          if [[ "${{ needs.package.outputs.source_sha }}" != "${CATTECH_INPUT_SOURCE_SHA}" ]]; then
             echo "::error::Package source SHA mismatch: ${{ needs.package.outputs.source_sha }}"
             exit 1
           fi
@@ -268,8 +272,8 @@ jobs:
             echo ""
             echo "| Field | Value |"
             echo "|-------|-------|"
-            echo "| Version | v${{ inputs.version }} |"
-            echo "| Source SHA | ${{ inputs.source_sha }} |"
+            echo "| Version | v${CATTECH_INPUT_VERSION} |"
+            echo "| Source SHA | ${CATTECH_INPUT_SOURCE_SHA} |"
             echo "| Main SHA actual | ${{ needs.preflight.outputs.main_sha }} |"
             echo "| Tag existente | ${{ needs.preflight.outputs.tag_exists }} |"
             echo "| Release existente | ${{ needs.preflight.outputs.release_exists }} |"
@@ -278,7 +282,7 @@ jobs:
             echo "| SHA-256 | ${{ needs.package.outputs.sha256 }} |"
             echo "| ProductVersion | ${{ needs.package.outputs.product_version }} |"
             echo "| Source provenance | PASS |"
-            echo "| Release notes | ${{ inputs.release_notes_path }} |"
+            echo "| Release notes | ${CATTECH_INPUT_RELEASE_NOTES_PATH} |"
             echo "| Package | PASS |"
             echo "| Write operations | 0 |"
             echo "| Attestation | SKIPPED |"
@@ -317,18 +321,18 @@ jobs:
       - name: Pre-write revalidation
         shell: bash
         run: |
-          source_sha="${{ inputs.source_sha }}"
+          source_sha="${CATTECH_INPUT_SOURCE_SHA}"
           main_sha=$(gh api "repos/${{ github.repository }}/commits/main" --jq '.sha')
           if [[ "$source_sha" != "$main_sha" ]]; then
             echo "::error::main moved during packaging: $source_sha != $main_sha"
             exit 1
           fi
-          if gh release view "v${{ inputs.version }}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            echo "::error::Release v${{ inputs.version }} appeared during packaging"
+          if gh release view "v${CATTECH_INPUT_VERSION}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "::error::Release v${CATTECH_INPUT_VERSION} appeared during packaging"
             exit 1
           fi
-          if git ls-remote --tags origin "refs/tags/v${{ inputs.version }}" | grep -q .; then
-            echo "::error::Tag v${{ inputs.version }} appeared during packaging"
+          if git ls-remote --tags origin "refs/tags/v${CATTECH_INPUT_VERSION}" | grep -q .; then
+            echo "::error::Tag v${CATTECH_INPUT_VERSION} appeared during packaging"
             exit 1
           fi
           echo "Pre-write revalidation passed (TOCTOU guard)"
@@ -358,17 +362,17 @@ jobs:
           gh attestation verify "release-assets/${{ needs.package.outputs.zip_name }}" \
             --repo "${{ github.repository }}" \
             --signer-repo "${{ github.repository }}" \
-            --source-digest "${{ inputs.source_sha }}"
+            --source-digest "${CATTECH_INPUT_SOURCE_SHA}"
 
       - name: Create annotated tag
         shell: bash
         run: |
-          tag="v${{ inputs.version }}"
+          tag="v${CATTECH_INPUT_VERSION}"
           tag_json=$(gh api "repos/${{ github.repository }}/git/tags" \
             --method POST \
             -f tag="$tag" \
-            -f message="CATTECH OPTIMIZER PRO v${{ inputs.version }}" \
-            -f object="${{ inputs.source_sha }}" \
+            -f message="CATTECH OPTIMIZER PRO v${CATTECH_INPUT_VERSION}" \
+            -f object="${CATTECH_INPUT_SOURCE_SHA}" \
             -f type="commit")
           tag_object_sha=$(echo "$tag_json" | jq -r '.sha')
           echo "Tag object created: $tag_object_sha"
@@ -381,9 +385,9 @@ jobs:
       - name: Verify tag
         shell: bash
         run: |
-          tag="v${{ inputs.version }}"
+          tag="v${CATTECH_INPUT_VERSION}"
           resolved=$(git ls-remote --tags origin "refs/tags/$tag^{}" | awk '{print $1}')
-          if [[ "$resolved" != "${{ inputs.source_sha }}" ]]; then
+          if [[ "$resolved" != "${CATTECH_INPUT_SOURCE_SHA}" ]]; then
             echo "::error::Tag $tag does not resolve to source SHA: $resolved"
             exit 1
           fi
@@ -394,18 +398,18 @@ jobs:
         run: |
           zip_name="${{ needs.package.outputs.zip_name }}"
           checksum_name="${{ needs.package.outputs.checksum_name }}"
-          gh release create "v${{ inputs.version }}" \
+          gh release create "v${CATTECH_INPUT_VERSION}" \
             "release-assets/$zip_name" \
             "release-assets/$checksum_name" \
             --repo "${{ github.repository }}" \
             --verify-tag \
-            --title "CATTECH OPTIMIZER PRO v${{ inputs.version }}" \
-            --notes-file "${{ inputs.release_notes_path }}"
+            --title "CATTECH OPTIMIZER PRO v${CATTECH_INPUT_VERSION}" \
+            --notes-file "${CATTECH_INPUT_RELEASE_NOTES_PATH}"
 
       - name: Verify Release
         shell: bash
         run: |
-          gh release view "v${{ inputs.version }}" \
+          gh release view "v${CATTECH_INPUT_VERSION}" \
             --repo "${{ github.repository }}" \
             --json tagName,name,isDraft,isPrerelease,url,assets
 
@@ -417,16 +421,16 @@ jobs:
             echo ""
             echo "| Field | Value |"
             echo "|-------|-------|"
-            echo "| Version | v${{ inputs.version }} |"
-            echo "| Source SHA | ${{ inputs.source_sha }} |"
+            echo "| Version | v${CATTECH_INPUT_VERSION} |"
+            echo "| Source SHA | ${CATTECH_INPUT_SOURCE_SHA} |"
             echo "| Package SHA | ${{ needs.package.outputs.source_sha }} |"
             echo "| ZIP hash | ${{ needs.package.outputs.sha256 }} |"
             echo "| ProductVersion | ${{ needs.package.outputs.product_version }} |"
             echo "| Source provenance | PASS |"
             echo "| Attestation | PASS |"
-            echo "| Tag | v${{ inputs.version }} |"
-            echo "| Tag target SHA | ${{ inputs.source_sha }} |"
-            echo "| Release | https://github.com/${{ github.repository }}/releases/tag/v${{ inputs.version }} |"
+            echo "| Tag | v${CATTECH_INPUT_VERSION} |"
+            echo "| Tag target SHA | ${CATTECH_INPUT_SOURCE_SHA} |"
+            echo "| Release | https://github.com/${{ github.repository }}/releases/tag/v${CATTECH_INPUT_VERSION} |"
             echo "| Assets | ZIP + SHA-256 |"
             echo "| Result | RELEASE PASS |"
           } >> "$GITHUB_STEP_SUMMARY"

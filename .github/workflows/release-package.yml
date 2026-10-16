@@ -58,6 +58,8 @@ env:
   NUGET_XMLDOC_MODE: skip
   CONFIGURATION: Release
   RUNTIME: win-x64
+  CATTECH_INPUT_VERSION: ${{ inputs.version }}
+  CATTECH_INPUT_SOURCE_REF: ${{ inputs.source_ref }}
 
 jobs:
   package:
@@ -96,7 +98,7 @@ jobs:
       - name: Validate version
         shell: pwsh
         run: |
-          $version = "${{ inputs.version }}"
+          $version = "$env:CATTECH_INPUT_VERSION"
           if ($version -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
             throw "Invalid semantic version: '$version'. Expected MAJOR.MINOR.PATCH (e.g. 0.3.0)."
           }
@@ -105,7 +107,7 @@ jobs:
       - name: Validate csproj version
         shell: pwsh
         run: |
-          $version = "${{ inputs.version }}"
+          $version = "$env:CATTECH_INPUT_VERSION"
           $expectedAssembly = "$version.0"
           [xml]$csproj = Get-Content "src/Cattech.Optimizer.Pro.UI/Cattech.Optimizer.Pro.UI.csproj"
           $versionTag = $csproj.Project.PropertyGroup.Version
@@ -119,7 +121,7 @@ jobs:
       - name: Validate visible versions
         shell: pwsh
         run: |
-          $version = "${{ inputs.version }}"
+          $version = "$env:CATTECH_INPUT_VERSION"
           $readme = Get-Content "README.md" -Raw
           $mainWindow = Get-Content "src/Cattech.Optimizer.Pro.UI/MainWindow.xaml" -Raw
           $mainVm = Get-Content "src/Cattech.Optimizer.Pro.UI/ViewModels/MainViewModel.cs" -Raw
@@ -222,7 +224,7 @@ jobs:
         id: exe-version
         shell: pwsh
         run: |
-          $version = "${{ inputs.version }}"
+          $version = "$env:CATTECH_INPUT_VERSION"
           $sourceSha = "${{ steps.source-sha.outputs.source_sha }}"
           $exe = "${{ github.workspace }}\output\release-package\win-x64\Cattech.Optimizer.Pro.UI.exe"
           $info = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($exe)
@@ -244,7 +246,7 @@ jobs:
         id: checksum
         shell: pwsh
         run: |
-          $version = "${{ inputs.version }}"
+          $version = "$env:CATTECH_INPUT_VERSION"
           $publishDir = "${{ github.workspace }}\output\release-package\win-x64"
           $zipName = "CATTECH-Optimizer-Pro-v$version-win-x64.zip"
           $checksumName = "CATTECH-Optimizer-Pro-v$version-win-x64.sha256.txt"
@@ -260,7 +262,7 @@ jobs:
         shell: pwsh
         run: |
           Add-Type -AssemblyName System.IO.Compression.FileSystem
-          $version = "${{ inputs.version }}"
+          $version = "$env:CATTECH_INPUT_VERSION"
           $zipPath = "${{ github.workspace }}\output\CATTECH-Optimizer-Pro-v$version-win-x64.zip"
           $zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
           try {
@@ -280,7 +282,7 @@ jobs:
         id: metadata
         shell: pwsh
         run: |
-          $version = "${{ inputs.version }}"
+          $version = "$env:CATTECH_INPUT_VERSION"
           $artifactName = "cattech-release-v$version-win-x64"
           $zipName = "CATTECH-Optimizer-Pro-v$version-win-x64.zip"
           $checksumName = "CATTECH-Optimizer-Pro-v$version-win-x64.sha256.txt"
@@ -311,8 +313,8 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          $version = "${{ inputs.version }}"
-          $sourceRef = "${{ inputs.source_ref }}"
+          $version = "$env:CATTECH_INPUT_VERSION"
+          $sourceRef = "$env:CATTECH_INPUT_SOURCE_REF"
           $sourceSha = "${{ steps.source-sha.outputs.source_sha }}"
           $sha = "${{ steps.checksum.outputs.sha256 }}"
           $lines = @(
