@@ -145,14 +145,22 @@ public partial class TempCleanupViewModel : ObservableObject
 
         try
         {
-            _targets = await _cleanupService.ScanAsync(progress);
+            var scanned = await _cleanupService.ScanAsync(progress);
+            // Refuse a malformed/incomplete provider snapshot before making
+            // any row actionable. An overflow in selected-size accounting must
+            // likewise revoke the whole scan, not leave HasScanned = true.
+            if (scanned is null || scanned.Any(target =>
+                target is null || target.EstimatedSizeBytes < 0
+                || target.EstimatedFileCount < 0))
+                throw new InvalidOperationException("Invalid cleanup scan snapshot.");
 
+            _targets = scanned;
             Targets.Clear();
             foreach (var target in _targets)
                 Targets.Add(target);
 
-            HasScanned = true;
             UpdateSelectedCount();
+            HasScanned = true;
             // RECYCLE_BIN is intentionally unavailable; don't treat its
             // mandatory opt-out as a failure of otherwise healthy scans.
             var candidates = _targets.Where(t => t.Id != "RECYCLE_BIN").ToArray();
@@ -164,6 +172,14 @@ public partial class TempCleanupViewModel : ObservableObject
         }
         catch (Exception)
         {
+            // Fail closed after ANY partial scan/UI update, including a
+            // malformed provider response or overflowing summary. The user
+            // must rescan and reapprove; no stale target survives.
+            HasScanned = false;
+            HasCleanupConsent = false;
+            _targets = [];
+            Targets.Clear();
+            UpdateSelectedCount();
             StatusText = "Error al escanear";
             // Paths, user names and provider exception text are not safe
             // to display in a technician/client-facing status message.

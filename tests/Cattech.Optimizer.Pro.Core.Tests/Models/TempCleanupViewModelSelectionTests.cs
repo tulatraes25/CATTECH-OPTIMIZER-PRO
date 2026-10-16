@@ -35,6 +35,75 @@ public sealed class TempCleanupViewModelSelectionTests
     }
 
     [Fact]
+    public async Task OverflowedScanEstimate_RevokesEntireSelectionAndCannotClean()
+    {
+        var first = Target("USER_TEMP");
+        var second = Target("THUMBNAILS");
+        first.IsSelected = true;
+        second.IsSelected = true;
+        first.EstimatedSizeBytes = long.MaxValue;
+        second.EstimatedSizeBytes = long.MaxValue;
+        var fake = new SyntheticCleanupService(first, second);
+        var vm = new TempCleanupViewModel(fake);
+
+        await vm.ScanCommand.ExecuteAsync(null);
+
+        Assert.True(vm.HasError);
+        Assert.Equal("Error al escanear", vm.StatusText);
+        Assert.False(vm.HasScanned);
+        Assert.False(vm.HasCleanupConsent);
+        Assert.Empty(vm.Targets);
+        Assert.Equal(0, vm.SelectedTargetsCount);
+        Assert.False(vm.CanStartCleanup);
+        await vm.CleanupCommand.ExecuteAsync(null);
+        Assert.Equal(0, fake.CleanupCalls);
+    }
+
+    [Theory]
+    [InlineData(-1L, 0)]
+    [InlineData(0L, -1)]
+    public async Task NegativeScanCounts_InvalidateWholeScan(long bytes, int files)
+    {
+        var target = Target("USER_TEMP");
+        target.IsSelected = true;
+        target.EstimatedSizeBytes = bytes;
+        target.EstimatedFileCount = files;
+        var fake = new SyntheticCleanupService(target);
+        var vm = new TempCleanupViewModel(fake);
+
+        await vm.ScanCommand.ExecuteAsync(null);
+
+        Assert.True(vm.HasError);
+        Assert.False(vm.HasScanned);
+        Assert.Empty(vm.Targets);
+        Assert.Equal(0, vm.SelectedTargetsCount);
+        Assert.False(vm.CanStartCleanup);
+        Assert.Equal(0, fake.CleanupCalls);
+    }
+
+    [Fact]
+    public async Task NullScanSnapshot_LeavesNoApprovedOrVisibleTargets()
+    {
+        var original = Target("USER_TEMP");
+        original.IsSelected = true;
+        var fake = new SyntheticCleanupService(original)
+        {
+            ReturnNullOnScan = true
+        };
+        var vm = new TempCleanupViewModel(fake);
+
+        await vm.ScanCommand.ExecuteAsync(null);
+
+        Assert.True(vm.HasError);
+        Assert.False(vm.HasScanned);
+        Assert.Empty(vm.Targets);
+        Assert.Equal(0, vm.SelectedTargetsCount);
+        Assert.False(vm.CanStartCleanup);
+        await vm.CleanupCommand.ExecuteAsync(null);
+        Assert.Equal(0, fake.CleanupCalls);
+    }
+
+    [Fact]
     public async Task AllUnavailableTargets_DoNotClaimReadyToClean()
     {
         var target = Target("USER_TEMP");
@@ -400,6 +469,7 @@ public sealed class TempCleanupViewModelSelectionTests
         public int SaveCalls { get; private set; }
         public bool ThrowOnSave { get; set; }
         public bool ThrowOnScan { get; set; }
+        public bool ReturnNullOnScan { get; set; }
         public TaskCompletionSource<TempCleanupResult>? PendingCleanup { get; set; }
 
         public Task<List<TempCleanupTarget>> ScanAsync(IProgress<int>? progress = null)
@@ -407,7 +477,7 @@ public sealed class TempCleanupViewModelSelectionTests
             ScanCalls++;
             if (ThrowOnScan)
                 throw new IOException(@"Synthetic PRIVATE path C:\Users\PRIVATE\Temp");
-            return Task.FromResult(_targets);
+            return Task.FromResult(ReturnNullOnScan ? null! : _targets);
         }
 
         public Task<TempCleanupResult> CleanupAsync(
