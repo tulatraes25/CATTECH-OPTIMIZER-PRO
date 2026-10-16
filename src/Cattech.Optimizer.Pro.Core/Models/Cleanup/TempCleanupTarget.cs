@@ -126,12 +126,12 @@ public static class CleanupTargets
                 Id = "RECYCLE_BIN",
                 DisplayName = "Papelera de reciclaje",
                 Path = @"::{645FF040-5081-101B-9F08-00AA002F954E}",
-                Description = "Archivos eliminados que aún están en la papelera. Seleccione solo si está seguro.",
+                Description = "Deshabilitada por seguridad hasta una implementación autorizada y verificable.",
                 IsSystemLocation = false,
                 IsOptional = true,
                 IsSelected = false,
                 RiskLevel = CleanupRiskLevel.Medium,
-                ScanNotes = "Opcional: solo limpiar si está seguro"
+                ScanNotes = "Papelera deshabilitada por seguridad"
             },
             new TempCleanupTarget
             {
