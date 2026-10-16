@@ -260,6 +260,58 @@ public class ReportViewModelTests
         Assert.Null(vm.SelectedServiceReport);
     }
 
+    [Fact]
+    public async Task ReportViewModel_AmbiguityAfterLoad_BlocksHtmlOutputAndRevokesCustomer()
+    {
+        var store = new FakeServiceReportService();
+        var (vm, generator) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        Assert.True(vm.IncludeClient);
+
+        store.Inventory = new ServiceReportInventory(2, 0, 2, 0, false);
+        await vm.GenerateReportCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, generator.GenerateCallCount);
+        Assert.True(vm.HasReportInventoryWarning);
+        Assert.True(vm.HasError);
+        Assert.Null(vm.SelectedServiceReport);
+        Assert.False(vm.IncludeClient);
+        Assert.False(vm.HasGeneratedReport);
+    }
+
+    [Fact]
+    public async Task ReportViewModel_ReportDisappearsAfterLoad_BlocksPdfOutput()
+    {
+        var store = new FakeServiceReportService();
+        var (vm, generator) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        store.ReturnNullOnLoad = true;
+
+        await vm.ExportPdfCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, generator.GenerateCallCount);
+        Assert.False(vm.HasGeneratedPdf);
+        Assert.True(vm.HasReportInventoryWarning);
+        Assert.Null(vm.SelectedServiceReport);
+        Assert.True(vm.HasError);
+    }
+
+    [Fact]
+    public async Task ReportViewModel_ClientIdentityReplacedAfterLoad_BlocksHtmlOutput()
+    {
+        var store = new FakeServiceReportService();
+        var (vm, generator) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        store.ClientNameOverride = "Different Synthetic Customer";
+
+        await vm.GenerateReportCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, generator.GenerateCallCount);
+        Assert.True(vm.HasReportInventoryWarning);
+        Assert.False(vm.HasClientData);
+        Assert.True(vm.HasError);
+    }
+
     // ===== Helper =====
 
     private static (ReportViewModel vm, FakeReportGenerationService fakeReportService) CreateViewModel(FakeServiceReportService? storedReports = null)
@@ -353,6 +405,7 @@ public class ReportViewModelTests
         public ServiceReportInventory Inventory { get; set; } =
             new(1, 1, 0, 0, false);
         public bool ReturnNullOnLoad { get; set; }
+        public string ClientNameOverride { get; set; } = "Cliente QA";
         public Task<ServiceReportInventory> InspectReportInventoryAsync() =>
             Task.FromResult(Inventory);
 
@@ -372,7 +425,7 @@ public class ReportViewModelTests
             return Task.FromResult<ServiceReport?>(new ServiceReport
             {
                 Id = reportId,
-                Client = new ClientInfo { Name = "Cliente QA" },
+                Client = new ClientInfo { Name = ClientNameOverride },
                 Equipment = new EquipmentInfo { Brand = "CATTECH", Model = "Notebook QA" },
             Service = new ServiceInfo { Reason = "Smoke Report Test" }
             });
