@@ -248,6 +248,12 @@ public class TempCleanupService : ITempCleanupService
     public async Task<string> SaveResultAsync(TempCleanupResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
+        // Validate before creating any filesystem artefact; keep the exact
+        // snapshot bytes which passed the same reader contract.
+        var json = JsonSerializer.Serialize(result, SerializerOptions);
+        if (DeserializeVerifiedHistory(json) is null)
+            throw new ArgumentException(
+                "El historial contiene datos estructurales inválidos.", nameof(result));
         EnsureDirectoryExists(_resultsDirectory);
 
         // A second-resolution timestamp, even combined with a model-supplied
@@ -256,8 +262,6 @@ public class TempCleanupService : ITempCleanupService
         var fileName = $"cleanup-result-{result.StartedAt:yyyyMMdd-HHmmss}-{token}.json";
         var filePath = Path.Combine(_resultsDirectory, fileName);
         var staging = Path.Combine(_resultsDirectory, $".cattech-cleanup-{token}.tmp");
-        var json = JsonSerializer.Serialize(result, SerializerOptions);
-
         try
         {
             // Write first to an OS-exclusive temporary file. Never publish
