@@ -255,15 +255,57 @@ public partial class ReportViewModel : ObservableObject
         }
     }
 
+    // Selecting another report or changing the customer checkbox invalidates
+    // an in-flight export, even if the operator later restores the same choice.
+    // WPF updates these properties on its dispatcher; no global storage writes.
+    private long _customerSelectionRevision;
+
+    partial void OnSelectedServiceReportChanged(ServiceReport? value)
+        => _customerSelectionRevision++;
+
+    partial void OnIncludeClientChanged(bool value)
+        => _customerSelectionRevision++;
+
     /// <summary>
-    /// Advisory pre-output revalidation. Does not guarantee file-handle identity
-    /// or physical equipment identity; stored data may change after this check.
+    /// Compare the EXACT client report captured for this export, not whatever
+    /// happens to be selected after asynchronous storage/inventory reads.
+    /// Serialize only in memory and detach the validated payload from mutable
+    /// WPF state. This remains advisory: file identity can change after read.
     /// </summary>
-    private async Task<bool> VerifySelectedClientBeforeOutputAsync()
+    private async Task<bool> VerifySelectedClientBeforeOutputAsync(
+        ReportGenerationOptions options)
     {
-        var selected = SelectedServiceReport;
+        var selected = options.ServiceReport;
         if (selected is null)
             return false;
+
+        var capturedRevision = _customerSelectionRevision;
+
+        bool SelectionStillCurrent() =>
+            _customerSelectionRevision == capturedRevision
+            && ReferenceEquals(SelectedServiceReport, selected)
+            && IncludeClient && options.IncludeClient;
+
+        bool RejectChangedSelection()
+        {
+            InvalidateGeneratedArtifacts();
+            ShowError("La selección o los datos del cliente cambiaron mientras se preparaba el informe. Volvé a generar con la selección actual.");
+            return false;
+        }
+
+        if (!SelectionStillCurrent())
+            return RejectChangedSelection();
+
+        string selectedSnapshot;
+        try
+        {
+            selectedSnapshot = JsonSerializer.Serialize(selected);
+        }
+        catch (Exception)
+        {
+            RevokeCustomerSelection("Los datos seleccionados no pudieron verificarse.");
+            return false;
+        }
 
         if (!await CheckReportInventoryAsync())
         {
@@ -272,22 +314,34 @@ public partial class ReportViewModel : ObservableObject
             return false;
         }
 
+        if (!SelectionStillCurrent())
+            return RejectChangedSelection();
+
         try
         {
             var live = await _serviceReportService.LoadReportAsync(selected.Id);
-            // Compare the full semantic report, not only name/model/serial:
-            // phone, service notes, actions and all exportable values matter.
-            // Do not log or persist the serialized customer payload.
-            // This reduces stale data, but cannot pin on-disk identity or
-            // prevent external writes immediately after this check.
+
+            // Snapshot mutation and ABA selection changes both fail closed.
+            if (!SelectionStillCurrent()
+                || !string.Equals(JsonSerializer.Serialize(selected),
+                    selectedSnapshot, StringComparison.Ordinal))
+                return RejectChangedSelection();
+
             if (live is not null
                 && string.Equals(JsonSerializer.Serialize(live),
-                    JsonSerializer.Serialize(selected), StringComparison.Ordinal))
+                    selectedSnapshot, StringComparison.Ordinal))
+            {
+                // The exporter receives its own detached customer snapshot.
+                // Later changes to the WPF form cannot rewrite this payload.
+                options.ServiceReport = JsonSerializer.Deserialize<ServiceReport>(
+                    selectedSnapshot) ?? throw new InvalidDataException(
+                        "El reporte de cliente no pudo reconstruirse.");
                 return true;
+            }
         }
         catch (Exception)
         {
-            // Revalidation failed. No raw file names or exception details shown.
+            // Do not show private filesystem paths or serialized client data.
         }
 
         RevokeCustomerSelection("El informe seleccionado cambió o dejó de estar disponible. " +
@@ -501,7 +555,7 @@ public partial class ReportViewModel : ObservableObject
                 ShowError("Seleccioná un diagnóstico antes de generar el informe.");
                 return;
             }
-            if (options.IncludeClient && !await VerifySelectedClientBeforeOutputAsync())
+            if (options.IncludeClient && !await VerifySelectedClientBeforeOutputAsync(options))
                 return;
 
             var filePath = await _reportService.GenerateHtmlReportAsync(options);
@@ -595,7 +649,7 @@ public partial class ReportViewModel : ObservableObject
                 ShowError("Seleccioná un diagnóstico antes de generar el informe.");
                 return;
             }
-            if (options.IncludeClient && !await VerifySelectedClientBeforeOutputAsync())
+            if (options.IncludeClient && !await VerifySelectedClientBeforeOutputAsync(options))
                 return;
 
             LastReportPath = await _reportService.GenerateHtmlReportAsync(options);
