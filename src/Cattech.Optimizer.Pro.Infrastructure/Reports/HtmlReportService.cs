@@ -46,7 +46,11 @@ public class HtmlReportService : IReportGenerationService
         var html = GenerateHtmlContent(options);
 
         // Generar nombre de archivo
-        var clientName = options.ServiceReport?.Client?.Name ?? "SinCliente";
+        // Omitting the client section must also omit identifying information
+        // from filesystem names, not merely from HTML sections.
+        var clientName = options.IncludeClient
+            ? options.ServiceReport?.Client?.Name ?? "SinCliente"
+            : "SinCliente";
         var safeName = SanitizeFileName(clientName);
         var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
         // A timestamp rounded to seconds is NOT a unique report identity.
