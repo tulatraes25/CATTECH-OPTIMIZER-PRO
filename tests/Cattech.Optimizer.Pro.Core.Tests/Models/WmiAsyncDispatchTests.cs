@@ -23,7 +23,7 @@ public sealed class WmiAsyncDispatchTests
         {
             ReadingThreadId = Environment.CurrentManagedThreadId;
             _entered.TrySetResult(true);
-            if (!_release.Wait(TimeSpan.FromSeconds(5)))
+            if (!_release.Wait(TimeSpan.FromSeconds(30)))
                 throw new TimeoutException("Synthetic WMI source not released by test.");
             return new WmiMemorySnapshot
             {
@@ -53,7 +53,7 @@ public sealed class WmiAsyncDispatchTests
         {
             ReadingThreadId = Environment.CurrentManagedThreadId;
             _entered.TrySetResult(true);
-            if (!_release.Wait(TimeSpan.FromSeconds(5)))
+            if (!_release.Wait(TimeSpan.FromSeconds(30)))
                 throw new TimeoutException("Synthetic disk topology source not released by test.");
 
             return new[]
@@ -71,30 +71,46 @@ public sealed class WmiAsyncDispatchTests
         public void Dispose() => _release.Dispose();
     }
 
+    // Give the UI-like caller its own thread: this checks that dispatch returns
+    // before the fake WMI source is released, independently of how quickly
+    // xUnit's shared worker pool schedules that source on a busy CI runner.
+    private static Task<(int CallerThreadId, Task<T> Probe)> InvokeOnDedicatedCaller<T>(
+        Func<Task<T>> startProbe)
+    {
+        return Task.Factory.StartNew(
+            () => (Environment.CurrentManagedThreadId, startProbe()),
+            CancellationToken.None,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default);
+    }
+
     [Fact]
     public async Task MemoryWmiProbe_DoesNotBlockCallingThread()
     {
         using var reader = new BlockingMemoryReader();
         var service = new WmiHardwareService(reader);
-        var callingThread = Environment.CurrentManagedThreadId;
 
-        // If GetMemoryInfoAsync executes WMI synchronously, this invocation
-        // blocks until the synthetic source times out and the test fails.
-        var task = service.GetMemoryInfoAsync();
+        var invocation = InvokeOnDedicatedCaller(service.GetMemoryInfoAsync);
         try
         {
-            await reader.Entered.WaitAsync(TimeSpan.FromSeconds(4));
-            Assert.False(task.IsCompleted, "Slow WMI must run on a worker.");
-            Assert.NotEqual(callingThread, reader.ReadingThreadId);
+            // An accidental inline Read() hangs this dedicated caller until
+            // finally releases the fake; scheduling its worker is a separate gate.
+            var (callerThreadId, probe) =
+                await invocation.WaitAsync(TimeSpan.FromSeconds(5));
+
+            await reader.Entered.WaitAsync(TimeSpan.FromSeconds(15));
+            Assert.False(probe.IsCompleted, "Slow WMI must run on a worker.");
+            Assert.NotEqual(callerThreadId, reader.ReadingThreadId);
+
+            reader.Release();
+            var result = await probe.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.True(reader.Released);
+            Assert.Equal(8d, result.TotalGB);
         }
         finally
         {
             reader.Release();
         }
-
-        var result = await task.WaitAsync(TimeSpan.FromSeconds(4));
-        Assert.True(reader.Released);
-        Assert.Equal(8d, result.TotalGB);
     }
 
     [Fact]
@@ -104,23 +120,26 @@ public sealed class WmiAsyncDispatchTests
         using var memory = new BlockingMemoryReader();
         using var disks = new BlockingDiskReader();
         var service = new WmiHardwareService(memory, disks);
-        var callingThread = Environment.CurrentManagedThreadId;
 
-        var task = service.GetDiskInfoAsync();
+        var invocation = InvokeOnDedicatedCaller(service.GetDiskInfoAsync);
         try
         {
-            await disks.Entered.WaitAsync(TimeSpan.FromSeconds(4));
-            Assert.False(task.IsCompleted, "Slow disk topology must not block WPF.");
-            Assert.NotEqual(callingThread, disks.ReadingThreadId);
+            var (callerThreadId, probe) =
+                await invocation.WaitAsync(TimeSpan.FromSeconds(5));
+
+            await disks.Entered.WaitAsync(TimeSpan.FromSeconds(15));
+            Assert.False(probe.IsCompleted, "Slow disk topology must not block WPF.");
+            Assert.NotEqual(callerThreadId, disks.ReadingThreadId);
+
+            disks.Release();
+            var result = await probe.WaitAsync(TimeSpan.FromSeconds(10));
+            var disk = Assert.Single(result);
+            Assert.Equal("Synthetic NVMe", disk.Name);
+            Assert.Equal("SSD", disk.MediaType);
         }
         finally
         {
             disks.Release();
         }
-
-        var result = await task.WaitAsync(TimeSpan.FromSeconds(4));
-        var disk = Assert.Single(result);
-        Assert.Equal("Synthetic NVMe", disk.Name);
-        Assert.Equal("SSD", disk.MediaType);
     }
 }
