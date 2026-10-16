@@ -119,6 +119,44 @@ public class RepairOutcomeEvaluatorTests
     }
 
     [Fact]
+    public void DifferentCases_MustNotClaimImprovement_OrExposeAnAttachableCase()
+    {
+        var otherCase = new DiagnosticContextId(
+            Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"));
+        var after = EvidenceRecord.Observed(AfterId, otherCase, Subject,
+            "diagnostic-check", "windows.component.health",
+            BaselineTime.AddMinutes(30), EvidenceValue.FromText("healthy"),
+            "synthetic-only", EvidencePrivacyClass.Equipment);
+
+        var outcome = RepairOutcomeEvaluator.Compare(Rule(),
+            Observed(BeforeId, "unhealthy", BaselineTime), after);
+
+        Assert.Equal(RepairOutcomeStatus.Indeterminate, outcome.Status);
+        Assert.Equal(RepairOutcomeReason.IncompatibleContext, outcome.Reason);
+        Assert.False(outcome.ContextId.IsValid);
+        Assert.False(outcome.SubjectId.IsValid);
+    }
+
+    [Fact]
+    public void DifferentComponentsOnSameCase_MustNotClaimImprovement()
+    {
+        var otherSubject = new DiagnosticSubjectId(
+            Guid.Parse("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"));
+        var after = EvidenceRecord.Observed(AfterId, Context, otherSubject,
+            "diagnostic-check", "windows.component.health",
+            BaselineTime.AddMinutes(30), EvidenceValue.FromText("healthy"),
+            "synthetic-only", EvidencePrivacyClass.Equipment);
+
+        var outcome = RepairOutcomeEvaluator.Compare(Rule(),
+            Observed(BeforeId, "unhealthy", BaselineTime), after);
+
+        Assert.Equal(RepairOutcomeStatus.Indeterminate, outcome.Status);
+        Assert.Equal(RepairOutcomeReason.IncompatibleSubject, outcome.Reason);
+        Assert.Equal(Context, outcome.ContextId);
+        Assert.False(outcome.SubjectId.IsValid);
+    }
+
+    [Fact]
     public void SensitiveValues_AreNotCopiedToOutcome()
     {
         const string privateMarker = "SYNTHETIC-PRIVATE-POSTCONDITION";
