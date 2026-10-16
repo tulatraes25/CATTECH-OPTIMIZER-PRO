@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
@@ -36,6 +36,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="..\..\config\bugcheckcodes.json"
+             Link="config\bugcheckcodes.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
     <Content Include="..\..\config\herramientas.json"
              Link="config\herramientas.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

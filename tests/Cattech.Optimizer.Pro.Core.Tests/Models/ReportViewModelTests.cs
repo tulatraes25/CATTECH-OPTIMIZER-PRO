@@ -149,6 +149,564 @@ public class ReportViewModelTests
         Assert.Equal("Cliente QA", fakeReportService.LastCapturedOptions.ServiceReport.Client.Name);
     }
 
+    // Private Windows paths and customer identifiers may arrive in exception
+    // messages from IO and headless PDF renderers. None belongs on the UI.
+    private const string PrivateFailureMarker =
+        @"C:\Users\SyntheticClient\Documents\PRIVATE_CUSTOMER_PATH_SENTINEL";
+
+    [Fact]
+    public async Task HtmlGenerationFailure_NeverShowsPrivatePathInUi()
+    {
+        var (vm, generator) = CreateViewModel();
+        vm.IncludeClient = false;
+        vm.IncludeDiagnostic = false;
+        generator.GenerateFailure = new IOException(PrivateFailureMarker);
+
+        await vm.GenerateReportCommand.ExecuteAsync(null);
+
+        Assert.True(vm.HasError);
+        Assert.False(vm.HasGeneratedReport);
+        Assert.Equal(1, generator.GenerateCallCount);
+        Assert.DoesNotContain("PRIVATE_CUSTOMER_PATH_SENTINEL", vm.ErrorMessage);
+        Assert.DoesNotContain(@"C:\Users", vm.ErrorMessage);
+        Assert.Contains("informe", vm.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task FailedReportIndexSave_NeverShowsPrivatePathOrClaimsCompletion()
+    {
+        var (vm, generator) = CreateViewModel();
+        vm.IncludeClient = false;
+        vm.IncludeDiagnostic = false;
+        generator.SaveInfoFailure = new IOException(PrivateFailureMarker);
+
+        await vm.GenerateReportCommand.ExecuteAsync(null);
+
+        Assert.True(vm.HasError);
+        Assert.False(vm.HasGeneratedReport);
+        Assert.Equal(1, generator.GenerateCallCount);
+        Assert.DoesNotContain("PRIVATE_CUSTOMER_PATH_SENTINEL", vm.ErrorMessage);
+        Assert.Contains("historial", vm.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task PdfHtmlPreparationFailure_NeverShowsPrivatePathInUi()
+    {
+        var (vm, generator) = CreateViewModel();
+        vm.IncludeClient = false;
+        vm.IncludeDiagnostic = false;
+        generator.GenerateFailure = new IOException(PrivateFailureMarker);
+
+        await vm.ExportPdfCommand.ExecuteAsync(null);
+
+        Assert.True(vm.HasError);
+        Assert.False(vm.HasGeneratedPdf);
+        Assert.DoesNotContain("PRIVATE_CUSTOMER_PATH_SENTINEL", vm.ErrorMessage);
+        Assert.Contains("HTML", vm.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task PdfRendererFailure_NeverShowsPrivatePathInUi()
+    {
+        var exporter = new FakePdfExportService
+        {
+            ExportFailure = new IOException(PrivateFailureMarker)
+        };
+        var (vm, generator) = CreateViewModel(pdfExporter: exporter);
+        vm.IncludeClient = false;
+        vm.IncludeDiagnostic = false;
+
+        await vm.ExportPdfCommand.ExecuteAsync(null);
+
+        Assert.True(vm.HasError);
+        Assert.False(vm.HasGeneratedPdf);
+        Assert.Equal(1, generator.GenerateCallCount);
+        Assert.DoesNotContain("PRIVATE_CUSTOMER_PATH_SENTINEL", vm.ErrorMessage);
+        Assert.Contains("PDF", vm.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task FailedDataLoad_RevokesStaleClientSelectionAndHidesPrivatePath()
+    {
+        var settings = new FakeSettingsService
+        {
+            LoadFailure = new IOException(PrivateFailureMarker)
+        };
+        var (vm, _) = CreateViewModel(settings: settings);
+        vm.SelectedServiceReport = new ServiceReport();
+        vm.HasClientData = true;
+        vm.IncludeClient = true;
+        vm.LastReportPath = "previous-synthetic.html";
+        vm.HasGeneratedReport = true;
+
+        await vm.LoadDataCommand.ExecuteAsync(null);
+
+        Assert.True(vm.HasError);
+        Assert.True(vm.HasReportInventoryWarning);
+        Assert.False(vm.HasClientData);
+        Assert.False(vm.IncludeClient);
+        Assert.Null(vm.SelectedServiceReport);
+        Assert.False(vm.HasGeneratedReport);
+        Assert.Equal(string.Empty, vm.LastReportPath);
+        Assert.DoesNotContain("PRIVATE_CUSTOMER_PATH_SENTINEL", vm.ErrorMessage);
+        Assert.DoesNotContain("PRIVATE_CUSTOMER_PATH_SENTINEL", vm.ReportInventoryMessage);
+    }
+
+    private static (TaskCompletionSource<bool> entered, TaskCompletionSource<bool> release)
+        PauseNextCustomerReload(FakeServiceReportService store)
+    {
+        var entered = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        store.LoadEntered = entered;
+        store.ResumeLoad = release;
+        return (entered, release);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CustomerOptOutDuringRevalidation_NeverGeneratesPrivateHtmlOrPdf(bool pdf)
+    {
+        var store = new FakeServiceReportService();
+        var (vm, generator) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        Assert.True(vm.IncludeClient);
+        var (entered, release) = PauseNextCustomerReload(store);
+
+        var export = pdf
+            ? vm.ExportPdfCommand.ExecuteAsync(null)
+            : vm.GenerateReportCommand.ExecuteAsync(null);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        vm.IncludeClient = false;
+        release.TrySetResult(true);
+        await export.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(0, generator.GenerateCallCount);
+        Assert.True(vm.HasError);
+        Assert.False(vm.HasGeneratedReport);
+        Assert.False(vm.HasGeneratedPdf);
+        Assert.Contains("selección", vm.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CustomerSelectionAbaDuringRevalidation_IsNotAccidentallyAccepted()
+    {
+        var store = new FakeServiceReportService();
+        var (vm, generator) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        var original = Assert.IsType<ServiceReport>(vm.SelectedServiceReport);
+        var (entered, release) = PauseNextCustomerReload(store);
+
+        var export = vm.GenerateReportCommand.ExecuteAsync(null);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        vm.SelectedServiceReport = new ServiceReport
+        {
+            Client = new ClientInfo { Name = "Other synthetic customer" }
+        };
+        vm.SelectedServiceReport = original;
+        release.TrySetResult(true);
+        await export.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(0, generator.GenerateCallCount);
+        Assert.True(vm.HasError);
+        Assert.False(vm.HasGeneratedReport);
+    }
+
+    [Fact]
+    public async Task SelectedCustomerMutationDuringRevalidation_IsRejected()
+    {
+        var store = new FakeServiceReportService();
+        var (vm, generator) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        var original = Assert.IsType<ServiceReport>(vm.SelectedServiceReport);
+        var (entered, release) = PauseNextCustomerReload(store);
+
+        var export = vm.GenerateReportCommand.ExecuteAsync(null);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        original.Client.Phone = "synthetic-mutated-while-waiting";
+        release.TrySetResult(true);
+        await export.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(0, generator.GenerateCallCount);
+        Assert.True(vm.HasError);
+        Assert.False(vm.HasGeneratedReport);
+    }
+
+    [Fact]
+    public async Task UnchangedCustomerRevalidation_ExportsDetachedSnapshot()
+    {
+        var store = new FakeServiceReportService();
+        var (vm, generator) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        var original = Assert.IsType<ServiceReport>(vm.SelectedServiceReport);
+        var (entered, release) = PauseNextCustomerReload(store);
+
+        var export = vm.GenerateReportCommand.ExecuteAsync(null);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        release.TrySetResult(true);
+        await export.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.False(vm.HasError);
+        Assert.True(vm.HasGeneratedReport);
+        var copied = Assert.IsType<ServiceReport>(generator.LastCapturedOptions!.ServiceReport);
+        Assert.NotSame(original, copied);
+        Assert.Equal(original.Id, copied.Id);
+        original.Client.Phone = "synthetic-later-form-edit";
+        Assert.NotEqual(original.Client.Phone, copied.Client.Phone);
+
+        if (!string.IsNullOrWhiteSpace(vm.LastReportPath)
+            && File.Exists(vm.LastReportPath))
+            File.Delete(vm.LastReportPath); // Unique synthetic test file only.
+    }
+
+    [Fact]
+    public async Task PdfMetadataUsesOriginalHtml_WhenLastReportUiChangesDuringExport()
+    {
+        var exporter = new FakePdfExportService();
+        var (vm, generator) = CreateViewModel(pdfExporter: exporter);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        vm.IncludeClient = false;
+        vm.IncludeDiagnostic = false;
+
+        var entered = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        exporter.ExportEntered = entered;
+        exporter.ResumeExport = release;
+
+        var operation = vm.ExportPdfCommand.ExecuteAsync(null);
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            var originalHtml = Assert.IsType<string>(exporter.LastExportedHtmlPath);
+            vm.LastReportPath = Path.Combine(Path.GetTempPath(),
+                "another-synthetic-report-" + Guid.NewGuid().ToString("N") + ".html");
+            release.TrySetResult(true);
+            await operation.WaitAsync(TimeSpan.FromSeconds(10));
+
+            Assert.True(vm.HasGeneratedPdf);
+            Assert.False(vm.HasError);
+            Assert.NotNull(generator.LastSavedInfo);
+            Assert.Equal(originalHtml, generator.LastSavedInfo.HtmlPath);
+            Assert.NotEqual(vm.LastReportPath, generator.LastSavedInfo.HtmlPath);
+            Assert.Equal(Path.ChangeExtension(originalHtml, ".pdf"),
+                generator.LastSavedInfo.PdfPath);
+        }
+        finally
+        {
+            release.TrySetResult(true);
+            if (!string.IsNullOrEmpty(exporter.LastExportedHtmlPath)
+                && File.Exists(exporter.LastExportedHtmlPath))
+                File.Delete(exporter.LastExportedHtmlPath);
+            if (!string.IsNullOrEmpty(vm.LastPdfPath) && File.Exists(vm.LastPdfPath))
+                File.Delete(vm.LastPdfPath);
+        }
+    }
+
+    [Fact]
+    public async Task FailedHtmlRegeneration_RevokesPreviouslyGeneratedHtmlAndPdfButtons()
+    {
+        var exporter = new FakePdfExportService();
+        var (vm, generator) = CreateViewModel(pdfExporter: exporter);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        await vm.ExportPdfCommand.ExecuteAsync(null);
+        Assert.True(vm.HasGeneratedPdf);
+        Assert.True(vm.HasGeneratedReport);
+        var previousHtml = vm.LastReportPath;
+        var previousPdf = vm.LastPdfPath;
+
+        try
+        {
+            generator.GenerateFailure = new IOException("Synthetic retry failure");
+            await vm.GenerateReportCommand.ExecuteAsync(null);
+
+            Assert.True(vm.HasError);
+            Assert.False(vm.HasGeneratedReport);
+            Assert.False(vm.HasGeneratedPdf);
+            Assert.Empty(vm.LastReportPath);
+            Assert.Empty(vm.LastPdfPath);
+            await vm.OpenReportCommand.ExecuteAsync(null);
+            await vm.OpenPdfCommand.ExecuteAsync(null);
+            Assert.Equal(0, generator.OpenReportCalls);
+            Assert.Equal(0, exporter.OpenPdfCalls);
+        }
+        finally
+        {
+            if (File.Exists(previousHtml)) File.Delete(previousHtml);
+            if (File.Exists(previousPdf)) File.Delete(previousPdf);
+        }
+    }
+
+    [Fact]
+    public async Task PdfRetryFailure_RevokesPreviouslyGeneratedPdf()
+    {
+        var exporter = new FakePdfExportService();
+        var (vm, _) = CreateViewModel(pdfExporter: exporter);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        await vm.ExportPdfCommand.ExecuteAsync(null);
+        Assert.True(vm.HasGeneratedPdf);
+        var previousHtml = vm.LastReportPath;
+        var previousPdf = vm.LastPdfPath;
+
+        try
+        {
+            exporter.ExportFailure = new IOException("Synthetic PDF retry failure");
+            await vm.ExportPdfCommand.ExecuteAsync(null);
+
+            Assert.True(vm.HasError);
+            Assert.False(vm.HasGeneratedPdf);
+            Assert.Empty(vm.LastPdfPath);
+            await vm.OpenPdfCommand.ExecuteAsync(null);
+            Assert.Equal(0, exporter.OpenPdfCalls);
+        }
+        finally
+        {
+            if (File.Exists(previousHtml)) File.Delete(previousHtml);
+            if (File.Exists(previousPdf)) File.Delete(previousPdf);
+            if (File.Exists(vm.LastReportPath)) File.Delete(vm.LastReportPath);
+        }
+    }
+
+    [Fact]
+    public async Task ReportSelectionsAndNotes_RevokeLatestGeneratedArtifacts()
+    {
+        var (vm, _) = CreateViewModel();
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        await vm.GenerateReportCommand.ExecuteAsync(null);
+        Assert.True(vm.HasGeneratedReport);
+        var previousHtml = vm.LastReportPath;
+
+        try
+        {
+            vm.FinalObservations = "New synthetic observation";
+            Assert.False(vm.HasGeneratedReport);
+            Assert.Empty(vm.LastReportPath);
+
+            await vm.GenerateReportCommand.ExecuteAsync(null);
+            Assert.True(vm.HasGeneratedReport);
+            var laterHtml = vm.LastReportPath;
+            try
+            {
+                vm.IncludeClient = false;
+                Assert.False(vm.HasGeneratedReport);
+                Assert.False(vm.HasGeneratedPdf);
+                Assert.Empty(vm.LastReportPath);
+            }
+            finally
+            {
+                if (File.Exists(laterHtml)) File.Delete(laterHtml);
+            }
+        }
+        finally
+        {
+            if (File.Exists(previousHtml)) File.Delete(previousHtml);
+        }
+    }
+
+    [Fact]
+    public async Task PdfHistoryUsesSameIncludedSectionsAndNotesAsHtmlHistory()
+    {
+        var (vm, generator) = CreateViewModel();
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        vm.IncludeRecommendations = false;
+        vm.FinalObservations = "Synthetic controlled observation";
+        await vm.GenerateReportCommand.ExecuteAsync(null);
+        Assert.True(vm.HasGeneratedReport);
+        var html = Assert.IsType<GeneratedReportInfo>(generator.LastSavedInfo);
+        var previousPath = vm.LastReportPath;
+        try
+        {
+            await vm.ExportPdfCommand.ExecuteAsync(null);
+
+            Assert.True(vm.HasGeneratedPdf);
+            var pdf = Assert.IsType<GeneratedReportInfo>(generator.LastSavedInfo);
+            Assert.Equal(html.IncludedSections, pdf.IncludedSections);
+            Assert.Contains("Cliente", pdf.IncludedSections);
+            Assert.DoesNotContain("Recomendaciones", pdf.IncludedSections);
+            Assert.Equal("Synthetic controlled observation", pdf.Notes);
+            Assert.Equal(html.Notes, pdf.Notes);
+            Assert.NotEmpty(pdf.HtmlPath);
+            Assert.NotEmpty(pdf.PdfPath);
+        }
+        finally
+        {
+            if (File.Exists(previousPath)) File.Delete(previousPath);
+            if (File.Exists(vm.LastReportPath)) File.Delete(vm.LastReportPath);
+            if (File.Exists(vm.LastPdfPath)) File.Delete(vm.LastPdfPath);
+        }
+    }
+
+    [Fact]
+    public async Task SmartTestCheckboxEdit_RevokesPreviousHtmlWithoutDeletingHistory()
+    {
+        var (vm, _) = CreateViewModel();
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        var selection = new SmartTestSessionSelectionItem
+        {
+            Session = new SmartTestSession(),
+            IsSelected = false
+        };
+        vm.AvailableSmartTestSessions.Add(selection);
+        await vm.GenerateReportCommand.ExecuteAsync(null);
+        Assert.True(vm.HasGeneratedReport);
+        var previousHtml = vm.LastReportPath;
+
+        try
+        {
+            selection.IsSelected = true;
+
+            Assert.False(vm.HasGeneratedReport);
+            Assert.False(vm.HasGeneratedPdf);
+            Assert.Empty(vm.LastReportPath);
+            Assert.Empty(vm.LastPdfPath);
+            // UI revocation does NOT delete historic user files.
+            Assert.True(File.Exists(previousHtml));
+        }
+        finally
+        {
+            if (File.Exists(previousHtml)) File.Delete(previousHtml);
+        }
+    }
+
+    [Fact]
+    public async Task SmartTestCollectionChangesDetachOldListenersAndRevokeOutputs()
+    {
+        var (vm, _) = CreateViewModel();
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        var selection = new SmartTestSessionSelectionItem
+        {
+            Session = new SmartTestSession(),
+            IsSelected = false
+        };
+        vm.AvailableSmartTestSessions.Add(selection);
+        vm.AvailableSmartTestSessions.Remove(selection);
+
+        await vm.GenerateReportCommand.ExecuteAsync(null);
+        var previousHtml = vm.LastReportPath;
+        try
+        {
+            // The removed child is no longer subscribed to the active report.
+            selection.IsSelected = true;
+            Assert.True(vm.HasGeneratedReport);
+            Assert.Equal(previousHtml, vm.LastReportPath);
+
+            vm.AvailableSmartTestSessions.Add(selection);
+            Assert.False(vm.HasGeneratedReport);
+            Assert.Empty(vm.LastReportPath);
+
+            await vm.GenerateReportCommand.ExecuteAsync(null);
+            var nextHtml = vm.LastReportPath;
+            try
+            {
+                vm.AvailableSmartTestSessions.Clear();
+                Assert.False(vm.HasGeneratedReport);
+                Assert.Empty(vm.LastReportPath);
+            }
+            finally
+            {
+                if (File.Exists(nextHtml)) File.Delete(nextHtml);
+            }
+        }
+        finally
+        {
+            if (File.Exists(previousHtml)) File.Delete(previousHtml);
+        }
+    }
+
+    [Fact]
+    public async Task FormEditedWhileHtmlGeneratorAwaits_CannotClaimCurrentReport()
+    {
+        var (vm, generator) = CreateViewModel();
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        vm.IncludeClient = false;
+        vm.IncludeDiagnostic = false;
+        var entered = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        generator.GenerateEntered = entered;
+        generator.ResumeGenerate = release;
+
+        var operation = vm.GenerateReportCommand.ExecuteAsync(null);
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            vm.FinalObservations = "Changed synthetic observations while writing";
+            release.TrySetResult(true);
+            await operation.WaitAsync(TimeSpan.FromSeconds(10));
+
+            Assert.True(vm.HasError);
+            Assert.False(vm.IsSuccess);
+            Assert.False(vm.HasGeneratedReport);
+            Assert.False(vm.HasGeneratedPdf);
+            Assert.Empty(vm.LastReportPath);
+            Assert.Empty(vm.LastPdfPath);
+            Assert.Contains("cambiaron", vm.ErrorMessage,
+                StringComparison.OrdinalIgnoreCase);
+            // The earlier file may exist; do not claim it was rolled back.
+            Assert.True(File.Exists(generator.LastCreatedFilePath));
+            Assert.Null(generator.LastSavedInfo);
+        }
+        finally
+        {
+            release.TrySetResult(true);
+            if (File.Exists(generator.LastCreatedFilePath))
+                File.Delete(generator.LastCreatedFilePath);
+        }
+    }
+
+    [Fact]
+    public async Task FormEditedDuringHeadlessPdfConversion_NeverShowsStaleSuccess()
+    {
+        var exporter = new FakePdfExportService();
+        var (vm, generator) = CreateViewModel(pdfExporter: exporter);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        vm.IncludeClient = false;
+        vm.IncludeDiagnostic = false;
+        var entered = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        exporter.ExportEntered = entered;
+        exporter.ResumeExport = release;
+
+        var operation = vm.ExportPdfCommand.ExecuteAsync(null);
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            vm.FinalObservations = "Different synthetic PDF notes";
+            release.TrySetResult(true);
+            await operation.WaitAsync(TimeSpan.FromSeconds(10));
+
+            Assert.True(vm.HasError);
+            Assert.False(vm.IsSuccess);
+            Assert.False(vm.HasGeneratedReport);
+            Assert.False(vm.HasGeneratedPdf);
+            Assert.Empty(vm.LastReportPath);
+            Assert.Empty(vm.LastPdfPath);
+            Assert.Contains("cambiaron", vm.ErrorMessage,
+                StringComparison.OrdinalIgnoreCase);
+            // The file is recorded truthfully under the original options,
+            // but it cannot be presented as the current form's output.
+            Assert.NotNull(generator.LastSavedInfo);
+            Assert.Equal(string.Empty, generator.LastSavedInfo.Notes);
+        }
+        finally
+        {
+            release.TrySetResult(true);
+            if (File.Exists(exporter.LastExportedHtmlPath))
+                File.Delete(exporter.LastExportedHtmlPath);
+            if (!string.IsNullOrEmpty(exporter.LastExportedHtmlPath))
+            {
+                var pdf = exporter.GetPdfOutputPath(exporter.LastExportedHtmlPath);
+                if (File.Exists(pdf)) File.Delete(pdf);
+            }
+        }
+    }
+
     // ===== TEST E: Missing selection guard (GenerateReport) =====
 
     [Fact]
@@ -193,16 +751,222 @@ public class ReportViewModelTests
         Assert.Equal(0, fakeReportService.GenerateCallCount);
     }
 
+    [Fact]
+    public async Task ReportViewModel_InvalidStore_FlagsWarningAndSuppressesCustomerSelection()
+    {
+        var store = new FakeServiceReportService
+        {
+            Inventory = new ServiceReportInventory(2, 1, 0, 1, false)
+        };
+        var (vm, _) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+
+        Assert.True(vm.HasReportInventoryWarning);
+        Assert.Contains("1 archivos inválidos", vm.ReportInventoryMessage);
+        Assert.Empty(vm.AvailableServiceReports);
+        Assert.Null(vm.SelectedServiceReport);
+        Assert.False(vm.HasClientData);
+        Assert.False(vm.IncludeClient);
+        Assert.True(vm.HasDiagnosticData);
+    }
+
+    [Fact]
+    public async Task ReportViewModel_DuplicateStore_DoesNotDisplayAmbiguousCustomers()
+    {
+        var store = new FakeServiceReportService
+        {
+            Inventory = new ServiceReportInventory(2, 0, 2, 0, false)
+        };
+        var (vm, _) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        Assert.True(vm.HasReportInventoryWarning);
+        Assert.Contains("2 registros", vm.ReportInventoryMessage);
+        Assert.Empty(vm.AvailableServiceReports);
+    }
+
+    [Fact]
+    public async Task ReportViewModel_ReloadAfterCorruption_RevokesPreviouslyLoadedDataAndArtifacts()
+    {
+        var store = new FakeServiceReportService();
+        var (vm, _) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        Assert.True(vm.HasClientData);
+        vm.LastReportPath = "previous.html";
+        vm.HasGeneratedReport = true;
+
+        store.Inventory = new ServiceReportInventory(1, 0, 0, 1, false);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+
+        Assert.True(vm.HasReportInventoryWarning);
+        Assert.Null(vm.SelectedServiceReport);
+        Assert.False(vm.HasClientData);
+        Assert.False(vm.IncludeClient);
+        Assert.False(vm.HasGeneratedReport);
+        Assert.Equal(string.Empty, vm.LastReportPath);
+    }
+
+    [Fact]
+    public async Task ReportViewModel_StoreChangedDuringLoad_SuppressesPartialSelection()
+    {
+        var store = new FakeServiceReportService { ReturnNullOnLoad = true };
+        var (vm, _) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+
+        Assert.True(vm.HasReportInventoryWarning);
+        Assert.Contains("cambió", vm.ReportInventoryMessage);
+        Assert.Empty(vm.AvailableServiceReports);
+        Assert.Null(vm.SelectedServiceReport);
+    }
+
+    [Fact]
+    public async Task ReportViewModel_AmbiguityAfterLoad_BlocksHtmlOutputAndRevokesCustomer()
+    {
+        var store = new FakeServiceReportService();
+        var (vm, generator) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        Assert.True(vm.IncludeClient);
+
+        store.Inventory = new ServiceReportInventory(2, 0, 2, 0, false);
+        await vm.GenerateReportCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, generator.GenerateCallCount);
+        Assert.True(vm.HasReportInventoryWarning);
+        Assert.True(vm.HasError);
+        Assert.Null(vm.SelectedServiceReport);
+        Assert.False(vm.IncludeClient);
+        Assert.False(vm.HasGeneratedReport);
+    }
+
+    [Fact]
+    public async Task ReportViewModel_ReportDisappearsAfterLoad_BlocksPdfOutput()
+    {
+        var store = new FakeServiceReportService();
+        var (vm, generator) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        store.ReturnNullOnLoad = true;
+
+        await vm.ExportPdfCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, generator.GenerateCallCount);
+        Assert.False(vm.HasGeneratedPdf);
+        Assert.True(vm.HasReportInventoryWarning);
+        Assert.Null(vm.SelectedServiceReport);
+        Assert.True(vm.HasError);
+    }
+
+    [Fact]
+    public async Task ReportViewModel_ClientIdentityReplacedAfterLoad_BlocksHtmlOutput()
+    {
+        var store = new FakeServiceReportService();
+        var (vm, generator) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        store.ClientNameOverride = "Different Synthetic Customer";
+
+        await vm.GenerateReportCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, generator.GenerateCallCount);
+        Assert.True(vm.HasReportInventoryWarning);
+        Assert.False(vm.HasClientData);
+        Assert.True(vm.HasError);
+    }
+
+    [Fact]
+    public async Task ReportViewModel_ExcludedClient_DoesNotReachHtmlOptionsOrHistory()
+    {
+        var (vm, generator) = CreateViewModel();
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        Assert.NotNull(vm.SelectedServiceReport);
+        vm.IncludeClient = false;
+        vm.IncludeDiagnostic = false;
+
+        await vm.GenerateReportCommand.ExecuteAsync(null);
+
+        Assert.NotNull(generator.LastCapturedOptions);
+        Assert.False(generator.LastCapturedOptions.IncludeClient);
+        Assert.Null(generator.LastCapturedOptions.ServiceReport);
+        Assert.NotNull(generator.LastSavedInfo);
+        Assert.Equal("Sin cliente", generator.LastSavedInfo.ClientName);
+        Assert.Equal(string.Empty, generator.LastSavedInfo.EquipmentName);
+    }
+
+    [Fact]
+    public async Task ReportViewModel_ExcludedClient_DoesNotReachPdfHistory()
+    {
+        var (vm, generator) = CreateViewModel();
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        vm.IncludeClient = false;
+        vm.IncludeDiagnostic = false;
+
+        await vm.ExportPdfCommand.ExecuteAsync(null);
+
+        Assert.NotNull(generator.LastCapturedOptions);
+        Assert.Null(generator.LastCapturedOptions.ServiceReport);
+        Assert.NotNull(generator.LastSavedInfo);
+        Assert.Equal("Sin cliente", generator.LastSavedInfo.ClientName);
+        Assert.Equal(string.Empty, generator.LastSavedInfo.EquipmentName);
+    }
+
+    [Theory]
+    [InlineData("phone")]
+    [InlineData("service-reason")]
+    [InlineData("service-action")]
+    [InlineData("technician")]
+    public async Task ReportViewModel_ChangedNonIdentityField_BlocksStaleHtml(string changedField)
+    {
+        var store = new FakeServiceReportService();
+        var (vm, generator) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        Assert.True(vm.IncludeClient);
+
+        switch (changedField)
+        {
+            case "phone": store.ClientPhoneOverride = "synthetic-new-phone"; break;
+            case "service-reason": store.ServiceReasonOverride = "Synthetic revised repair"; break;
+            case "service-action": store.ServiceActionOverride = "Synthetic replaced action"; break;
+            case "technician": store.TechnicianOverride = "Other Synthetic Technician"; break;
+        }
+
+        await vm.GenerateReportCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, generator.GenerateCallCount);
+        Assert.True(vm.HasReportInventoryWarning);
+        Assert.Null(vm.SelectedServiceReport);
+        Assert.False(vm.HasClientData);
+        Assert.False(vm.HasGeneratedReport);
+    }
+
+    [Theory]
+    [InlineData("phone")]
+    [InlineData("service-reason")]
+    public async Task ReportViewModel_ChangedNonIdentityField_BlocksStalePdf(string changedField)
+    {
+        var store = new FakeServiceReportService();
+        var (vm, generator) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+
+        if (changedField == "phone")
+            store.ClientPhoneOverride = "synthetic-updated-contact";
+        else
+            store.ServiceReasonOverride = "Synthetic updated service reason";
+
+        await vm.ExportPdfCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, generator.GenerateCallCount);
+        Assert.False(vm.HasGeneratedPdf);
+        Assert.True(vm.HasReportInventoryWarning);
+        Assert.Null(vm.SelectedServiceReport);
+    }
+
     // ===== Helper =====
 
-    private static (ReportViewModel vm, FakeReportGenerationService fakeReportService) CreateViewModel()
+    private static (ReportViewModel vm, FakeReportGenerationService fakeReportService) CreateViewModel(FakeServiceReportService? storedReports = null, FakePdfExportService? pdfExporter = null, FakeSettingsService? settings = null)
     {
         var fakeReportService = new FakeReportGenerationService();
         var vm = new ReportViewModel(
             fakeReportService,
-            new FakePdfExportService(),
-            new FakeSettingsService(),
-            new FakeServiceReportService(),
+            pdfExporter ?? new FakePdfExportService(),
+            settings ?? new FakeSettingsService(),
+            storedReports ?? new FakeServiceReportService(),
             new FakeDiagnosticService(),
             new FakeStartupService(),
             new FakeCleanupService(),
@@ -234,55 +998,125 @@ public class ReportViewModelTests
     {
         public ReportGenerationOptions? LastCapturedOptions { get; private set; }
         public int GenerateCallCount { get; private set; }
+        public Exception? GenerateFailure { get; set; }
+        public Exception? SaveInfoFailure { get; set; }
+        public TaskCompletionSource<bool>? GenerateEntered { get; set; }
+        public TaskCompletionSource<bool>? ResumeGenerate { get; set; }
+        public string? LastCreatedFilePath { get; private set; }
+        public int OpenReportCalls { get; private set; }
 
-        public Task<string> GenerateHtmlReportAsync(ReportGenerationOptions options)
+        public async Task<string> GenerateHtmlReportAsync(ReportGenerationOptions options)
         {
             LastCapturedOptions = options;
             GenerateCallCount++;
+            if (GenerateFailure is not null)
+                throw GenerateFailure;
+            var gate = ResumeGenerate;
+            if (GenerateEntered is not null)
+            {
+                GenerateEntered.TrySetResult(true);
+                if (gate is not null)
+                    await gate.Task.WaitAsync(TimeSpan.FromSeconds(15));
+            }
 
             var clientName = options.ServiceReport?.Client?.Name ?? "SinCliente";
-            var fileName = $"Informe_Tecnico_CATTECH_{clientName}_{DateTime.Now:yyyyMMdd-HHmmss}.html";
+            var fileName = $"Informe_Tecnico_CATTECH_{clientName}_{DateTime.Now:yyyyMMdd-HHmmss}_{Guid.NewGuid():N}.html";
             var filePath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), fileName);
             File.WriteAllText(filePath, $"<html><body>Test report for {clientName}</body></html>");
-            return Task.FromResult(filePath);
+            LastCreatedFilePath = filePath;
+            return filePath;
         }
 
-        public Task SaveReportInfoAsync(GeneratedReportInfo info) => Task.CompletedTask;
+        public GeneratedReportInfo? LastSavedInfo { get; private set; }
+        public Task SaveReportInfoAsync(GeneratedReportInfo info)
+        {
+            if (SaveInfoFailure is not null)
+                throw SaveInfoFailure;
+            LastSavedInfo = info;
+            return Task.CompletedTask;
+        }
         public Task<List<GeneratedReportInfo>> ListGeneratedReportsAsync(int maxResults = 20) => Task.FromResult(new List<GeneratedReportInfo>());
-        public Task OpenReportAsync(string htmlPath) => Task.CompletedTask;
+        public Task OpenReportAsync(string htmlPath)
+        {
+            OpenReportCalls++;
+            return Task.CompletedTask;
+        }
         public Task OpenReportsFolderAsync() => Task.CompletedTask;
     }
 
     private class FakePdfExportService : IPdfExportService
     {
+        public Exception? ExportFailure { get; set; }
+        public int OpenPdfCalls { get; private set; }
+        public TaskCompletionSource<bool>? ExportEntered { get; set; }
+        public TaskCompletionSource<bool>? ResumeExport { get; set; }
+        public string? LastExportedHtmlPath { get; private set; }
         public Task<PdfExporterInfo> CanExportAsync() => Task.FromResult(new PdfExporterInfo { IsAvailable = true });
-        public Task<bool> ExportHtmlToPdfAsync(string htmlPath, string outputPdfPath)
+        public async Task<bool> ExportHtmlToPdfAsync(string htmlPath, string outputPdfPath)
         {
+            if (ExportFailure is not null)
+                throw ExportFailure;
+            LastExportedHtmlPath = htmlPath;
+            if (ExportEntered is not null)
+            {
+                ExportEntered.TrySetResult(true);
+                if (ResumeExport is not null)
+                    await ResumeExport.Task.WaitAsync(TimeSpan.FromSeconds(15));
+            }
             File.WriteAllText(outputPdfPath, "%PDF-1.4 fake");
-            return Task.FromResult(true);
+            return true;
         }
         public string GetPdfOutputPath(string htmlPath) => htmlPath.Replace(".html", ".pdf");
-        public Task OpenPdfAsync(string pdfPath) => Task.CompletedTask;
+        public Task OpenPdfAsync(string pdfPath)
+        {
+            OpenPdfCalls++;
+            return Task.CompletedTask;
+        }
     }
 
     private class FakeSettingsService : ISettingsService
     {
-        public Task<AppSettings> LoadSettingsAsync() => Task.FromResult(new AppSettings
+        public Exception? LoadFailure { get; set; }
+        public Task<AppSettings> LoadSettingsAsync()
         {
-            Company = new CompanyInfo { Name = "CATTECH QA" },
-            Technician = new TechnicianInfo { Name = "Técnico QA" }
-        });
+            if (LoadFailure is not null)
+                throw LoadFailure;
+            return Task.FromResult(new AppSettings
+            {
+                Company = new CompanyInfo { Name = "CATTECH QA" },
+                Technician = new TechnicianInfo { Name = "Técnico QA" }
+            });
+        }
         public Task SaveSettingsAsync(AppSettings settings) => Task.CompletedTask;
         public AppSettings CurrentSettings => new()
         {
             Company = new CompanyInfo { Name = "CATTECH QA" },
             Technician = new TechnicianInfo { Name = "Técnico QA" }
         };
-        public event EventHandler<AppSettings>? SettingsChanged;
+        // This settings fake is immutable and never raises changes. Explicit
+        // accessors avoid an unused-event warning without changing behavior.
+        public event EventHandler<AppSettings>? SettingsChanged
+        {
+            add { }
+            remove { }
+        }
     }
 
-    private class FakeServiceReportService : IServiceReportService
+    private class FakeServiceReportService : IServiceReportService, IServiceReportInventoryReader
     {
+        public ServiceReportInventory Inventory { get; set; } =
+            new(1, 1, 0, 0, false);
+        public bool ReturnNullOnLoad { get; set; }
+        public string ClientNameOverride { get; set; } = "Cliente QA";
+        public string ClientPhoneOverride { get; set; } = string.Empty;
+        public string ServiceReasonOverride { get; set; } = "Smoke Report Test";
+        public string? ServiceActionOverride { get; set; }
+        public string TechnicianOverride { get; set; } = string.Empty;
+        private static readonly DateTime StableDate =
+            new(2026, 10, 15, 12, 0, 0, DateTimeKind.Utc);
+        public Task<ServiceReportInventory> InspectReportInventoryAsync() =>
+            Task.FromResult(Inventory);
+
         public Task<List<ServiceReportSummary>> ListReportsAsync(int maxResults = 50)
         {
             return Task.FromResult(new List<ServiceReportSummary>
@@ -291,15 +1125,39 @@ public class ReportViewModelTests
             });
         }
 
-        public Task<ServiceReport?> LoadReportAsync(string reportId)
+        public TaskCompletionSource<bool>? LoadEntered { get; set; }
+        public TaskCompletionSource<bool>? ResumeLoad { get; set; }
+
+        public async Task<ServiceReport?> LoadReportAsync(string reportId)
         {
-            return Task.FromResult<ServiceReport?>(new ServiceReport
+            if (LoadEntered is not null)
+            {
+                LoadEntered.TrySetResult(true);
+                if (ResumeLoad is not null)
+                    await ResumeLoad.Task.WaitAsync(TimeSpan.FromSeconds(15));
+            }
+            if (ReturnNullOnLoad)
+                return null;
+
+            return new ServiceReport
             {
                 Id = reportId,
-                Client = new ClientInfo { Name = "Cliente QA" },
+                CreatedAt = StableDate,
+                TechnicianName = TechnicianOverride,
+                Client = new ClientInfo
+                {
+                    Name = ClientNameOverride,
+                    Phone = ClientPhoneOverride
+                },
                 Equipment = new EquipmentInfo { Brand = "CATTECH", Model = "Notebook QA" },
-            Service = new ServiceInfo { Reason = "Smoke Report Test" }
-            });
+                Service = new ServiceInfo
+                {
+                    ServiceDate = StableDate,
+                    Reason = ServiceReasonOverride,
+                    ActionsPerformed = ServiceActionOverride is null
+                        ? new List<string>() : new List<string> { ServiceActionOverride }
+                }
+            };
         }
 
         public Task<string> SaveReportAsync(ServiceReport report) => Task.FromResult(report.Id);

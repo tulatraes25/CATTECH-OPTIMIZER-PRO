@@ -1,5 +1,8 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.ComponentModel;
 using System.IO;
+using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Cattech.Optimizer.Pro.Core.Interfaces;
@@ -53,6 +56,12 @@ public partial class ReportViewModel : ObservableObject
 
     [ObservableProperty]
     private string _errorMessage = string.Empty;
+
+    [ObservableProperty]
+    private bool _hasReportInventoryWarning;
+
+    [ObservableProperty]
+    private string _reportInventoryMessage = string.Empty;
 
     // --- Datos cargados ---
 
@@ -197,6 +206,224 @@ public partial class ReportViewModel : ObservableObject
         _restorePointService = restorePointService;
         _smartDiskService = smartDiskService;
         _smartTestService = smartTestService;
+        AvailableSmartTestSessions.CollectionChanged += OnSmartTestCollectionChanged;
+    }
+
+    /// <summary>
+    /// SMART tests are checkboxes on child view-models rather than a scalar
+    /// property of this report view-model. Each change invalidates the
+    /// previous "current" HTML/PDF without deleting historical files.
+    /// </summary>
+    private void OnSmartTestCollectionChanged(
+        object? sender, NotifyCollectionChangedEventArgs args)
+    {
+        // Reconcile all subscriptions after Add/Remove/Replace/Reset.
+        // In particular, Reset has no OldItems in ObservableCollection.
+        var current = AvailableSmartTestSessions.ToHashSet();
+        foreach (var old in _observedSmartTestSelections.Except(current).ToArray())
+        {
+            old.PropertyChanged -= OnSmartTestSelectionPropertyChanged;
+            _observedSmartTestSelections.Remove(old);
+        }
+
+        foreach (var item in current.Except(_observedSmartTestSelections))
+        {
+            item.PropertyChanged += OnSmartTestSelectionPropertyChanged;
+            _observedSmartTestSelections.Add(item);
+        }
+
+        InvalidateGeneratedArtifacts();
+    }
+
+    private void OnSmartTestSelectionPropertyChanged(
+        object? sender, PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName == nameof(SmartTestSessionSelectionItem.IsSelected))
+            InvalidateGeneratedArtifacts();
+    }
+
+    /// <summary>
+    /// Advisory read-only check. Never use the snapshot as authorization to
+    /// load, delete or export a specific file without revalidation.
+    /// </summary>
+    private async Task<bool> CheckReportInventoryAsync()
+    {
+        if (_serviceReportService is not IServiceReportInventoryReader reader)
+        {
+            HasReportInventoryWarning = true;
+            ReportInventoryMessage = "La integridad de los informes no se puede comprobar. " +
+                "No se cargarán clientes desde este almacenamiento.";
+            return false;
+        }
+
+        try
+        {
+            var health = await reader.InspectReportInventoryAsync();
+            if (health.ScanFailed)
+            {
+                HasReportInventoryWarning = true;
+                ReportInventoryMessage = "No se pudo completar la comprobación de informes. " +
+                    "No se cargarán datos de clientes hasta revisar el almacenamiento.";
+                return false;
+            }
+
+            if (health.RequiresReview)
+            {
+                HasReportInventoryWarning = true;
+                ReportInventoryMessage =
+                    $"Almacenamiento a revisar: {health.InvalidEntries} archivos inválidos y " +
+                    $"{health.AmbiguousEntries} registros con identificador duplicado. " +
+                    "Se suspendió la selección de clientes; ningún archivo fue eliminado.";
+                return false;
+            }
+
+            HasReportInventoryWarning = false;
+            ReportInventoryMessage = $"Inventario revisado: {health.UniqueEntries} informes sin conflictos detectados.";
+            return true;
+        }
+        catch (Exception)
+        {
+            // Never surface arbitrary file paths or exception text in the UI.
+            HasReportInventoryWarning = true;
+            ReportInventoryMessage = "No fue posible comprobar los informes de servicio. " +
+                "Se suspendió la selección de clientes sin modificar archivos.";
+            return false;
+        }
+    }
+
+    // Selecting another report or changing the customer checkbox invalidates
+    // an in-flight export, even if the operator later restores the same choice.
+    // WPF updates these properties on its dispatcher; no global storage writes.
+    private long _customerSelectionRevision;
+    private long _artifactRevision;
+    private long _activeExportAttempt;
+    private readonly HashSet<SmartTestSessionSelectionItem> _observedSmartTestSelections = new();
+
+    partial void OnSelectedServiceReportChanged(ServiceReport? value)
+    {
+        _customerSelectionRevision++;
+        InvalidateGeneratedArtifacts();
+    }
+
+    partial void OnIncludeClientChanged(bool value)
+    {
+        _customerSelectionRevision++;
+        InvalidateGeneratedArtifacts();
+    }
+
+    // An artifact represents the previously selected options, not the current
+    // form. On an edit, revoke its "latest report" buttons. Historical files
+    // stay untouched and are still accessible through the report history.
+    partial void OnIncludeCompanyChanged(bool value) => InvalidateGeneratedArtifacts();
+    partial void OnIncludeDiagnosticChanged(bool value) => InvalidateGeneratedArtifacts();
+    partial void OnIncludeStartupChanged(bool value) => InvalidateGeneratedArtifacts();
+    partial void OnIncludeCleanupChanged(bool value) => InvalidateGeneratedArtifacts();
+    partial void OnIncludeVisualOptimizationChanged(bool value) => InvalidateGeneratedArtifacts();
+    partial void OnIncludeRestorePointChanged(bool value) => InvalidateGeneratedArtifacts();
+    partial void OnIncludeSmartChanged(bool value) => InvalidateGeneratedArtifacts();
+    partial void OnIncludeSmartTestsChanged(bool value) => InvalidateGeneratedArtifacts();
+    partial void OnIncludeRecommendationsChanged(bool value) => InvalidateGeneratedArtifacts();
+    partial void OnSelectedDiagnosticReportChanged(DiagnosticReport? value) => InvalidateGeneratedArtifacts();
+    partial void OnSelectedStartupAnalysisChanged(StartupAnalysis? value) => InvalidateGeneratedArtifacts();
+    partial void OnSelectedCleanupResultChanged(TempCleanupResult? value) => InvalidateGeneratedArtifacts();
+    partial void OnSelectedVisualOptimizationResultChanged(VisualOptimizationResult? value) => InvalidateGeneratedArtifacts();
+    partial void OnSelectedRestorePointResultChanged(RestorePointResult? value) => InvalidateGeneratedArtifacts();
+    partial void OnSelectedSmartAnalysisChanged(SmartAnalysisResult? value) => InvalidateGeneratedArtifacts();
+    partial void OnFinalObservationsChanged(string value) => InvalidateGeneratedArtifacts();
+
+    /// <summary>
+    /// Compare the EXACT client report captured for this export, not whatever
+    /// happens to be selected after asynchronous storage/inventory reads.
+    /// Serialize only in memory and detach the validated payload from mutable
+    /// WPF state. This remains advisory: file identity can change after read.
+    /// </summary>
+    private async Task<bool> VerifySelectedClientBeforeOutputAsync(
+        ReportGenerationOptions options)
+    {
+        var selected = options.ServiceReport;
+        if (selected is null)
+            return false;
+
+        var capturedRevision = _customerSelectionRevision;
+
+        bool SelectionStillCurrent() =>
+            _customerSelectionRevision == capturedRevision
+            && ReferenceEquals(SelectedServiceReport, selected)
+            && IncludeClient && options.IncludeClient;
+
+        bool RejectChangedSelection()
+        {
+            InvalidateGeneratedArtifacts();
+            ShowError("La selección o los datos del cliente cambiaron mientras se preparaba el informe. Volvé a generar con la selección actual.");
+            return false;
+        }
+
+        if (!SelectionStillCurrent())
+            return RejectChangedSelection();
+
+        string selectedSnapshot;
+        try
+        {
+            selectedSnapshot = JsonSerializer.Serialize(selected);
+        }
+        catch (Exception)
+        {
+            RevokeCustomerSelection("Los datos seleccionados no pudieron verificarse.");
+            return false;
+        }
+
+        if (!await CheckReportInventoryAsync())
+        {
+            RevokeCustomerSelection("La integridad de los informes cambió. " +
+                "Se canceló la generación con datos de clientes.");
+            return false;
+        }
+
+        if (!SelectionStillCurrent())
+            return RejectChangedSelection();
+
+        try
+        {
+            var live = await _serviceReportService.LoadReportAsync(selected.Id);
+
+            // Snapshot mutation and ABA selection changes both fail closed.
+            if (!SelectionStillCurrent()
+                || !string.Equals(JsonSerializer.Serialize(selected),
+                    selectedSnapshot, StringComparison.Ordinal))
+                return RejectChangedSelection();
+
+            if (live is not null
+                && string.Equals(JsonSerializer.Serialize(live),
+                    selectedSnapshot, StringComparison.Ordinal))
+            {
+                // The exporter receives its own detached customer snapshot.
+                // Later changes to the WPF form cannot rewrite this payload.
+                options.ServiceReport = JsonSerializer.Deserialize<ServiceReport>(
+                    selectedSnapshot) ?? throw new InvalidDataException(
+                        "El reporte de cliente no pudo reconstruirse.");
+                return true;
+            }
+        }
+        catch (Exception)
+        {
+            // Do not show private filesystem paths or serialized client data.
+        }
+
+        RevokeCustomerSelection("El informe seleccionado cambió o dejó de estar disponible. " +
+            "Se suspendió la generación con datos de clientes.");
+        return false;
+    }
+
+    private void RevokeCustomerSelection(string message)
+    {
+        HasReportInventoryWarning = true;
+        ReportInventoryMessage = message;
+        AvailableServiceReports.Clear();
+        SelectedServiceReport = null;
+        HasClientData = false;
+        IncludeClient = false;
+        InvalidateGeneratedArtifacts();
+        ShowError("No se generó un informe con datos de clientes. Revisá el almacenamiento y volvé a cargar.");
     }
 
     /// <summary>
@@ -208,6 +435,15 @@ public partial class ReportViewModel : ObservableObject
         ClearMessages();
         IsRunning = true;
         StatusText = "Cargando datos...";
+        // Fail closed immediately: stale customer selections must not survive
+        // an unsuccessful refresh or a newly corrupted report store.
+        HasReportInventoryWarning = true;
+        ReportInventoryMessage = "Comprobando integridad de informes...";
+        AvailableServiceReports.Clear();
+        SelectedServiceReport = null;
+        HasClientData = false;
+        IncludeClient = false;
+        InvalidateGeneratedArtifacts();
 
         try
         {
@@ -216,16 +452,38 @@ public partial class ReportViewModel : ObservableObject
             HasCompanyData = !string.IsNullOrWhiteSpace(settings.Company.Name);
             IncludeCompany = HasCompanyData;
 
-            // Clientes
-            var serviceReports = await _serviceReportService.ListReportsAsync(10);
-            AvailableServiceReports.Clear();
-            foreach (var sr in serviceReports)
+            // Clientes: advertise problems before presenting any customer choice.
+            if (await CheckReportInventoryAsync())
             {
-                var fullReport = await _serviceReportService.LoadReportAsync(sr.Id);
-                if (fullReport != null) AvailableServiceReports.Add(fullReport);
+                try
+                {
+                    var serviceReports = await _serviceReportService.ListReportsAsync(10);
+                    foreach (var sr in serviceReports)
+                    {
+                        var fullReport = await _serviceReportService.LoadReportAsync(sr.Id);
+                        if (fullReport is null)
+                        {
+                            // The store may have changed since the read-only scan.
+                            HasReportInventoryWarning = true;
+                            ReportInventoryMessage = "Un informe cambió o no pudo verificarse. " +
+                                "Se suspendió la selección de clientes; no se modificaron archivos.";
+                            AvailableServiceReports.Clear();
+                            break;
+                        }
+                        AvailableServiceReports.Add(fullReport);
+                    }
+                }
+                catch (Exception)
+                {
+                    HasReportInventoryWarning = true;
+                    ReportInventoryMessage = "No se pudo completar la carga de informes. " +
+                        "Se suspendió la selección de clientes sin modificar archivos.";
+                    AvailableServiceReports.Clear();
+                }
             }
-            HasClientData = AvailableServiceReports.Count > 0;
-            if (HasClientData) SelectedServiceReport = AvailableServiceReports.First();
+
+            HasClientData = !HasReportInventoryWarning && AvailableServiceReports.Count > 0;
+            SelectedServiceReport = HasClientData ? AvailableServiceReports.First() : null;
             IncludeClient = HasClientData;
 
             // Diagnósticos
@@ -310,16 +568,26 @@ public partial class ReportViewModel : ObservableObject
             HasSmartTestData = AvailableSmartTestSessions.Count > 0;
             IncludeSmartTests = false; // Selección manual intencional
 
-            StatusText = "Datos cargados";
+            StatusText = HasReportInventoryWarning
+                ? "Informes requieren revisión" : "Datos cargados";
 
             // Invalidar artifacts generados previamente para forzar regeneración
             // con los datos actualmente cargados (fix SMOKE-B1R-006)
             InvalidateGeneratedArtifacts();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
+            // Fail closed if loading stops after customer records were selected.
+            // Exception messages may include local paths or personal data.
             StatusText = "Error al cargar";
-            ShowError($"Error: {ex.Message}");
+            HasReportInventoryWarning = true;
+            ReportInventoryMessage = "La carga quedó incompleta. Volvé a revisar el almacenamiento de informes.";
+            AvailableServiceReports.Clear();
+            SelectedServiceReport = null;
+            HasClientData = false;
+            IncludeClient = false;
+            InvalidateGeneratedArtifacts();
+            ShowError("No se pudieron cargar todos los datos. Revisá el almacenamiento y volvé a intentar.");
         }
         finally
         {
@@ -334,12 +602,16 @@ public partial class ReportViewModel : ObservableObject
     private async Task GenerateReportAsync()
     {
         ClearMessages();
+        var attempt = BeginExportAttempt();
+        var revision = _artifactRevision;
         IsRunning = true;
         StatusText = "Generando informe...";
 
         try
         {
             var options = await BuildReportOptionsAsync();
+            if (!EnsureExportStillCurrent(attempt, revision))
+                return;
 
             // Validar selecciones obligatorias antes de generar
             if (options.IncludeClient && options.ServiceReport == null)
@@ -352,44 +624,41 @@ public partial class ReportViewModel : ObservableObject
                 ShowError("Seleccioná un diagnóstico antes de generar el informe.");
                 return;
             }
+            if (options.IncludeClient && !await VerifySelectedClientBeforeOutputAsync(options))
+                return;
+            if (!EnsureExportStillCurrent(attempt, revision))
+                return;
 
             var filePath = await _reportService.GenerateHtmlReportAsync(options);
+            // The HTML may now exist on disk; a changed form must not give
+            // the old attempt a "current report" button or a success claim.
+            if (!EnsureExportStillCurrent(attempt, revision))
+                return;
 
-            // Guardar info del informe
-            var info = new GeneratedReportInfo
-            {
-                ClientName = SelectedServiceReport?.Client?.Name ?? "Sin cliente",
-                EquipmentName = $"{SelectedServiceReport?.Equipment?.Brand} {SelectedServiceReport?.Equipment?.Model}",
-                HtmlPath = filePath,
-                Notes = FinalObservations
-            };
-
-            if (IncludeCompany) info.IncludedSections.Add("Empresa");
-            if (IncludeClient) info.IncludedSections.Add("Cliente");
-            if (IncludeDiagnostic) info.IncludedSections.Add("Diagnóstico");
-            if (IncludeStartup) info.IncludedSections.Add("Inicio");
-            if (IncludeCleanup) info.IncludedSections.Add("Limpieza");
-            if (IncludeVisualOptimization) info.IncludedSections.Add("Optimización");
-            if (IncludeRestorePoint) info.IncludedSections.Add("Restauración");
-            if (IncludeSmart && SelectedSmartAnalysis != null) info.IncludedSections.Add("SMART");
-            if (IncludeSmartTests && AvailableSmartTestSessions.Any(x => x.IsSelected)) info.IncludedSections.Add("SMART Self-Tests");
-            if (IncludeRecommendations) info.IncludedSections.Add("Recomendaciones");
+            var info = CreateGeneratedReportInfo(options, filePath);
 
             await _reportService.SaveReportInfoAsync(info);
+            if (!EnsureExportStillCurrent(attempt, revision))
+                return;
 
             LastReportPath = filePath;
             HasGeneratedReport = true;
             StatusText = "Informe generado";
             ShowSuccess($"Informe guardado: {Path.GetFileName(filePath)}");
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            StatusText = "Error al generar";
-            ShowError($"Error: {ex.Message}");
+            if (attempt == _activeExportAttempt)
+            {
+                StatusText = "Error al generar";
+                // Output may have been written before the index failed.
+                ShowError("No se pudo completar el informe. Revisá el almacenamiento y el historial antes de reintentar.");
+            }
         }
         finally
         {
-            IsRunning = false;
+            if (attempt == _activeExportAttempt)
+                IsRunning = false;
         }
     }
 
@@ -399,7 +668,7 @@ public partial class ReportViewModel : ObservableObject
     [RelayCommand]
     private async Task OpenReportAsync()
     {
-        if (!string.IsNullOrEmpty(LastReportPath))
+        if (HasGeneratedReport && !string.IsNullOrEmpty(LastReportPath))
         {
             await _reportService.OpenReportAsync(LastReportPath);
         }
@@ -420,12 +689,21 @@ public partial class ReportViewModel : ObservableObject
     [RelayCommand]
     private async Task ExportPdfAsync()
     {
+        ClearMessages();
+        var attempt = BeginExportAttempt();
+        var revision = _artifactRevision;
         // Siempre regenerar HTML con el snapshot actual de datos (fix SMOKE-B1R-006)
         // Esto asegura que el PDF refleje las selecciones actuales, no un HTML stale.
         StatusText = "Generando HTML primero...";
+        ReportGenerationOptions options;
+        // Keep the generated HTML identity stable even if another UI action
+        // changes the 'last report' field while the PDF renderer is awaiting.
+        string htmlPath;
         try
         {
-            var options = await BuildReportOptionsAsync();
+            options = await BuildReportOptionsAsync();
+            if (!EnsureExportStillCurrent(attempt, revision))
+                return;
 
             // Validar selecciones obligatorias antes de generar
             if (options.IncludeClient && options.ServiceReport == null)
@@ -438,13 +716,21 @@ public partial class ReportViewModel : ObservableObject
                 ShowError("Seleccioná un diagnóstico antes de generar el informe.");
                 return;
             }
+            if (options.IncludeClient && !await VerifySelectedClientBeforeOutputAsync(options))
+                return;
+            if (!EnsureExportStillCurrent(attempt, revision))
+                return;
 
-            LastReportPath = await _reportService.GenerateHtmlReportAsync(options);
+            htmlPath = await _reportService.GenerateHtmlReportAsync(options);
+            if (!EnsureExportStillCurrent(attempt, revision))
+                return;
+            LastReportPath = htmlPath;
             HasGeneratedReport = true;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            ShowError($"Error al generar HTML: {ex.Message}");
+            if (attempt == _activeExportAttempt)
+                ShowError("No se pudo preparar el HTML para el PDF. Revisá el almacenamiento y volvé a intentar.");
             return;
         }
 
@@ -454,7 +740,7 @@ public partial class ReportViewModel : ObservableObject
 
         try
         {
-            var pdfPath = _pdfExportService.GetPdfOutputPath(LastReportPath);
+            var pdfPath = _pdfExportService.GetPdfOutputPath(htmlPath);
 
             // Asegurar que el directorio existe
             var pdfDir = Path.GetDirectoryName(pdfPath);
@@ -463,40 +749,41 @@ public partial class ReportViewModel : ObservableObject
                 Directory.CreateDirectory(pdfDir);
             }
 
-            var success = await _pdfExportService.ExportHtmlToPdfAsync(LastReportPath, pdfPath);
+            var success = await _pdfExportService.ExportHtmlToPdfAsync(htmlPath, pdfPath);
 
             if (success && File.Exists(pdfPath))
             {
+                // Record accurate artifact metadata first. If the form changed
+                // while Edge ran, never present its old PDF as the current one.
+                var info = CreateGeneratedReportInfo(options, htmlPath, pdfPath);
+                await _reportService.SaveReportInfoAsync(info);
+                if (!EnsureExportStillCurrent(attempt, revision))
+                    return;
+
                 LastPdfPath = pdfPath;
                 HasGeneratedPdf = true;
                 PdfStatusText = "PDF generado";
                 ShowSuccess($"PDF guardado: {Path.GetFileName(pdfPath)}");
-
-                // Actualizar info del informe
-                var info = new GeneratedReportInfo
-                {
-                    ClientName = SelectedServiceReport?.Client?.Name ?? "Sin cliente",
-                    EquipmentName = $"{SelectedServiceReport?.Equipment?.Brand} {SelectedServiceReport?.Equipment?.Model}",
-                    HtmlPath = LastReportPath,
-                    PdfPath = pdfPath,
-                    Notes = FinalObservations
-                };
-                await _reportService.SaveReportInfoAsync(info);
             }
-            else
+            else if (attempt == _activeExportAttempt)
             {
                 PdfStatusText = "Error al exportar";
                 ShowError("No se pudo generar el PDF. Verifique que Microsoft Edge esté instalado.");
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            PdfStatusText = "Error al exportar";
-            ShowError($"Error al exportar PDF: {ex.Message}");
+            if (attempt == _activeExportAttempt)
+            {
+                PdfStatusText = "Error al exportar";
+                // Include neither renderer command lines nor filesystem paths.
+                ShowError("No se pudo completar el PDF. Revisá el almacenamiento y el historial antes de reintentar.");
+            }
         }
         finally
         {
-            IsExportingPdf = false;
+            if (attempt == _activeExportAttempt)
+                IsExportingPdf = false;
         }
     }
 
@@ -506,10 +793,74 @@ public partial class ReportViewModel : ObservableObject
     [RelayCommand]
     private async Task OpenPdfAsync()
     {
-        if (!string.IsNullOrEmpty(LastPdfPath))
+        if (HasGeneratedPdf && !string.IsNullOrEmpty(LastPdfPath))
         {
             await _pdfExportService.OpenPdfAsync(LastPdfPath);
         }
+    }
+
+    /// <summary>
+    /// Export attempts are monotonically numbered. Mutations of any report
+    /// selection call InvalidateGeneratedArtifacts, advancing the revision.
+    /// A superseded older attempt must never overwrite newer UI feedback.
+    /// </summary>
+    private long BeginExportAttempt()
+    {
+        _activeExportAttempt++;
+        InvalidateGeneratedArtifacts();
+        // Superseded operations no longer own the current WPF busy indicators.
+        IsRunning = false;
+        IsExportingPdf = false;
+        return _activeExportAttempt;
+    }
+
+    private bool EnsureExportStillCurrent(long attempt, long revision)
+    {
+        if (attempt != _activeExportAttempt)
+            return false; // Newer export owns the UI. No old error message.
+
+        if (revision == _artifactRevision)
+            return true;
+
+        // The file may already have been written. No rollback claims.
+        ShowError("La selección o los datos del informe cambiaron durante la generación. Revisá la carpeta y el historial; generá nuevamente el documento actual.");
+        return false;
+    }
+
+    /// <summary>
+    /// HTML and PDF history use one immutable export-options view. Reading
+    /// live WPF properties after awaits could label another customer's PDF or
+    /// omit included sections from history.
+    /// </summary>
+    private static GeneratedReportInfo CreateGeneratedReportInfo(
+        ReportGenerationOptions options, string htmlPath, string? pdfPath = null)
+    {
+        var info = new GeneratedReportInfo
+        {
+            ClientName = options.IncludeClient
+                ? options.ServiceReport?.Client?.Name ?? "Sin cliente" : "Sin cliente",
+            EquipmentName = options.IncludeClient
+                ? $"{options.ServiceReport?.Equipment?.Brand} {options.ServiceReport?.Equipment?.Model}"
+                : string.Empty,
+            HtmlPath = htmlPath,
+            PdfPath = pdfPath ?? string.Empty,
+            Notes = options.FinalObservations
+        };
+
+        if (options.IncludeCompany) info.IncludedSections.Add("Empresa");
+        if (options.IncludeClient) info.IncludedSections.Add("Cliente");
+        if (options.IncludeDiagnostic) info.IncludedSections.Add("Diagnóstico");
+        if (options.IncludeStartup) info.IncludedSections.Add("Inicio");
+        if (options.IncludeCleanup) info.IncludedSections.Add("Limpieza");
+        if (options.IncludeVisualOptimization) info.IncludedSections.Add("Optimización");
+        if (options.IncludeRestorePoint) info.IncludedSections.Add("Restauración");
+        if (options.IncludeSmart && options.SmartAnalysis is not null)
+            info.IncludedSections.Add("SMART");
+        if (options.IncludeSmartTests && options.SmartTestSessions.Count > 0)
+            info.IncludedSections.Add("SMART Self-Tests");
+        if (options.IncludeRecommendations)
+            info.IncludedSections.Add("Recomendaciones");
+        return info;
     }
 
     /// <summary>
@@ -527,7 +878,8 @@ public partial class ReportViewModel : ObservableObject
         return new ReportGenerationOptions
         {
             Settings = await _settingsService.LoadSettingsAsync(),
-            ServiceReport = SelectedServiceReport,
+            // Unchecked customer sections must not carry data into exports.
+            ServiceReport = IncludeClient ? SelectedServiceReport : null,
             DiagnosticReport = SelectedDiagnosticReport,
             StartupAnalysis = SelectedStartupAnalysis,
             CleanupResult = SelectedCleanupResult,
@@ -580,6 +932,7 @@ public partial class ReportViewModel : ObservableObject
     /// </summary>
     private void InvalidateGeneratedArtifacts()
     {
+        _artifactRevision++;
         LastReportPath = string.Empty;
         HasGeneratedReport = false;
         LastPdfPath = string.Empty;
