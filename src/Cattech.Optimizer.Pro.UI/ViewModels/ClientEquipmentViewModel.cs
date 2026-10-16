@@ -14,6 +14,11 @@ public partial class ClientEquipmentViewModel : ObservableObject
     private readonly IServiceReportService _reportService;
     private readonly ISettingsService _settingsService;
     private readonly IHardwareService _hardwareService;
+    private bool _detectedDiskFreeKnown;
+    private double _detectedSystemVolumeCapacityGb;
+    private double _detectedSystemVolumeFreeGb;
+    private int _hardwareDetectionGeneration;
+    private long _formRevision;
 
     // --- Campos del formulario: Cliente ---
 
@@ -143,13 +148,24 @@ public partial class ClientEquipmentViewModel : ObservableObject
     [RelayCommand]
     private async Task DetectHardwareAsync()
     {
+        // A later NewRecord invalidates this pending response.
+        var generation = ++_hardwareDetectionGeneration;
         ClearMessages();
         IsDetecting = true;
         DetectionStatus = "Detectando...";
+        _detectedDiskFreeKnown = false;
+        _detectedSystemVolumeCapacityGb = 0;
+        _detectedSystemVolumeFreeGb = 0;
+        DetectedDisk = "No detectado";
+        DetectedDiskCapacity = "No disponible";
+        DetectedDiskFree = "No disponible";
+        DetectedDiskType = "No determinado";
 
         try
         {
             var report = await _hardwareService.GetHardwareReportAsync();
+            if (generation != _hardwareDetectionGeneration)
+                return; // A newer record owns the form; discard old data.
 
             // Sistema operativo
             DetectedOS = report.System.OsName;
@@ -166,20 +182,29 @@ public partial class ClientEquipmentViewModel : ObservableObject
                 ? $"{report.Memory.TotalGB} GB"
                 : "No disponible";
 
-            // Disco principal
-            var mainDisk = report.Disks.FirstOrDefault();
+            // Disco del volumen del sistema: no asumir primer disco WMI.
+            _detectedDiskFreeKnown = false;
+            var candidates = report.Disks.Where(d => d.VolumeAssociationsVerified &&
+                d.Volumes.Count(v => v.IsSystemVolume) == 1).ToArray();
+            var mainDisk = candidates.Length == 1 ? candidates[0] : null;
             if (mainDisk != null)
             {
+                var volume = mainDisk.SystemVolume!;
                 DetectedDisk = mainDisk.Name;
-                DetectedDiskCapacity = mainDisk.TotalGB > 0
-                    ? $"{mainDisk.TotalGB} GB"
+                DetectedDiskCapacity = volume.CapacityGB.HasValue
+                    ? $"{volume.CapacityGB.Value:F2} GB"
                     : "No disponible";
-                DetectedDiskFree = mainDisk.FreeGB > 0
-                    ? $"{mainDisk.FreeGB} GB"
+                DetectedDiskFree = volume.FreeGB.HasValue
+                    ? $"{volume.FreeGB.Value:F2} GB"
                     : "No disponible";
-                DetectedDiskType = !string.IsNullOrEmpty(mainDisk.MediaType)
-                    ? mainDisk.MediaType
-                    : "No detectado";
+                DetectedDiskType = string.IsNullOrWhiteSpace(mainDisk.MediaType)
+                    ? "No determinado" : mainDisk.MediaType;
+                _detectedDiskFreeKnown = volume.FreePercent.HasValue;
+                if (_detectedDiskFreeKnown)
+                {
+                    _detectedSystemVolumeCapacityGb = volume.CapacityGB!.Value;
+                    _detectedSystemVolumeFreeGb = volume.FreeGB!.Value;
+                }
             }
             else
             {
@@ -195,14 +220,18 @@ public partial class ClientEquipmentViewModel : ObservableObject
             DetectionStatus = "Detectado correctamente";
             HasDetectedData = true;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            DetectionStatus = "Error al detectar";
-            ShowError($"Error durante la detección: {ex.Message}");
+            if (generation == _hardwareDetectionGeneration)
+            {
+                DetectionStatus = "Error al detectar";
+                ShowError("No se pudo completar la detección de hardware.");
+            }
         }
         finally
         {
-            IsDetecting = false;
+            if (generation == _hardwareDetectionGeneration)
+                IsDetecting = false;
         }
     }
 
@@ -221,17 +250,40 @@ public partial class ClientEquipmentViewModel : ObservableObject
             return;
         }
 
+        // An in-flight save owns a snapshot of one revision, not whichever
+        // client/equipment form happens to be visible when I/O finishes.
+        var saveRevision = _formRevision;
         try
         {
             var report = BuildReportFromForm();
-            var fileName = await _reportService.SaveReportAsync(report);
+            await _reportService.SaveReportAsync(report);
+
+            if (saveRevision != _formRevision)
+            {
+                StatusMessage = "Finalizó un guardado anterior. El formulario actual no fue guardado.";
+                IsSuccess = false;
+                HasError = false;
+                ErrorMessage = string.Empty;
+                return;
+            }
 
             HasUnsavedChanges = false;
-            ShowSuccess($"Reporte guardado: {fileName}");
+            // Storage filenames and raw exceptions can contain private
+            // directory, technician or customer data. Keep UI messages safe.
+            ShowSuccess("Registro guardado correctamente. Podés consultarlo en Informes.");
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            ShowError($"Error al guardar: {ex.Message}");
+            // Do not label a newly selected case with a previous case's
+            // save error, or expose the original storage exception.
+            if (saveRevision != _formRevision)
+            {
+                ShowError("No se confirmó el guardado del registro anterior. Revisá Informes.");
+                return;
+            }
+            // A storage failure may happen after some I/O; do not claim that
+            // the write was certainly absent or advise a blind retry.
+            ShowError("No se pudo confirmar el guardado. Revisá Informes antes de intentar nuevamente.");
         }
     }
 
@@ -241,6 +293,16 @@ public partial class ClientEquipmentViewModel : ObservableObject
     [RelayCommand]
     private void NewRecord()
     {
+        // Even a blank/unchanged new record is a new selection revision.
+        ++_formRevision;
+        // Invalidate outstanding async detection before touching bound fields.
+        ++_hardwareDetectionGeneration;
+        _detectedDiskFreeKnown = false;
+        _detectedSystemVolumeCapacityGb = 0;
+        _detectedSystemVolumeFreeGb = 0;
+        WindowsVersion = string.Empty;
+        IsDetecting = false;
+
         // Cliente
         ClientName = string.Empty;
         ClientPhone = string.Empty;
@@ -316,8 +378,11 @@ public partial class ClientEquipmentViewModel : ObservableObject
                 Processor = DetectedProcessor,
                 RamTotalGB = ParseRamGB(DetectedRam),
                 PrimaryDisk = DetectedDisk,
-                DiskCapacityGB = ParseDiskGB(DetectedDiskCapacity),
-                DiskFreeGB = ParseDiskGB(DetectedDiskFree),
+                DiskCapacityGB = _detectedDiskFreeKnown
+                    ? _detectedSystemVolumeCapacityGb : 0,
+                DiskFreeGB = _detectedDiskFreeKnown
+                    ? _detectedSystemVolumeFreeGb : 0,
+                DiskFreeSpaceKnown = _detectedDiskFreeKnown,
                 DiskType = DetectedDiskType,
                 ComputerName = DetectedComputerName,
                 CurrentUser = DetectedUser,
@@ -350,7 +415,7 @@ public partial class ClientEquipmentViewModel : ObservableObject
         return ParseRamGB(diskText); // Mismo formato
     }
 
-    private string? WindowsVersion { get; set; }
+    private string WindowsVersion { get; set; } = string.Empty;
 
     private string? Validate()
     {
@@ -427,6 +492,7 @@ public partial class ClientEquipmentViewModel : ObservableObject
 
     private void MarkDirty()
     {
+        unchecked { ++_formRevision; }
         HasUnsavedChanges = true;
         ClearMessages();
     }
