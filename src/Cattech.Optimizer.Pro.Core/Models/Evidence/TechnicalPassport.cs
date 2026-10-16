@@ -109,6 +109,15 @@ public static class TechnicalPassportBuilder
                 nameof(freshExportId));
 
         var records = CaptureBounded(evidence, MaximumEvidence, nameof(evidence));
+        // No evidence is NOT evidence that a machine is healthy, repaired
+        // or even observed. To report an inaccessible/unsupported sensor,
+        // capture an explicit Unavailable/AccessDenied evidence record.
+        // Never mint an empty 'technical passport' from a case GUID alone.
+        if (records.Length == 0)
+            throw new ArgumentException(
+                "At least one scoped evidence record is required for a passport.",
+                nameof(evidence));
+
         var assessments = CaptureBounded(
             diagnostics, MaximumAssessments, nameof(diagnostics));
         var postchecks = CaptureBounded(
