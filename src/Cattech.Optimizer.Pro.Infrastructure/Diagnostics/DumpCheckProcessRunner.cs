@@ -115,6 +115,31 @@ internal sealed class DumpCheckProcessRunner : IDumpCheckProcessRunner
             };
         }
 
+        // The parent process can exit while a descendant still owns an
+        // inherited stdout/stderr pipe handle. Neither pipe completion nor a
+        // successful exit code can be trusted without a bounded drain.
+        try
+        {
+            if (!await AwaitOutputDrainAsync(output, errors,
+                TimeSpan.FromSeconds(5), deadline.Token).ConfigureAwait(false))
+                return new DumpCheckProcessResult
+                {
+                    Started = true,
+                    TimedOut = true,
+                    OutputTruncated = true
+                };
+        }
+        catch (OperationCanceledException)
+        {
+            return new DumpCheckProcessResult
+            {
+                Started = true,
+                Cancelled = token.IsCancellationRequested,
+                TimedOut = !token.IsCancellationRequested,
+                OutputTruncated = true
+            };
+        }
+
         var outResult = await output.ConfigureAwait(false);
         var errResult = await errors.ConfigureAwait(false);
 
@@ -126,6 +151,29 @@ internal sealed class DumpCheckProcessRunner : IDumpCheckProcessRunner
             Stderr = errResult.Content,
             OutputTruncated = outResult.Truncated || errResult.Truncated
         };
+    }
+
+    // A process exit does not prove its redirected output pipes reached EOF.
+    // Synthetic tasks exercise the timeout and cancellation policies without
+    // ever launching a real dump analyzer or privileged program.
+    internal static async Task<bool> AwaitOutputDrainAsync(
+        Task stdout, Task stderr, TimeSpan limit, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(stdout);
+        ArgumentNullException.ThrowIfNull(stderr);
+        if (limit <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(limit));
+
+        try
+        {
+            await Task.WhenAll(stdout, stderr)
+                .WaitAsync(limit, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch (TimeoutException)
+        {
+            return false;
+        }
     }
 
     private static async Task<(string Content, bool Truncated)> CaptureLimitedAsync(StreamReader stream)
