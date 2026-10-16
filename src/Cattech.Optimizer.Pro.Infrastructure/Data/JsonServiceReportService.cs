@@ -30,6 +30,15 @@ public class JsonServiceReportService : IServiceReportService, IServiceReportInv
     public async Task<string> SaveReportAsync(ServiceReport report)
     {
         ArgumentNullException.ThrowIfNull(report);
+
+        // Validate a serialized snapshot BEFORE creating a directory or file.
+        // A malformed new record must never poison all existing reads.
+        // Persist exactly the bytes that passed the common read contract.
+        var json = JsonSerializer.Serialize(report, SerializerOptions);
+        if (DeserializeValidatedReport(json) is null)
+            throw new ArgumentException(
+                "El informe contiene datos estructurales inválidos.", nameof(report));
+
         await _lock.WaitAsync().ConfigureAwait(false);
 
         try
@@ -43,8 +52,6 @@ public class JsonServiceReportService : IServiceReportService, IServiceReportInv
             var fileName = $"service-report-{report.CreatedAt:yyyyMMdd-HHmmss}-{token}.json";
             var filePath = Path.Combine(_reportsDirectory, fileName);
             var stagedPath = Path.Combine(_reportsDirectory, $".cattech-service-{token}.tmp");
-            var json = JsonSerializer.Serialize(report, SerializerOptions);
-
             try
             {
                 // A failure before publication can only leave a temporary file.
