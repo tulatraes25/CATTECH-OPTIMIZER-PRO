@@ -12,8 +12,8 @@ counts **zero**, not a fabricated fraction.
 
 | Gate | Evidence required | Current decision |
 |---|---|---|
-| G1 | Candidate branch exists and builds Release | PASS: PR #61 @ `e3a7e51345bcaaae402235cdb81e2360fa2090d7` |
-| G2 | Full Windows CI for G1 SHA has 0 fails/skips | PASS: CI #160, 1506/0/0 |
+| G1 | Candidate branch exists and builds Release | PASS: PR #71 @ `c7c8c3e85ec6a563b3c9e2451399912c6ad97e55` |
+| G2 | Full Windows CI for G1 SHA has 0 fails/skips | PASS: CI #170, 1557/0/0 |
 | G3 | Parallel lineage #29/#31/#34 reconciled semantically, source and tests | OPEN: matrix below, selected parity tests in draft |
 | G4 | Safety P1 cleanup #10–#20 and report/file races disposition | OPEN: unresolved issues #10–#20, #53/#55 |
 | G5 | Interactive WPF + hardware validation on Windows 10 and Windows 11 | OPEN: no valid real-machine certification |
@@ -21,7 +21,7 @@ counts **zero**, not a fabricated fraction.
 
 **v0.3 readiness score: 2/6 = 33%.** This is a *gate count*,
 NOT a percentage of features or engineering hours.
-Automated suite pass rate: 1506/1506 = 100% of executed tests, not code coverage.
+Automated suite pass rate: 1557/1557 = 100% of executed tests, not code coverage.
 Physical QA evidence gate: 0/1 = 0% for candidate v0.3.
 Full roadmap release milestones v0.2 through v1.0: 1/5 = 20%
 (one completed stage at v0.2, then v0.3/v0.4/v0.5/v1.0 pending).
@@ -29,17 +29,17 @@ These metrics deliberately use different denominators.
 
 ## 2. Live PR topology
 
-The main development line is PR #61 @
-`e3a7e51345bcaaae402235cdb81e2360fa2090d7`.
+The latest independently CI-certified development line is PR #71 @
+`c7c8c3e85ec6a563b3c9e2451399912c6ad97e55`.
 Its earlier stack includes #28, #32, #39, #42, #52, #54, #56,
-#57 and #59 (verified with exact `compare_commits` ancestor
+#57, #59, #61, #62, #63, #64, #65, #66, #67, #68, #69 and #70 (verified with exact `compare_commits` ancestor
 checks for #28/#39/#42/#52/#59). The parallel branches are:
 
 | PR | Exact head SHA | Relationship to current #61 | Primary concern |
 |---|---|---|---|
-| #29 | `a5cbf06a6ace47f44f45b26c8d65439dc9c5bc2e` | DIVERGED, 13 side-only / 131 latest-only commits since common ancestor | Context isolation, provenance |
-| #31 | `1773d4d08cb19c60b523a84a91747589c6946735` | DIVERGED, 17 / 131 | WPF passport consent revocation |
-| #34 | `7fc060362515f318520efcbb6bfe9e03b600c056` | DIVERGED, 21 / 131 | Evaluator-only repair outcomes |
+| #29 | `a5cbf06a6ace47f44f45b26c8d65439dc9c5bc2e` | DIVERGED, 13 side-only / 161 latest-only commits since common ancestor | Context isolation, provenance |
+| #31 | `1773d4d08cb19c60b523a84a91747589c6946735` | DIVERGED, 17 / 161 | WPF passport consent revocation |
+| #34 | `7fc060362515f318520efcbb6bfe9e03b600c056` | DIVERGED, 21 / 161 | Evaluator-only repair outcomes |
 
 `#29` is a Git ancestor of `#31` (4 commits); `#31`
 is a Git ancestor of `#34` (4 commits). The nearest combined
@@ -88,3 +88,38 @@ xUnit and inspected CI logs.
 
 Status: **PARTIAL / DRAFT**. Do not mark G3 PASS merely because
 these selected six semantic assertions pass.
+
+## 5. Stage 2: passport semantics from parallel PR #34 (2026-10-16)
+
+Goal: restore actual *safety contracts* from the divergent #34 line rather than
+blindly copying old signatures. The baseline #71 API requires an explicit
+`DiagnosticContextId` and stronger `DiagnosticSubjectId`; preserving
+those improvements takes priority over byte-for-byte equality.
+
+Source finding: the parallel #34 rejected a passport with **zero evidence**,
+but the newer builder accepted a case GUID plus an empty record set. This can
+create a superficially credible report without even an explicit unavailable
+reading. Stage 2 restores a strict nonempty record requirement while still
+allowing an explicit `Unavailable` or `AccessDenied` observation with
+clearly labeled counts.
+
+Added six synthetic `PassportIntegrationParityStage2Tests` assertions:
+- zero evidence and zero conclusions must not create a public passport;
+- an insufficient assessment with zero evidence must not make one exportable;
+- mixed-case observations are rejected;
+- a foreign diagnostic with an evidence ID reused by a local record is rejected;
+- a cross-case repair outcome with IDs also present locally cannot be exported;
+- an explicit unavailable measurement is allowed but never reported as observed
+  or leaked with its opaque case GUID.
+
+Architecture review: existing `PassportConsentContextSecurityTests` and
+`DiagnosticSessionCoordinatorTests` cover the key parallel #31
+selection/clipboard cases with stronger epoch-bound leases and callback
+reentrancy guards; stage 2 does not reintroduce the older unversioned public
+context-provider constructor.
+
+Acceptance: exact-SHA Windows restore, Release build, full xUnit 0 fail/skip,
+reviewed CI job logs; then semantic comparison of the remaining passport
+constructor, forbidden-mixed-assessment and WPF cases.
+**G3 remains OPEN** despite selected parity tests. No WPF interactive
+certification, real hardware, public release or `main` merge.
