@@ -248,6 +248,12 @@ public class TempCleanupService : ITempCleanupService
     public async Task<string> SaveResultAsync(TempCleanupResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
+        if (result.Errors is null || result.TargetResults is null
+            || result.Errors.Any(error => error is null)
+            || result.TargetResults.Any(target => target is null))
+            throw new ArgumentException(
+                "El registro técnico tiene listas de auditoría inválidas.",
+                nameof(result));
 
         // Validate the exact JSON snapshot before creating directories or
         // publishing any audit file. An invalid new history record must not
@@ -354,7 +360,10 @@ public class TempCleanupService : ITempCleanupService
         if (result is null || !string.Equals(result.Id, id.GetString(), StringComparison.Ordinal)
             || result.StartedAt == default || result.FinishedAt == default
             || result.FinishedAt < result.StartedAt || result.Errors is null
-            || result.TargetResults is null || result.DeletedBytes < 0
+            || result.TargetResults is null
+            || result.Errors.Any(error => error is null)
+            || result.TargetResults.Any(target => target is null)
+            || result.DeletedBytes < 0
             || result.TotalSelectedBytes < 0 || result.DeletedFiles < 0
             || result.SkippedFiles < 0 || result.FailedFiles < 0)
             return null;
