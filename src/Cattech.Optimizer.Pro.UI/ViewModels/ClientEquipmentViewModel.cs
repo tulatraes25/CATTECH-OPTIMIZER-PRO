@@ -20,6 +20,84 @@ public partial class ClientEquipmentViewModel : ObservableObject
     private int _hardwareDetectionGeneration;
     private long _formRevision;
 
+    // A confirmed rollback baseline exists only after storage reports a
+    // successful save for the same form revision. This is an in-memory
+    // snapshot, not a claim that older disk records were rolled back.
+    private FormSnapshot? _lastConfirmedForm;
+
+    private sealed record ClientFields(
+        string Name, string Phone, string Email, string Company,
+        string Address, string Notes);
+
+    private sealed record EquipmentFields(
+        string Brand, string Model, string Serial, string Type,
+        string ServiceReason, string Notes);
+
+    private sealed record DetectionFields(
+        string Os, string Edition, string Architecture, string Processor,
+        string Ram, string Disk, string DiskCapacity, string DiskFree,
+        string DiskType, string ComputerName, string User, string WindowsVersion,
+        string Status, bool HasData, bool DiskFreeKnown,
+        double SystemCapacityGb, double SystemFreeGb);
+
+    private sealed record FormSnapshot(
+        ClientFields Client, EquipmentFields Equipment, DetectionFields Detection);
+
+    private FormSnapshot CaptureForm() => new(
+        new ClientFields(ClientName, ClientPhone, ClientEmail, ClientCompany,
+            ClientAddress, ClientNotes),
+        new EquipmentFields(EquipmentBrand, EquipmentModel, SerialNumber,
+            EquipmentType, ServiceReason, EquipmentNotes),
+        new DetectionFields(DetectedOS, DetectedEdition, DetectedArchitecture,
+            DetectedProcessor, DetectedRam, DetectedDisk, DetectedDiskCapacity,
+            DetectedDiskFree, DetectedDiskType, DetectedComputerName, DetectedUser,
+            WindowsVersion, DetectionStatus, HasDetectedData,
+            _detectedDiskFreeKnown, _detectedSystemVolumeCapacityGb,
+            _detectedSystemVolumeFreeGb));
+
+    private void RestoreConfirmedForm(FormSnapshot previous)
+    {
+        // Revokes in-flight reads and saves, including A->B->A selections.
+        unchecked { ++_formRevision; ++_hardwareDetectionGeneration; }
+        IsDetecting = false;
+
+        // Identity setters intentionally clear old telemetry. Restore the
+        // confirmed telemetry only AFTER all customer/equipment setters.
+        ClientName = previous.Client.Name;
+        ClientPhone = previous.Client.Phone;
+        ClientEmail = previous.Client.Email;
+        ClientCompany = previous.Client.Company;
+        ClientAddress = previous.Client.Address;
+        ClientNotes = previous.Client.Notes;
+        EquipmentBrand = previous.Equipment.Brand;
+        EquipmentModel = previous.Equipment.Model;
+        SerialNumber = previous.Equipment.Serial;
+        EquipmentType = previous.Equipment.Type;
+        ServiceReason = previous.Equipment.ServiceReason;
+        EquipmentNotes = previous.Equipment.Notes;
+
+        DetectedOS = previous.Detection.Os;
+        DetectedEdition = previous.Detection.Edition;
+        DetectedArchitecture = previous.Detection.Architecture;
+        DetectedProcessor = previous.Detection.Processor;
+        DetectedRam = previous.Detection.Ram;
+        DetectedDisk = previous.Detection.Disk;
+        DetectedDiskCapacity = previous.Detection.DiskCapacity;
+        DetectedDiskFree = previous.Detection.DiskFree;
+        DetectedDiskType = previous.Detection.DiskType;
+        DetectedComputerName = previous.Detection.ComputerName;
+        DetectedUser = previous.Detection.User;
+        WindowsVersion = previous.Detection.WindowsVersion;
+        DetectionStatus = previous.Detection.Status;
+        HasDetectedData = previous.Detection.HasData;
+        _detectedDiskFreeKnown = previous.Detection.DiskFreeKnown;
+        _detectedSystemVolumeCapacityGb = previous.Detection.SystemCapacityGb;
+        _detectedSystemVolumeFreeGb = previous.Detection.SystemFreeGb;
+
+        HasUnsavedChanges = false;
+        ClearMessages();
+    }
+
     // --- Campos del formulario: Cliente ---
 
     [ObservableProperty]
@@ -148,8 +226,12 @@ public partial class ClientEquipmentViewModel : ObservableObject
     [RelayCommand]
     private async Task DetectHardwareAsync()
     {
-        // A later NewRecord invalidates this pending response.
+        // A new detection invalidates old telemetry immediately. Previously
+        // verified disk/OS measurements are never carried into a new probe.
+        InvalidateHardwareForIdentityChange();
         var generation = ++_hardwareDetectionGeneration;
+        unchecked { ++_formRevision; }
+        HasUnsavedChanges = true;
         ClearMessages();
         IsDetecting = true;
         DetectionStatus = "Detectando...";
@@ -219,6 +301,10 @@ public partial class ClientEquipmentViewModel : ObservableObject
 
             DetectionStatus = "Detectado correctamente";
             HasDetectedData = true;
+            // Finishing a probe changes the data that a later save will carry.
+            // A save started before completion cannot claim this newer form.
+            unchecked { ++_formRevision; }
+            HasUnsavedChanges = true;
         }
         catch (Exception)
         {
@@ -253,6 +339,7 @@ public partial class ClientEquipmentViewModel : ObservableObject
         // An in-flight save owns a snapshot of one revision, not whichever
         // client/equipment form happens to be visible when I/O finishes.
         var saveRevision = _formRevision;
+        var confirmedSnapshot = CaptureForm();
         try
         {
             var report = BuildReportFromForm();
@@ -267,6 +354,7 @@ public partial class ClientEquipmentViewModel : ObservableObject
                 return;
             }
 
+            _lastConfirmedForm = confirmedSnapshot;
             HasUnsavedChanges = false;
             // Storage filenames and raw exceptions can contain private
             // directory, technician or customer data. Keep UI messages safe.
@@ -293,6 +381,9 @@ public partial class ClientEquipmentViewModel : ObservableObject
     [RelayCommand]
     private void NewRecord()
     {
+        // A genuinely new case must never be able to restore the prior
+        // customer's confirmed snapshot through Cancel.
+        _lastConfirmedForm = null;
         // Even a blank/unchanged new record is a new selection revision.
         ++_formRevision;
         // Invalidate outstanding async detection before touching bound fields.
@@ -339,13 +430,17 @@ public partial class ClientEquipmentViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Cancela los cambios (resetea al último estado guardado).
+    /// Discard current edits and revoke outstanding asynchronous work.
+    /// Restore only the most recent confirmed save for this same form;
+    /// a never-saved or newly opened form is reset to an empty draft.
     /// </summary>
     [RelayCommand]
     private void Cancel()
     {
-        HasUnsavedChanges = false;
-        ClearMessages();
+        if (_lastConfirmedForm is { } previous)
+            RestoreConfirmedForm(previous);
+        else
+            NewRecord();
     }
 
     // --- Helpers privados ---
@@ -419,6 +514,9 @@ public partial class ClientEquipmentViewModel : ObservableObject
 
     private string? Validate()
     {
+        if (IsDetecting)
+            return "La detección de hardware sigue en curso. Esperá a que finalice o cancelala antes de guardar.";
+
         if (string.IsNullOrWhiteSpace(ClientName))
             return "El nombre del cliente es obligatorio.";
 

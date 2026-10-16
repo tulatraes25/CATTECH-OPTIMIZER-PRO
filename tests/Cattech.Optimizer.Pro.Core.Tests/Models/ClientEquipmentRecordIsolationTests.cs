@@ -428,4 +428,166 @@ public sealed class ClientEquipmentRecordIsolationTests
         Assert.DoesNotContain("SyntheticPrivateUser", vm.ErrorMessage);
     }
 
+    [Fact]
+    public async Task CancelUnsavedDraft_RevokesPendingDetectionAndClearsCustomerFields()
+    {
+        var storage = new CapturingReportService();
+        var hardware = new FakeHardwareService
+        {
+            Pending = new TaskCompletionSource<HardwareReport>(
+                TaskCreationOptions.RunContinuationsAsynchronously)
+        };
+        var vm = NewViewModel(storage, hardware);
+        PopulateRequiredFields(vm, "Synthetic Unsaved Client");
+        vm.ClientPhone = "297-synthetic";
+        vm.EquipmentBrand = "Synthetic Brand";
+
+        var running = vm.DetectHardwareCommand.ExecuteAsync(null);
+        Assert.True(vm.IsDetecting);
+
+        vm.CancelCommand.Execute(null);
+        Assert.Empty(vm.ClientName);
+        Assert.Empty(vm.ClientPhone);
+        Assert.Empty(vm.ServiceReason);
+        Assert.Empty(vm.EquipmentType);
+        Assert.Empty(vm.EquipmentBrand);
+        Assert.False(vm.HasUnsavedChanges);
+        Assert.False(vm.IsDetecting);
+
+        hardware.Pending.SetResult(CreateHardware());
+        await running;
+        Assert.Empty(vm.DetectedOS);
+        Assert.Empty(vm.DetectedDisk);
+        Assert.False(vm.HasDetectedData);
+        Assert.Empty(storage.Saved);
+    }
+
+    [Fact]
+    public async Task CancelAfterConfirmedSave_RestoresExactClientAndHiddenVolumeMetrics()
+    {
+        var storage = new CapturingReportService();
+        var vm = NewViewModel(storage, new FakeHardwareService());
+        PopulateRequiredFields(vm, "Synthetic Confirmed Client");
+        vm.ClientPhone = "297-original";
+        vm.EquipmentBrand = "Brand A";
+        await vm.DetectHardwareCommand.ExecuteAsync(null);
+        await vm.SaveCommand.ExecuteAsync(null);
+
+        var first = Assert.Single(storage.Saved);
+        Assert.True(first.Equipment.DiskFreeSpaceKnown);
+        Assert.Equal(240, first.Equipment.DiskCapacityGB);
+        Assert.Equal(120, first.Equipment.DiskFreeGB);
+        Assert.False(vm.HasUnsavedChanges);
+
+        vm.ClientName = "Synthetic Edited Client";
+        vm.ClientPhone = "297-edited";
+        vm.EquipmentBrand = "Brand B";
+        vm.ServiceReason = "Changed draft";
+        Assert.False(vm.HasDetectedData);
+        Assert.True(vm.HasUnsavedChanges);
+
+        vm.CancelCommand.Execute(null);
+        Assert.Equal("Synthetic Confirmed Client", vm.ClientName);
+        Assert.Equal("297-original", vm.ClientPhone);
+        Assert.Equal("Brand A", vm.EquipmentBrand);
+        Assert.Equal("QA regression", vm.ServiceReason);
+        Assert.True(vm.HasDetectedData);
+        Assert.Equal("Detectado correctamente", vm.DetectionStatus);
+        Assert.Equal("Synthetic A NVMe", vm.DetectedDisk);
+        Assert.False(vm.HasUnsavedChanges);
+
+        await vm.SaveCommand.ExecuteAsync(null);
+        Assert.Equal(2, storage.Saved.Count);
+        var restored = storage.Saved[1];
+        Assert.Equal("Synthetic Confirmed Client", restored.Client.Name);
+        Assert.Equal("Brand A", restored.Equipment.Brand);
+        Assert.True(restored.Equipment.DiskFreeSpaceKnown);
+        Assert.Equal(240, restored.Equipment.DiskCapacityGB);
+        Assert.Equal(120, restored.Equipment.DiskFreeGB);
+        Assert.Contains("Synthetic OS A", restored.Equipment.WindowsVersion);
+    }
+
+    [Fact]
+    public async Task CancelDuringUnconfirmedSave_DoesNotTreatOldCompletionAsNewSave()
+    {
+        var storage = new CapturingReportService
+        {
+            PendingSave = new TaskCompletionSource<string>(
+                TaskCreationOptions.RunContinuationsAsynchronously)
+        };
+        var vm = NewViewModel(storage, new FakeHardwareService());
+        PopulateRequiredFields(vm, "Synthetic Pending Client");
+        var pendingSave = vm.SaveCommand.ExecuteAsync(null);
+        Assert.Single(storage.Saved);
+
+        vm.CancelCommand.Execute(null);
+        Assert.Empty(vm.ClientName);
+        Assert.False(vm.HasUnsavedChanges);
+        storage.PendingSave.SetResult("old-pending.json");
+        await pendingSave;
+
+        Assert.Empty(vm.ClientName);
+        Assert.False(vm.HasUnsavedChanges);
+        Assert.False(vm.IsSuccess);
+        Assert.Contains("formulario actual no fue guardado", vm.StatusMessage);
+    }
+
+    [Fact]
+    public async Task SaveWhileHardwareProbePending_MustRejectIncompleteMeasurements()
+    {
+        var storage = new CapturingReportService();
+        var hardware = new FakeHardwareService
+        {
+            Pending = new TaskCompletionSource<HardwareReport>(
+                TaskCreationOptions.RunContinuationsAsynchronously)
+        };
+        var vm = NewViewModel(storage, hardware);
+        PopulateRequiredFields(vm, "Synthetic Inflight Detection");
+        var running = vm.DetectHardwareCommand.ExecuteAsync(null);
+        Assert.True(vm.HasUnsavedChanges);
+
+        await vm.SaveCommand.ExecuteAsync(null);
+        Assert.Empty(storage.Saved);
+        Assert.True(vm.HasError);
+        Assert.Contains("detección de hardware", vm.ErrorMessage);
+
+        hardware.Pending.SetResult(CreateHardware());
+        await running;
+        Assert.True(vm.HasDetectedData);
+        Assert.True(vm.HasUnsavedChanges);
+        await vm.SaveCommand.ExecuteAsync(null);
+        Assert.Single(storage.Saved);
+        Assert.False(vm.HasUnsavedChanges);
+    }
+
+    [Fact]
+    public async Task CancelPendingRedetection_RestoresConfirmedMeasurementsNotLateResponse()
+    {
+        var storage = new CapturingReportService();
+        var hardware = new FakeHardwareService();
+        var vm = NewViewModel(storage, hardware);
+        PopulateRequiredFields(vm, "Synthetic Owner");
+        await vm.DetectHardwareCommand.ExecuteAsync(null);
+        await vm.SaveCommand.ExecuteAsync(null);
+
+        hardware.Pending = new TaskCompletionSource<HardwareReport>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var running = vm.DetectHardwareCommand.ExecuteAsync(null);
+        Assert.True(vm.IsDetecting);
+        vm.CancelCommand.Execute(null);
+        Assert.False(vm.IsDetecting);
+        Assert.True(vm.HasDetectedData);
+        Assert.Equal("Synthetic A NVMe", vm.DetectedDisk);
+
+        hardware.Pending.SetResult(new HardwareReport
+        {
+            System = new SystemInfo { OsName = "Synthetic Stale OS" }
+        });
+        await running;
+        Assert.Equal("Synthetic A NVMe", vm.DetectedDisk);
+        Assert.DoesNotContain("Stale", vm.DetectedOS);
+        Assert.False(vm.HasUnsavedChanges);
+        Assert.Single(storage.Saved);
+    }
+
 }
