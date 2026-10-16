@@ -361,6 +361,51 @@ public class ReportViewModelTests
             File.Delete(vm.LastReportPath); // Unique synthetic test file only.
     }
 
+    [Fact]
+    public async Task PdfMetadataUsesOriginalHtml_WhenLastReportUiChangesDuringExport()
+    {
+        var exporter = new FakePdfExportService();
+        var (vm, generator) = CreateViewModel(pdfExporter: exporter);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        vm.IncludeClient = false;
+        vm.IncludeDiagnostic = false;
+
+        var entered = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        exporter.ExportEntered = entered;
+        exporter.ResumeExport = release;
+
+        var operation = vm.ExportPdfCommand.ExecuteAsync(null);
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            var originalHtml = Assert.IsType<string>(exporter.LastExportedHtmlPath);
+            vm.LastReportPath = Path.Combine(Path.GetTempPath(),
+                "another-synthetic-report-" + Guid.NewGuid().ToString("N") + ".html");
+            release.TrySetResult(true);
+            await operation.WaitAsync(TimeSpan.FromSeconds(10));
+
+            Assert.True(vm.HasGeneratedPdf);
+            Assert.False(vm.HasError);
+            Assert.NotNull(generator.LastSavedInfo);
+            Assert.Equal(originalHtml, generator.LastSavedInfo.HtmlPath);
+            Assert.NotEqual(vm.LastReportPath, generator.LastSavedInfo.HtmlPath);
+            Assert.Equal(Path.ChangeExtension(originalHtml, ".pdf"),
+                generator.LastSavedInfo.PdfPath);
+        }
+        finally
+        {
+            release.TrySetResult(true);
+            if (!string.IsNullOrEmpty(exporter.LastExportedHtmlPath)
+                && File.Exists(exporter.LastExportedHtmlPath))
+                File.Delete(exporter.LastExportedHtmlPath);
+            if (!string.IsNullOrEmpty(vm.LastPdfPath) && File.Exists(vm.LastPdfPath))
+                File.Delete(vm.LastPdfPath);
+        }
+    }
+
     // ===== TEST E: Missing selection guard (GenerateReport) =====
 
     [Fact]
@@ -685,13 +730,23 @@ public class ReportViewModelTests
     private class FakePdfExportService : IPdfExportService
     {
         public Exception? ExportFailure { get; set; }
+        public TaskCompletionSource<bool>? ExportEntered { get; set; }
+        public TaskCompletionSource<bool>? ResumeExport { get; set; }
+        public string? LastExportedHtmlPath { get; private set; }
         public Task<PdfExporterInfo> CanExportAsync() => Task.FromResult(new PdfExporterInfo { IsAvailable = true });
-        public Task<bool> ExportHtmlToPdfAsync(string htmlPath, string outputPdfPath)
+        public async Task<bool> ExportHtmlToPdfAsync(string htmlPath, string outputPdfPath)
         {
             if (ExportFailure is not null)
                 throw ExportFailure;
+            LastExportedHtmlPath = htmlPath;
+            if (ExportEntered is not null)
+            {
+                ExportEntered.TrySetResult(true);
+                if (ResumeExport is not null)
+                    await ResumeExport.Task.WaitAsync(TimeSpan.FromSeconds(15));
+            }
             File.WriteAllText(outputPdfPath, "%PDF-1.4 fake");
-            return Task.FromResult(true);
+            return true;
         }
         public string GetPdfOutputPath(string htmlPath) => htmlPath.Replace(".html", ".pdf");
         public Task OpenPdfAsync(string pdfPath) => Task.CompletedTask;
