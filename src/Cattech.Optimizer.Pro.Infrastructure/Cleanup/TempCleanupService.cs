@@ -248,6 +248,16 @@ public class TempCleanupService : ITempCleanupService
     public async Task<string> SaveResultAsync(TempCleanupResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
+
+        // Validate the exact JSON snapshot before creating directories or
+        // publishing any audit file. An invalid new history record must not
+        // poison the technician's record inventory.
+        var json = JsonSerializer.Serialize(result, SerializerOptions);
+        if (DeserializeVerifiedHistory(json) is null)
+            throw new ArgumentException(
+                "El registro técnico contiene datos estructurales inválidos.",
+                nameof(result));
+
         EnsureDirectoryExists(_resultsDirectory);
 
         // A second-resolution timestamp, even combined with a model-supplied
@@ -256,7 +266,6 @@ public class TempCleanupService : ITempCleanupService
         var fileName = $"cleanup-result-{result.StartedAt:yyyyMMdd-HHmmss}-{token}.json";
         var filePath = Path.Combine(_resultsDirectory, fileName);
         var staging = Path.Combine(_resultsDirectory, $".cattech-cleanup-{token}.tmp");
-        var json = JsonSerializer.Serialize(result, SerializerOptions);
 
         try
         {
