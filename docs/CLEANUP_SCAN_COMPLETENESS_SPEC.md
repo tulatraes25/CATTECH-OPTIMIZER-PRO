@@ -63,3 +63,25 @@ with no file deletion or exposure in scan notes.
 Neither the new preflight nor the earlier metadata check is an
 identity-preserving filesystem transaction: races still require separate
 Windows hardware/file-handle acceptance tests.
+
+## Stage 3: privacy-safe, non-stale WPF scan state
+
+Previously, the WPF Scan command included the exception's raw
+`ex.Message`, which may contain private absolute paths, usernames
+or host details. It also retained the prior `_targets` and visible
+checkboxes during a failed rescan, despite clearing consent.
+
+Now the scan clears prior selections, rows and totals before awaiting
+the provider; on failure it displays a constant, actionable error.
+A successful scan reports 'sin ubicaciones disponibles' rather than
+'listo para limpiar' when all candidates are inaccessible. The
+intentionally disabled recycle bin is excluded from partial-scan
+warnings so a safe healthy TEMP scan remains plainly actionable.
+
+Synthetic tests cover raw PRIVATE path exception suppression, stale
+approval revocation, no-available-target UX, and preserving a normal
+ready status when only Recycle Bin is disabled. No real user directories
+or cleanup are used.
+
+This is an interface state/privacy fix, not hardware certification,
+no permission elevation and no extra deletion capability.
