@@ -2,8 +2,8 @@
 
   <PropertyGroup>
     <!-- WMI, Registry, EventLog, native Windows services: Infrastructure is
-         Windows-only. Keep Core on net8.0 for portable pure models. -->
-    <TargetFramework>net8.0-windows</TargetFramework>
+         Windows-only. Keep Core on net10.0 for portable pure models. -->
+    <TargetFramework>net10.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>Cattech.Optimizer.Pro.Infrastructure</RootNamespace>
