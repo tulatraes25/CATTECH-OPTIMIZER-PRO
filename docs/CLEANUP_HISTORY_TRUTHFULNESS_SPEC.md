@@ -41,3 +41,21 @@ would be needed before exposing damaged-record counts to WPF.
 No main merges/release/hardware certification here.
 
 Status: implementation committed in isolated draft PR; CI pending.
+
+## Stage 2 — validate the audit *before* writing
+
+The same structural reader validates the serialized snapshot in
+`SaveResultAsync` before `EnsureDirectoryExists` or file creation.
+No new history with blank ID, default/reversed dates, negative
+counters/bytes or null audit collections can be published.
+Null list elements are rejected both on read and on write, and no
+raw user path is needed to describe invalid data.
+
+11 synthetic invalid-write scenarios plus one existing-record
+preservation regression. The previously existing unique token staging
+and no-overwrite publication flow remain unchanged.
+
+This is a structural integrity check, not proof that a claimed
+cleanup physically happened. A forged but structurally valid audit
+is a separate trust problem and must never be labeled authenticated
+without independently protected provenance.
