@@ -406,6 +406,139 @@ public class ReportViewModelTests
         }
     }
 
+    [Fact]
+    public async Task FailedHtmlRegeneration_RevokesPreviouslyGeneratedHtmlAndPdfButtons()
+    {
+        var exporter = new FakePdfExportService();
+        var (vm, generator) = CreateViewModel(pdfExporter: exporter);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        await vm.ExportPdfCommand.ExecuteAsync(null);
+        Assert.True(vm.HasGeneratedPdf);
+        Assert.True(vm.HasGeneratedReport);
+        var previousHtml = vm.LastReportPath;
+        var previousPdf = vm.LastPdfPath;
+
+        try
+        {
+            generator.GenerateFailure = new IOException("Synthetic retry failure");
+            await vm.GenerateReportCommand.ExecuteAsync(null);
+
+            Assert.True(vm.HasError);
+            Assert.False(vm.HasGeneratedReport);
+            Assert.False(vm.HasGeneratedPdf);
+            Assert.Empty(vm.LastReportPath);
+            Assert.Empty(vm.LastPdfPath);
+            await vm.OpenReportCommand.ExecuteAsync(null);
+            await vm.OpenPdfCommand.ExecuteAsync(null);
+            Assert.Equal(0, generator.OpenReportCalls);
+            Assert.Equal(0, exporter.OpenPdfCalls);
+        }
+        finally
+        {
+            if (File.Exists(previousHtml)) File.Delete(previousHtml);
+            if (File.Exists(previousPdf)) File.Delete(previousPdf);
+        }
+    }
+
+    [Fact]
+    public async Task PdfRetryFailure_RevokesPreviouslyGeneratedPdf()
+    {
+        var exporter = new FakePdfExportService();
+        var (vm, _) = CreateViewModel(pdfExporter: exporter);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        await vm.ExportPdfCommand.ExecuteAsync(null);
+        Assert.True(vm.HasGeneratedPdf);
+        var previousHtml = vm.LastReportPath;
+        var previousPdf = vm.LastPdfPath;
+
+        try
+        {
+            exporter.ExportFailure = new IOException("Synthetic PDF retry failure");
+            await vm.ExportPdfCommand.ExecuteAsync(null);
+
+            Assert.True(vm.HasError);
+            Assert.False(vm.HasGeneratedPdf);
+            Assert.Empty(vm.LastPdfPath);
+            await vm.OpenPdfCommand.ExecuteAsync(null);
+            Assert.Equal(0, exporter.OpenPdfCalls);
+        }
+        finally
+        {
+            if (File.Exists(previousHtml)) File.Delete(previousHtml);
+            if (File.Exists(previousPdf)) File.Delete(previousPdf);
+            if (File.Exists(vm.LastReportPath)) File.Delete(vm.LastReportPath);
+        }
+    }
+
+    [Fact]
+    public async Task ReportSelectionsAndNotes_RevokeLatestGeneratedArtifacts()
+    {
+        var (vm, _) = CreateViewModel();
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        await vm.GenerateReportCommand.ExecuteAsync(null);
+        Assert.True(vm.HasGeneratedReport);
+        var previousHtml = vm.LastReportPath;
+
+        try
+        {
+            vm.FinalObservations = "New synthetic observation";
+            Assert.False(vm.HasGeneratedReport);
+            Assert.Empty(vm.LastReportPath);
+
+            await vm.GenerateReportCommand.ExecuteAsync(null);
+            Assert.True(vm.HasGeneratedReport);
+            var laterHtml = vm.LastReportPath;
+            try
+            {
+                vm.IncludeClient = false;
+                Assert.False(vm.HasGeneratedReport);
+                Assert.False(vm.HasGeneratedPdf);
+                Assert.Empty(vm.LastReportPath);
+            }
+            finally
+            {
+                if (File.Exists(laterHtml)) File.Delete(laterHtml);
+            }
+        }
+        finally
+        {
+            if (File.Exists(previousHtml)) File.Delete(previousHtml);
+        }
+    }
+
+    [Fact]
+    public async Task PdfHistoryUsesSameIncludedSectionsAndNotesAsHtmlHistory()
+    {
+        var (vm, generator) = CreateViewModel();
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        vm.IncludeRecommendations = false;
+        vm.FinalObservations = "Synthetic controlled observation";
+        await vm.GenerateReportCommand.ExecuteAsync(null);
+        Assert.True(vm.HasGeneratedReport);
+        var html = Assert.IsType<GeneratedReportInfo>(generator.LastSavedInfo);
+        var previousPath = vm.LastReportPath;
+        try
+        {
+            await vm.ExportPdfCommand.ExecuteAsync(null);
+
+            Assert.True(vm.HasGeneratedPdf);
+            var pdf = Assert.IsType<GeneratedReportInfo>(generator.LastSavedInfo);
+            Assert.Equal(html.IncludedSections, pdf.IncludedSections);
+            Assert.Contains("Cliente", pdf.IncludedSections);
+            Assert.DoesNotContain("Recomendaciones", pdf.IncludedSections);
+            Assert.Equal("Synthetic controlled observation", pdf.Notes);
+            Assert.Equal(html.Notes, pdf.Notes);
+            Assert.NotEmpty(pdf.HtmlPath);
+            Assert.NotEmpty(pdf.PdfPath);
+        }
+        finally
+        {
+            if (File.Exists(previousPath)) File.Delete(previousPath);
+            if (File.Exists(vm.LastReportPath)) File.Delete(vm.LastReportPath);
+            if (File.Exists(vm.LastPdfPath)) File.Delete(vm.LastPdfPath);
+        }
+    }
+
     // ===== TEST E: Missing selection guard (GenerateReport) =====
 
     [Fact]
@@ -699,6 +832,7 @@ public class ReportViewModelTests
         public int GenerateCallCount { get; private set; }
         public Exception? GenerateFailure { get; set; }
         public Exception? SaveInfoFailure { get; set; }
+        public int OpenReportCalls { get; private set; }
 
         public Task<string> GenerateHtmlReportAsync(ReportGenerationOptions options)
         {
@@ -723,13 +857,18 @@ public class ReportViewModelTests
             return Task.CompletedTask;
         }
         public Task<List<GeneratedReportInfo>> ListGeneratedReportsAsync(int maxResults = 20) => Task.FromResult(new List<GeneratedReportInfo>());
-        public Task OpenReportAsync(string htmlPath) => Task.CompletedTask;
+        public Task OpenReportAsync(string htmlPath)
+        {
+            OpenReportCalls++;
+            return Task.CompletedTask;
+        }
         public Task OpenReportsFolderAsync() => Task.CompletedTask;
     }
 
     private class FakePdfExportService : IPdfExportService
     {
         public Exception? ExportFailure { get; set; }
+        public int OpenPdfCalls { get; private set; }
         public TaskCompletionSource<bool>? ExportEntered { get; set; }
         public TaskCompletionSource<bool>? ResumeExport { get; set; }
         public string? LastExportedHtmlPath { get; private set; }
@@ -749,7 +888,11 @@ public class ReportViewModelTests
             return true;
         }
         public string GetPdfOutputPath(string htmlPath) => htmlPath.Replace(".html", ".pdf");
-        public Task OpenPdfAsync(string pdfPath) => Task.CompletedTask;
+        public Task OpenPdfAsync(string pdfPath)
+        {
+            OpenPdfCalls++;
+            return Task.CompletedTask;
+        }
     }
 
     private class FakeSettingsService : ISettingsService
