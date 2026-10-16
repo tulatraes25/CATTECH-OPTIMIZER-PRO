@@ -634,6 +634,9 @@ public partial class ReportViewModel : ObservableObject
         // Esto asegura que el PDF refleje las selecciones actuales, no un HTML stale.
         StatusText = "Generando HTML primero...";
         ReportGenerationOptions options;
+        // Keep the generated HTML identity stable even if another UI action
+        // changes the 'last report' field while the PDF renderer is awaiting.
+        string htmlPath;
         try
         {
             options = await BuildReportOptionsAsync();
@@ -652,7 +655,8 @@ public partial class ReportViewModel : ObservableObject
             if (options.IncludeClient && !await VerifySelectedClientBeforeOutputAsync(options))
                 return;
 
-            LastReportPath = await _reportService.GenerateHtmlReportAsync(options);
+            htmlPath = await _reportService.GenerateHtmlReportAsync(options);
+            LastReportPath = htmlPath;
             HasGeneratedReport = true;
         }
         catch (Exception)
@@ -667,7 +671,7 @@ public partial class ReportViewModel : ObservableObject
 
         try
         {
-            var pdfPath = _pdfExportService.GetPdfOutputPath(LastReportPath);
+            var pdfPath = _pdfExportService.GetPdfOutputPath(htmlPath);
 
             // Asegurar que el directorio existe
             var pdfDir = Path.GetDirectoryName(pdfPath);
@@ -676,7 +680,7 @@ public partial class ReportViewModel : ObservableObject
                 Directory.CreateDirectory(pdfDir);
             }
 
-            var success = await _pdfExportService.ExportHtmlToPdfAsync(LastReportPath, pdfPath);
+            var success = await _pdfExportService.ExportHtmlToPdfAsync(htmlPath, pdfPath);
 
             if (success && File.Exists(pdfPath))
             {
@@ -693,7 +697,7 @@ public partial class ReportViewModel : ObservableObject
                     EquipmentName = options.IncludeClient
                     ? $"{options.ServiceReport?.Equipment?.Brand} {options.ServiceReport?.Equipment?.Model}"
                     : string.Empty,
-                    HtmlPath = LastReportPath,
+                    HtmlPath = htmlPath,
                     PdfPath = pdfPath,
                     Notes = FinalObservations
                 };
