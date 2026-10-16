@@ -230,10 +230,31 @@ public class HtmlReportService : IReportGenerationService
         return sb.ToString();
     }
 
+    /// <summary>
+    /// Accept only CSS hexadecimal colors, not arbitrary CSS or markup.
+    /// Supports 3- and 6-digit colors from existing company settings.
+    /// Invalid persisted data gets a safe default without leaking its text.
+    /// </summary>
+    internal static string SafeBrandColor(string? configured)
+    {
+        if (configured is null || configured.Length is not (4 or 7)
+            || configured[0] != '#')
+            return "#0078D4";
+
+        for (var i = 1; i < configured.Length; i++)
+        {
+            if (!Uri.IsHexDigit(configured[i]))
+                return "#0078D4";
+        }
+        return configured;
+    }
+
     private string BuildHeader(ReportGenerationOptions options)
     {
         var company = options.Settings?.Company;
-        var color = company?.PrimaryColor ?? "#0078D4";
+        // Settings are editable JSON; never interpolate arbitrary text into
+        // quoted style attributes in customer-facing HTML/PDF.
+        var color = SafeBrandColor(company?.PrimaryColor);
         var logoHtml = "";
 
         if (company != null && !string.IsNullOrEmpty(company.LogoPath) && File.Exists(company.LogoPath))
