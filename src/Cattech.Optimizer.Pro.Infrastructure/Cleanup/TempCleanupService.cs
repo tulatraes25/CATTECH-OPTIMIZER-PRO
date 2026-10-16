@@ -53,9 +53,12 @@ public class TempCleanupService : ITempCleanupService
             // Verificar accesibilidad
             if (target.Id == "RECYCLE_BIN")
             {
-                target.IsAccessible = true;
+                // Emergency v0.2.2 hotfix: the legacy global deletion is unsafe.
+                // Do not advertise, select, scan or enumerate Recycle Bin.
+                target.IsAccessible = false;
+                target.IsSelected = false;
                 target.IsScanned = true;
-                target.ScanNotes = "Opcional: solo limpiar si está seguro";
+                target.ScanNotes = "No disponible: limpieza de Papelera deshabilitada por seguridad.";
                 target.EstimatedSizeBytes = 0;
                 target.EstimatedFileCount = 0;
             }
@@ -84,7 +87,32 @@ public class TempCleanupService : ITempCleanupService
             StartedAt = DateTime.Now
         };
 
+        ArgumentNullException.ThrowIfNull(targets);
         var selectedTargets = targets.Where(t => t.IsSelected).ToList();
+
+        // All-or-nothing: if ANY caller selects the unsupported global target,
+        // refuse the entire request before touching otherwise valid files.
+        // A UI checkbox is never an authorization/security boundary.
+        if (selectedTargets.Any(t => t.Id == "RECYCLE_BIN"))
+        {
+            result.Errors.Add(new CleanupError
+            {
+                FilePath = "RecycleBin",
+                Message = "La limpieza de Papelera está deshabilitada por seguridad.",
+                ErrorType = "UnsupportedOperation"
+            });
+            foreach (var selected in selectedTargets)
+                result.TargetResults.Add(new TargetResult
+                {
+                    TargetId = selected.Id,
+                    TargetName = selected.DisplayName,
+                    Path = selected.Id == "RECYCLE_BIN" ? "RecycleBin" : selected.Id,
+                    IsSuccess = false
+                });
+            result.FinishedAt = DateTime.Now;
+            return result;
+        }
+
         int processedCount = 0;
 
         foreach (var target in selectedTargets)
@@ -96,11 +124,19 @@ public class TempCleanupService : ITempCleanupService
                 Path = target.Path
             };
 
+            var errorCountBeforeTarget = result.Errors.Count;
             try
             {
                 if (target.Id == "RECYCLE_BIN")
                 {
-                    await CleanRecycleBinAsync(targetResult, result);
+                    // Additional guard against a selected target mutated
+                    // after preflight: no process, COM or filesystem call.
+                    result.Errors.Add(new CleanupError
+                    {
+                        FilePath = "RecycleBin",
+                        Message = "La Papelera no está disponible para limpieza.",
+                        ErrorType = "UnsupportedOperation"
+                    });
                 }
                 else if (target.Id == "THUMBNAILS")
                 {
@@ -122,7 +158,8 @@ public class TempCleanupService : ITempCleanupService
                 });
             }
 
-            targetResult.IsSuccess = targetResult.FailedFiles == 0;
+            targetResult.IsSuccess = targetResult.FailedFiles == 0
+                && result.Errors.Count == errorCountBeforeTarget;
             result.TargetResults.Add(targetResult);
 
             processedCount++;
@@ -413,56 +450,6 @@ public class TempCleanupService : ITempCleanupService
             result.Errors.Add(new CleanupError
             {
                 FilePath = target.Path,
-                Message = ex.Message,
-                ErrorType = "CleanError"
-            });
-        }
-    }
-
-    private static async Task CleanRecycleBinAsync(TargetResult targetResult, TempCleanupResult result)
-    {
-        try
-        {
-            // Usar Shell32 para vaciar papelera de reciclaje
-            await Task.Run(() =>
-            {
-                var shellType = Type.GetTypeFromProgID("Shell.Application");
-                if (shellType != null)
-                {
-                    var shell = Activator.CreateInstance(shellType);
-                    if (shell != null)
-                    {
-                        dynamic shellApp = shell;
-                        shellApp.NameSpace(0xA); // 0x0A = Recycle Bin
-                        // No hay forma directa de vaciar con Shell32, usar comando
-                        System.Runtime.InteropServices.Marshal.ReleaseComObject(shell);
-                    }
-                }
-            });
-
-            // Alternativa: usar comando shell
-            var process = Process.Start(new ProcessStartInfo
-            {
-                FileName = "cmd.exe",
-                Arguments = "/c echo Y | rd /s C:\\$Recycle.Bin",
-                WindowStyle = ProcessWindowStyle.Hidden,
-                CreateNoWindow = true,
-                UseShellExecute = false
-            });
-
-            if (process != null)
-            {
-                await process.WaitForExitAsync();
-                targetResult.IsSuccess = true;
-                targetResult.DeletedFiles = 1; // Estimado
-            }
-        }
-        catch (Exception ex)
-        {
-            targetResult.FailedFiles++;
-            result.Errors.Add(new CleanupError
-            {
-                FilePath = "RecycleBin",
                 Message = ex.Message,
                 ErrorType = "CleanError"
             });
