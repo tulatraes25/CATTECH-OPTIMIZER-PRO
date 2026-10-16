@@ -122,4 +122,8 @@ try {
     }
     Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue
 }
+# Expected rejection scenarios return Bash exit code 1 by design.
+# Reset native exit state after asserting all cases so the enclosing pwsh CI
+# process cannot inherit the last negative fixture's exit status.
+$global:LASTEXITCODE = 0
 Write-Host "PASS: $($cases.Count) real release preflight scenarios; no workflow dispatch or tag/release writes."
