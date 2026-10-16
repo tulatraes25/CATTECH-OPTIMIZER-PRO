@@ -45,13 +45,44 @@ jobs:
         run: dotnet build src/Cattech.Optimizer.Pro.sln --configuration Release --no-restore
 
       - name: Test Release
-        run: dotnet test src/Cattech.Optimizer.Pro.sln --configuration Release --no-build --logger "trx;LogFileName=cattech-ci.trx" --results-directory "${{ github.workspace }}\TestResults"
+        run: dotnet test src/Cattech.Optimizer.Pro.sln --configuration Release --no-build --collect:"XPlat Code Coverage" --logger "trx;LogFileName=cattech-ci.trx" --results-directory "${{ github.workspace }}\TestResults"
+
+      - name: Coverage Summary (non-gating baseline)
+        shell: pwsh
+        run: |
+          $resultsDir = Join-Path $env:GITHUB_WORKSPACE "TestResults"
+          $reports = @(Get-ChildItem -LiteralPath $resultsDir -Recurse -File -ErrorAction Stop |
+            Where-Object { $_.Name -eq "coverage.cobertura.xml" })
+          Write-Host "Cobertura reports found: $($reports.Count)"
+          if ($reports.Count -lt 1) {
+            $names = @(Get-ChildItem -LiteralPath $resultsDir -Recurse -File |
+              Select-Object -ExpandProperty Name)
+            Write-Host "Test output files: $($names -join ', ')"
+            throw "Missing Cobertura coverage report."
+          }
+          $index = 0
+          foreach ($reportFile in $reports) {
+            $index++
+            [xml]$coverageXml = Get-Content -LiteralPath $reportFile.FullName -Raw
+            if ($null -eq $coverageXml.coverage) {
+              throw "Invalid Cobertura document structure."
+            }
+            $lineRate = [double]::Parse($coverageXml.coverage.GetAttribute("line-rate"), [System.Globalization.CultureInfo]::InvariantCulture)
+            $branchRate = [double]::Parse($coverageXml.coverage.GetAttribute("branch-rate"), [System.Globalization.CultureInfo]::InvariantCulture)
+            $lines = [math]::Round($lineRate * 100, 2)
+            $branches = [math]::Round($branchRate * 100, 2)
+            $summary = "CATTECH coverage report $index (unmerged test assembly): **$lines% lines**, **$branches% branches**. Not physical hardware or WPF UI certification."
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $summary
+            Write-Host $summary
+          }
 
       - name: Upload Test Results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cattech-test-results
-          path: TestResults/**/*.trx
+          path: |
+            TestResults/**/*.trx
+            TestResults/**/coverage.cobertura.xml
           if-no-files-found: ignore
           retention-days: 14

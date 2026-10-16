@@ -193,16 +193,222 @@ public class ReportViewModelTests
         Assert.Equal(0, fakeReportService.GenerateCallCount);
     }
 
+    [Fact]
+    public async Task ReportViewModel_InvalidStore_FlagsWarningAndSuppressesCustomerSelection()
+    {
+        var store = new FakeServiceReportService
+        {
+            Inventory = new ServiceReportInventory(2, 1, 0, 1, false)
+        };
+        var (vm, _) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+
+        Assert.True(vm.HasReportInventoryWarning);
+        Assert.Contains("1 archivos inválidos", vm.ReportInventoryMessage);
+        Assert.Empty(vm.AvailableServiceReports);
+        Assert.Null(vm.SelectedServiceReport);
+        Assert.False(vm.HasClientData);
+        Assert.False(vm.IncludeClient);
+        Assert.True(vm.HasDiagnosticData);
+    }
+
+    [Fact]
+    public async Task ReportViewModel_DuplicateStore_DoesNotDisplayAmbiguousCustomers()
+    {
+        var store = new FakeServiceReportService
+        {
+            Inventory = new ServiceReportInventory(2, 0, 2, 0, false)
+        };
+        var (vm, _) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        Assert.True(vm.HasReportInventoryWarning);
+        Assert.Contains("2 registros", vm.ReportInventoryMessage);
+        Assert.Empty(vm.AvailableServiceReports);
+    }
+
+    [Fact]
+    public async Task ReportViewModel_ReloadAfterCorruption_RevokesPreviouslyLoadedDataAndArtifacts()
+    {
+        var store = new FakeServiceReportService();
+        var (vm, _) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        Assert.True(vm.HasClientData);
+        vm.LastReportPath = "previous.html";
+        vm.HasGeneratedReport = true;
+
+        store.Inventory = new ServiceReportInventory(1, 0, 0, 1, false);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+
+        Assert.True(vm.HasReportInventoryWarning);
+        Assert.Null(vm.SelectedServiceReport);
+        Assert.False(vm.HasClientData);
+        Assert.False(vm.IncludeClient);
+        Assert.False(vm.HasGeneratedReport);
+        Assert.Equal(string.Empty, vm.LastReportPath);
+    }
+
+    [Fact]
+    public async Task ReportViewModel_StoreChangedDuringLoad_SuppressesPartialSelection()
+    {
+        var store = new FakeServiceReportService { ReturnNullOnLoad = true };
+        var (vm, _) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+
+        Assert.True(vm.HasReportInventoryWarning);
+        Assert.Contains("cambió", vm.ReportInventoryMessage);
+        Assert.Empty(vm.AvailableServiceReports);
+        Assert.Null(vm.SelectedServiceReport);
+    }
+
+    [Fact]
+    public async Task ReportViewModel_AmbiguityAfterLoad_BlocksHtmlOutputAndRevokesCustomer()
+    {
+        var store = new FakeServiceReportService();
+        var (vm, generator) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        Assert.True(vm.IncludeClient);
+
+        store.Inventory = new ServiceReportInventory(2, 0, 2, 0, false);
+        await vm.GenerateReportCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, generator.GenerateCallCount);
+        Assert.True(vm.HasReportInventoryWarning);
+        Assert.True(vm.HasError);
+        Assert.Null(vm.SelectedServiceReport);
+        Assert.False(vm.IncludeClient);
+        Assert.False(vm.HasGeneratedReport);
+    }
+
+    [Fact]
+    public async Task ReportViewModel_ReportDisappearsAfterLoad_BlocksPdfOutput()
+    {
+        var store = new FakeServiceReportService();
+        var (vm, generator) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        store.ReturnNullOnLoad = true;
+
+        await vm.ExportPdfCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, generator.GenerateCallCount);
+        Assert.False(vm.HasGeneratedPdf);
+        Assert.True(vm.HasReportInventoryWarning);
+        Assert.Null(vm.SelectedServiceReport);
+        Assert.True(vm.HasError);
+    }
+
+    [Fact]
+    public async Task ReportViewModel_ClientIdentityReplacedAfterLoad_BlocksHtmlOutput()
+    {
+        var store = new FakeServiceReportService();
+        var (vm, generator) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        store.ClientNameOverride = "Different Synthetic Customer";
+
+        await vm.GenerateReportCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, generator.GenerateCallCount);
+        Assert.True(vm.HasReportInventoryWarning);
+        Assert.False(vm.HasClientData);
+        Assert.True(vm.HasError);
+    }
+
+    [Fact]
+    public async Task ReportViewModel_ExcludedClient_DoesNotReachHtmlOptionsOrHistory()
+    {
+        var (vm, generator) = CreateViewModel();
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        Assert.NotNull(vm.SelectedServiceReport);
+        vm.IncludeClient = false;
+        vm.IncludeDiagnostic = false;
+
+        await vm.GenerateReportCommand.ExecuteAsync(null);
+
+        Assert.NotNull(generator.LastCapturedOptions);
+        Assert.False(generator.LastCapturedOptions.IncludeClient);
+        Assert.Null(generator.LastCapturedOptions.ServiceReport);
+        Assert.NotNull(generator.LastSavedInfo);
+        Assert.Equal("Sin cliente", generator.LastSavedInfo.ClientName);
+        Assert.Equal(string.Empty, generator.LastSavedInfo.EquipmentName);
+    }
+
+    [Fact]
+    public async Task ReportViewModel_ExcludedClient_DoesNotReachPdfHistory()
+    {
+        var (vm, generator) = CreateViewModel();
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        vm.IncludeClient = false;
+        vm.IncludeDiagnostic = false;
+
+        await vm.ExportPdfCommand.ExecuteAsync(null);
+
+        Assert.NotNull(generator.LastCapturedOptions);
+        Assert.Null(generator.LastCapturedOptions.ServiceReport);
+        Assert.NotNull(generator.LastSavedInfo);
+        Assert.Equal("Sin cliente", generator.LastSavedInfo.ClientName);
+        Assert.Equal(string.Empty, generator.LastSavedInfo.EquipmentName);
+    }
+
+    [Theory]
+    [InlineData("phone")]
+    [InlineData("service-reason")]
+    [InlineData("service-action")]
+    [InlineData("technician")]
+    public async Task ReportViewModel_ChangedNonIdentityField_BlocksStaleHtml(string changedField)
+    {
+        var store = new FakeServiceReportService();
+        var (vm, generator) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        Assert.True(vm.IncludeClient);
+
+        switch (changedField)
+        {
+            case "phone": store.ClientPhoneOverride = "synthetic-new-phone"; break;
+            case "service-reason": store.ServiceReasonOverride = "Synthetic revised repair"; break;
+            case "service-action": store.ServiceActionOverride = "Synthetic replaced action"; break;
+            case "technician": store.TechnicianOverride = "Other Synthetic Technician"; break;
+        }
+
+        await vm.GenerateReportCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, generator.GenerateCallCount);
+        Assert.True(vm.HasReportInventoryWarning);
+        Assert.Null(vm.SelectedServiceReport);
+        Assert.False(vm.HasClientData);
+        Assert.False(vm.HasGeneratedReport);
+    }
+
+    [Theory]
+    [InlineData("phone")]
+    [InlineData("service-reason")]
+    public async Task ReportViewModel_ChangedNonIdentityField_BlocksStalePdf(string changedField)
+    {
+        var store = new FakeServiceReportService();
+        var (vm, generator) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+
+        if (changedField == "phone")
+            store.ClientPhoneOverride = "synthetic-updated-contact";
+        else
+            store.ServiceReasonOverride = "Synthetic updated service reason";
+
+        await vm.ExportPdfCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, generator.GenerateCallCount);
+        Assert.False(vm.HasGeneratedPdf);
+        Assert.True(vm.HasReportInventoryWarning);
+        Assert.Null(vm.SelectedServiceReport);
+    }
+
     // ===== Helper =====
 
-    private static (ReportViewModel vm, FakeReportGenerationService fakeReportService) CreateViewModel()
+    private static (ReportViewModel vm, FakeReportGenerationService fakeReportService) CreateViewModel(FakeServiceReportService? storedReports = null)
     {
         var fakeReportService = new FakeReportGenerationService();
         var vm = new ReportViewModel(
             fakeReportService,
             new FakePdfExportService(),
             new FakeSettingsService(),
-            new FakeServiceReportService(),
+            storedReports ?? new FakeServiceReportService(),
             new FakeDiagnosticService(),
             new FakeStartupService(),
             new FakeCleanupService(),
@@ -247,7 +453,12 @@ public class ReportViewModelTests
             return Task.FromResult(filePath);
         }
 
-        public Task SaveReportInfoAsync(GeneratedReportInfo info) => Task.CompletedTask;
+        public GeneratedReportInfo? LastSavedInfo { get; private set; }
+        public Task SaveReportInfoAsync(GeneratedReportInfo info)
+        {
+            LastSavedInfo = info;
+            return Task.CompletedTask;
+        }
         public Task<List<GeneratedReportInfo>> ListGeneratedReportsAsync(int maxResults = 20) => Task.FromResult(new List<GeneratedReportInfo>());
         public Task OpenReportAsync(string htmlPath) => Task.CompletedTask;
         public Task OpenReportsFolderAsync() => Task.CompletedTask;
@@ -278,11 +489,30 @@ public class ReportViewModelTests
             Company = new CompanyInfo { Name = "CATTECH QA" },
             Technician = new TechnicianInfo { Name = "Técnico QA" }
         };
-        public event EventHandler<AppSettings>? SettingsChanged;
+        // This settings fake is immutable and never raises changes. Explicit
+        // accessors avoid an unused-event warning without changing behavior.
+        public event EventHandler<AppSettings>? SettingsChanged
+        {
+            add { }
+            remove { }
+        }
     }
 
-    private class FakeServiceReportService : IServiceReportService
+    private class FakeServiceReportService : IServiceReportService, IServiceReportInventoryReader
     {
+        public ServiceReportInventory Inventory { get; set; } =
+            new(1, 1, 0, 0, false);
+        public bool ReturnNullOnLoad { get; set; }
+        public string ClientNameOverride { get; set; } = "Cliente QA";
+        public string ClientPhoneOverride { get; set; } = string.Empty;
+        public string ServiceReasonOverride { get; set; } = "Smoke Report Test";
+        public string? ServiceActionOverride { get; set; }
+        public string TechnicianOverride { get; set; } = string.Empty;
+        private static readonly DateTime StableDate =
+            new(2026, 10, 15, 12, 0, 0, DateTimeKind.Utc);
+        public Task<ServiceReportInventory> InspectReportInventoryAsync() =>
+            Task.FromResult(Inventory);
+
         public Task<List<ServiceReportSummary>> ListReportsAsync(int maxResults = 50)
         {
             return Task.FromResult(new List<ServiceReportSummary>
@@ -293,12 +523,27 @@ public class ReportViewModelTests
 
         public Task<ServiceReport?> LoadReportAsync(string reportId)
         {
+            if (ReturnNullOnLoad)
+                return Task.FromResult<ServiceReport?>(null);
+
             return Task.FromResult<ServiceReport?>(new ServiceReport
             {
                 Id = reportId,
-                Client = new ClientInfo { Name = "Cliente QA" },
+                CreatedAt = StableDate,
+                TechnicianName = TechnicianOverride,
+                Client = new ClientInfo
+                {
+                    Name = ClientNameOverride,
+                    Phone = ClientPhoneOverride
+                },
                 Equipment = new EquipmentInfo { Brand = "CATTECH", Model = "Notebook QA" },
-            Service = new ServiceInfo { Reason = "Smoke Report Test" }
+                Service = new ServiceInfo
+                {
+                    ServiceDate = StableDate,
+                    Reason = ServiceReasonOverride,
+                    ActionsPerformed = ServiceActionOverride is null
+                        ? new List<string>() : new List<string> { ServiceActionOverride }
+                }
             });
         }
 
