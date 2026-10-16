@@ -456,10 +456,19 @@ public partial class ReportViewModel : ObservableObject
             // con los datos actualmente cargados (fix SMOKE-B1R-006)
             InvalidateGeneratedArtifacts();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
+            // Fail closed if loading stops after customer records were selected.
+            // Exception messages may include local paths or personal data.
             StatusText = "Error al cargar";
-            ShowError($"Error: {ex.Message}");
+            HasReportInventoryWarning = true;
+            ReportInventoryMessage = "La carga quedó incompleta. Volvé a revisar el almacenamiento de informes.";
+            AvailableServiceReports.Clear();
+            SelectedServiceReport = null;
+            HasClientData = false;
+            IncludeClient = false;
+            InvalidateGeneratedArtifacts();
+            ShowError("No se pudieron cargar todos los datos. Revisá el almacenamiento y volvé a intentar.");
         }
         finally
         {
@@ -527,10 +536,12 @@ public partial class ReportViewModel : ObservableObject
             StatusText = "Informe generado";
             ShowSuccess($"Informe guardado: {Path.GetFileName(filePath)}");
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             StatusText = "Error al generar";
-            ShowError($"Error: {ex.Message}");
+            // A report file may have been created before saving its index
+            // failed. Do not disclose exception paths or claim no output exists.
+            ShowError("No se pudo completar el informe. Revisá el almacenamiento y el historial antes de reintentar.");
         }
         finally
         {
@@ -590,9 +601,9 @@ public partial class ReportViewModel : ObservableObject
             LastReportPath = await _reportService.GenerateHtmlReportAsync(options);
             HasGeneratedReport = true;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            ShowError($"Error al generar HTML: {ex.Message}");
+            ShowError("No se pudo preparar el HTML para el PDF. Revisá el almacenamiento y volvé a intentar.");
             return;
         }
 
@@ -640,10 +651,11 @@ public partial class ReportViewModel : ObservableObject
                 ShowError("No se pudo generar el PDF. Verifique que Microsoft Edge esté instalado.");
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             PdfStatusText = "Error al exportar";
-            ShowError($"Error al exportar PDF: {ex.Message}");
+            // Include neither renderer command lines nor filesystem paths.
+            ShowError("No se pudo completar el PDF. Revisá el almacenamiento y el historial antes de reintentar.");
         }
         finally
         {
