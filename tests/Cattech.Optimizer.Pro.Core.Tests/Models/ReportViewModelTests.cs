@@ -193,16 +193,83 @@ public class ReportViewModelTests
         Assert.Equal(0, fakeReportService.GenerateCallCount);
     }
 
+    [Fact]
+    public async Task ReportViewModel_InvalidStore_FlagsWarningAndSuppressesCustomerSelection()
+    {
+        var store = new FakeServiceReportService
+        {
+            Inventory = new ServiceReportInventory(2, 1, 0, 1, false)
+        };
+        var (vm, _) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+
+        Assert.True(vm.HasReportInventoryWarning);
+        Assert.Contains("1 archivos inválidos", vm.ReportInventoryMessage);
+        Assert.Empty(vm.AvailableServiceReports);
+        Assert.Null(vm.SelectedServiceReport);
+        Assert.False(vm.HasClientData);
+        Assert.False(vm.IncludeClient);
+        Assert.True(vm.HasDiagnosticData);
+    }
+
+    [Fact]
+    public async Task ReportViewModel_DuplicateStore_DoesNotDisplayAmbiguousCustomers()
+    {
+        var store = new FakeServiceReportService
+        {
+            Inventory = new ServiceReportInventory(2, 0, 2, 0, false)
+        };
+        var (vm, _) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        Assert.True(vm.HasReportInventoryWarning);
+        Assert.Contains("2 registros", vm.ReportInventoryMessage);
+        Assert.Empty(vm.AvailableServiceReports);
+    }
+
+    [Fact]
+    public async Task ReportViewModel_ReloadAfterCorruption_RevokesPreviouslyLoadedDataAndArtifacts()
+    {
+        var store = new FakeServiceReportService();
+        var (vm, _) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        Assert.True(vm.HasClientData);
+        vm.LastReportPath = "previous.html";
+        vm.HasGeneratedReport = true;
+
+        store.Inventory = new ServiceReportInventory(1, 0, 0, 1, false);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+
+        Assert.True(vm.HasReportInventoryWarning);
+        Assert.Null(vm.SelectedServiceReport);
+        Assert.False(vm.HasClientData);
+        Assert.False(vm.IncludeClient);
+        Assert.False(vm.HasGeneratedReport);
+        Assert.Equal(string.Empty, vm.LastReportPath);
+    }
+
+    [Fact]
+    public async Task ReportViewModel_StoreChangedDuringLoad_SuppressesPartialSelection()
+    {
+        var store = new FakeServiceReportService { ReturnNullOnLoad = true };
+        var (vm, _) = CreateViewModel(store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+
+        Assert.True(vm.HasReportInventoryWarning);
+        Assert.Contains("cambió", vm.ReportInventoryMessage);
+        Assert.Empty(vm.AvailableServiceReports);
+        Assert.Null(vm.SelectedServiceReport);
+    }
+
     // ===== Helper =====
 
-    private static (ReportViewModel vm, FakeReportGenerationService fakeReportService) CreateViewModel()
+    private static (ReportViewModel vm, FakeReportGenerationService fakeReportService) CreateViewModel(FakeServiceReportService? storedReports = null)
     {
         var fakeReportService = new FakeReportGenerationService();
         var vm = new ReportViewModel(
             fakeReportService,
             new FakePdfExportService(),
             new FakeSettingsService(),
-            new FakeServiceReportService(),
+            storedReports ?? new FakeServiceReportService(),
             new FakeDiagnosticService(),
             new FakeStartupService(),
             new FakeCleanupService(),
@@ -281,8 +348,14 @@ public class ReportViewModelTests
         public event EventHandler<AppSettings>? SettingsChanged;
     }
 
-    private class FakeServiceReportService : IServiceReportService
+    private class FakeServiceReportService : IServiceReportService, IServiceReportInventoryReader
     {
+        public ServiceReportInventory Inventory { get; set; } =
+            new(1, 1, 0, 0, false);
+        public bool ReturnNullOnLoad { get; set; }
+        public Task<ServiceReportInventory> InspectReportInventoryAsync() =>
+            Task.FromResult(Inventory);
+
         public Task<List<ServiceReportSummary>> ListReportsAsync(int maxResults = 50)
         {
             return Task.FromResult(new List<ServiceReportSummary>
@@ -293,6 +366,9 @@ public class ReportViewModelTests
 
         public Task<ServiceReport?> LoadReportAsync(string reportId)
         {
+            if (ReturnNullOnLoad)
+                return Task.FromResult<ServiceReport?>(null);
+
             return Task.FromResult<ServiceReport?>(new ServiceReport
             {
                 Id = reportId,
