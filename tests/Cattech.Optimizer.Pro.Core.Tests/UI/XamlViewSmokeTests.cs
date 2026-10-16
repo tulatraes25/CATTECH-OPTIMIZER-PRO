@@ -59,6 +59,40 @@ public class XamlViewSmokeTests
     }
 
     [Fact]
+    public void RealMainClientNavigation_RotatesLogicalCaseOnlyOnClientSelectionChanges()
+    {
+        RunOnSta(() =>
+        {
+            var main = new MainViewModel();
+            Assert.Null(main.ActiveLogicalCase);
+            main.NavigateCommand.Execute("ClientEquipment");
+
+            var initial = Assert.IsType<Cattech.Optimizer.Pro.Core.Models.Evidence.DiagnosticContextId>(
+                main.ActiveLogicalCase);
+            var initialLease = main.LogicalCaseCoordinator.CaptureLeaseFor(initial);
+            Assert.NotNull(initialLease);
+            var form = Assert.IsType<ClientEquipmentViewModel>(
+                Assert.IsType<ClientEquipmentView>(main.CurrentView).DataContext);
+
+            form.ClientName = "Synthetic Selected Customer";
+            Assert.False(initialLease.IsCurrent);
+            var revised = Assert.IsType<Cattech.Optimizer.Pro.Core.Models.Evidence.DiagnosticContextId>(
+                main.ActiveLogicalCase);
+            var revisedLease = main.LogicalCaseCoordinator.CaptureLeaseFor(revised);
+            Assert.NotNull(revisedLease);
+            Assert.True(revisedLease.IsCurrent);
+
+            main.NavigateCommand.Execute("Home");
+            main.NavigateCommand.Execute("ClientEquipment");
+            Assert.True(revisedLease.IsCurrent); // Navigation alone is not case reassignment.
+
+            form.NewRecordCommand.Execute(null);
+            Assert.False(revisedLease.IsCurrent);
+            Assert.NotEqual(revised, main.ActiveLogicalCase);
+        });
+    }
+
+    [Fact]
     public void NavigationToBlueScreens_LoadsView_WithoutXamlParseException()
     {
         RunOnSta(() =>
