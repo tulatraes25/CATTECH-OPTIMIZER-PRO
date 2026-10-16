@@ -70,16 +70,16 @@ public class TempCleanupService : ITempCleanupService
                 target.EstimatedSizeBytes = 0;
                 target.EstimatedFileCount = 0;
             }
-            else if ((target.Id == "USER_TEMP"
-                    && !CleanupTargets.IsTrustedUserTempPath(target.Path))
-                || (target.Id == "WINDOWS_TEMP"
-                    && !CleanupTargets.IsTrustedWindowsTempPath(target.Path)))
+            else if (GetTargetRejectionReason(target,
+                requireCompletedScan: false) is { } rejection)
             {
-                // A redirected environment-dependent target must not even be scanned.
+                // The read-side scan must enforce the same known-root and
+                // reparse-point policy as the write-side cleanup preflight.
+                // Do not enumerate a forged thumbnail or unknown target.
                 target.IsAccessible = false;
                 target.IsSelected = false;
                 target.IsScanned = true;
-                target.ScanNotes = "No disponible: la ruta TEMP no es una carpeta autorizada.";
+                target.ScanNotes = $"No disponible: {rejection}";
                 target.EstimatedSizeBytes = 0;
                 target.EstimatedFileCount = 0;
             }
@@ -328,7 +328,8 @@ public class TempCleanupService : ITempCleanupService
     /// redirected roots and every reparse-point ancestor. This is a conservative
     /// preflight, not an atomic guarantee against concurrent link replacement.
     /// </summary>
-    private static string? GetTargetRejectionReason(TempCleanupTarget target)
+    private static string? GetTargetRejectionReason(
+        TempCleanupTarget target, bool requireCompletedScan = true)
     {
         if (target.Id == "RECYCLE_BIN")
             return "La limpieza de la Papelera está deshabilitada por seguridad.";
@@ -348,7 +349,7 @@ public class TempCleanupService : ITempCleanupService
             && !CleanupTargets.IsTrustedWindowsTempPath(target.Path))
             return "La carpeta TEMP del sistema no coincide con Windows.";
 
-        if (!target.IsScanned || !target.IsAccessible)
+        if (requireCompletedScan && (!target.IsScanned || !target.IsAccessible))
             return "Es necesario escanear y verificar la ubicación antes de limpiar.";
 
         if (string.IsNullOrWhiteSpace(target.Path) ||
