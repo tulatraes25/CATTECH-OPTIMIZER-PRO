@@ -289,39 +289,87 @@ public class TempCleanupService : ITempCleanupService
     {
         var summaries = new List<TempCleanupResultSummary>();
 
-        if (!Directory.Exists(_resultsDirectory))
+        if (maxResults <= 0 || !Directory.Exists(_resultsDirectory))
             return summaries;
 
+        // Invalid audit files must not consume the pagination window and
+        // conceal earlier valid records. The legacy list is read-only.
         var files = Directory.GetFiles(_resultsDirectory, "cleanup-result-*.json")
-            .OrderByDescending(f => File.GetLastWriteTime(f))
-            .Take(maxResults);
+            .OrderByDescending(f => File.GetLastWriteTime(f));
 
         foreach (var file in files)
         {
             try
             {
                 var json = await File.ReadAllTextAsync(file);
-                var result = JsonSerializer.Deserialize<TempCleanupResult>(json, SerializerOptions);
+                var result = DeserializeVerifiedHistory(json);
+                if (result is null)
+                    continue;
 
-                if (result != null)
+                summaries.Add(new TempCleanupResultSummary
                 {
-                    summaries.Add(new TempCleanupResultSummary
-                    {
-                        Id = result.Id,
-                        StartedAt = result.StartedAt,
-                        DeletedMB = result.DeletedMB,
-                        DeletedFiles = result.DeletedFiles,
-                        HasWarnings = result.HasWarnings,
-                        FileName = Path.GetFileName(file)
-                    });
-                }
+                    Id = result.Id,
+                    StartedAt = result.StartedAt,
+                    DeletedMB = result.DeletedMB,
+                    DeletedFiles = result.DeletedFiles,
+                    HasWarnings = result.HasWarnings,
+                    FileName = Path.GetFileName(file)
+                });
+                if (summaries.Count >= maxResults)
+                    break;
             }
-            catch { }
+            catch (IOException) { /* Invalid record is not advertised. */ }
+            catch (UnauthorizedAccessException) { /* Retain original file. */ }
+            catch (JsonException) { /* Retain malformed history for review. */ }
         }
-
         return summaries;
     }
 
+
+    /// <summary>
+    /// Do not invent audit IDs or timestamps from default .NET initializers.
+    /// A structurally invalid history file is never presented as an actual
+    /// cleanup result. No files are repaired or deleted by this reader.
+    /// </summary>
+    private static TempCleanupResult? DeserializeVerifiedHistory(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+        if (!TryUniqueHistoryProperty(root, "id", JsonValueKind.String, out var id)
+            || string.IsNullOrWhiteSpace(id.GetString())
+            || !TryUniqueHistoryProperty(root, "startedAt", JsonValueKind.String, out _)
+            || !TryUniqueHistoryProperty(root, "finishedAt", JsonValueKind.String, out _))
+            return null;
+
+        var result = JsonSerializer.Deserialize<TempCleanupResult>(json, SerializerOptions);
+        if (result is null || !string.Equals(result.Id, id.GetString(), StringComparison.Ordinal)
+            || result.StartedAt == default || result.FinishedAt == default
+            || result.FinishedAt < result.StartedAt || result.Errors is null
+            || result.TargetResults is null || result.DeletedBytes < 0
+            || result.TotalSelectedBytes < 0 || result.DeletedFiles < 0
+            || result.SkippedFiles < 0 || result.FailedFiles < 0)
+            return null;
+        return result;
+    }
+
+    private static bool TryUniqueHistoryProperty(
+        JsonElement root, string key, JsonValueKind kind, out JsonElement value)
+    {
+        value = default;
+        if (root.ValueKind != JsonValueKind.Object)
+            return false;
+        var seen = false;
+        foreach (var entry in root.EnumerateObject())
+        {
+            if (!string.Equals(entry.Name, key, StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (seen || !entry.NameEquals(key) || entry.Value.ValueKind != kind)
+                return false;
+            value = entry.Value;
+            seen = true;
+        }
+        return seen;
+    }
 
     /// <summary>
     /// Only exact, previously scanned default targets may be cleaned. Reject
