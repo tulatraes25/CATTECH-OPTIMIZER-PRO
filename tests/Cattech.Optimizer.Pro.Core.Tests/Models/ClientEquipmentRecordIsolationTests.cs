@@ -1,6 +1,7 @@
 using Cattech.Optimizer.Pro.Core.Interfaces;
 using Cattech.Optimizer.Pro.Core.Models.Configuration;
 using Cattech.Optimizer.Pro.Core.Models.Hardware;
+using Cattech.Optimizer.Pro.Core.Models.Evidence;
 using Cattech.Optimizer.Pro.Core.Models.Reports;
 using Cattech.Optimizer.Pro.UI.ViewModels;
 
@@ -105,6 +106,65 @@ public sealed class ClientEquipmentRecordIsolationTests
         vm.ClientName = name;
         vm.ServiceReason = "QA regression";
         vm.EquipmentType = "Notebook";
+    }
+
+    [Fact]
+    public void NewRecord_ReopensLogicalCaseAndPermanentlyRevokesOldLease()
+    {
+        var owner = new DiagnosticSessionCoordinator();
+        var selected = owner.StartNewCase();
+        var vm = new ClientEquipmentViewModel(
+            new CapturingReportService(), new FakeSettingsService(),
+            new FakeHardwareService(), () => selected = owner.StartNewCase());
+
+        var lease = owner.CaptureLeaseFor(selected);
+        Assert.NotNull(lease);
+        Assert.True(lease.IsCurrent);
+
+        vm.NewRecordCommand.Execute(null);
+
+        Assert.False(lease.IsCurrent);
+        Assert.NotNull(owner.CaptureLeaseFor(selected));
+        Assert.NotEqual(lease.ContextId, selected);
+        Assert.Equal("Sin detectar", vm.DetectionStatus);
+    }
+
+    [Fact]
+    public void CustomerOrEquipmentSwitch_RevokesOldPassportCaseImmediately()
+    {
+        var owner = new DiagnosticSessionCoordinator();
+        var selected = owner.StartNewCase();
+        var vm = new ClientEquipmentViewModel(
+            new CapturingReportService(), new FakeSettingsService(),
+            new FakeHardwareService(), () => selected = owner.StartNewCase());
+
+        PopulateRequiredFields(vm, "Synthetic Client A");
+        var lease = owner.CaptureLeaseFor(selected);
+        Assert.NotNull(lease);
+        vm.SerialNumber = "CHANGED-SYNTHETIC-DEVICE";
+
+        Assert.False(lease.IsCurrent);
+        Assert.Null(owner.CaptureLeaseFor(lease.ContextId));
+        Assert.NotNull(owner.CaptureLeaseFor(selected));
+    }
+
+    [Fact]
+    public void ContactDetailEdit_DoesNotFalselySwitchEquipmentSession()
+    {
+        var owner = new DiagnosticSessionCoordinator();
+        var selected = owner.StartNewCase();
+        var vm = new ClientEquipmentViewModel(
+            new CapturingReportService(), new FakeSettingsService(),
+            new FakeHardwareService(), () => selected = owner.StartNewCase());
+        PopulateRequiredFields(vm, "Synthetic Client A");
+
+        var lease = owner.CaptureLeaseFor(selected);
+        Assert.NotNull(lease);
+        vm.ClientPhone = "Synthetic updated contact";
+        vm.ClientNotes = "No hardware identity change";
+
+        Assert.True(lease.IsCurrent);
+        Assert.Equal(lease.ContextId, selected);
     }
 
     [Theory]
