@@ -261,10 +261,36 @@ public partial class ReportViewModel : ObservableObject
     private long _customerSelectionRevision;
 
     partial void OnSelectedServiceReportChanged(ServiceReport? value)
-        => _customerSelectionRevision++;
+    {
+        _customerSelectionRevision++;
+        InvalidateGeneratedArtifacts();
+    }
 
     partial void OnIncludeClientChanged(bool value)
-        => _customerSelectionRevision++;
+    {
+        _customerSelectionRevision++;
+        InvalidateGeneratedArtifacts();
+    }
+
+    // An artifact represents the previously selected options, not the current
+    // form. On an edit, revoke its "latest report" buttons. Historical files
+    // stay untouched and are still accessible through the report history.
+    partial void OnIncludeCompanyChanged(bool value) => InvalidateGeneratedArtifacts();
+    partial void OnIncludeDiagnosticChanged(bool value) => InvalidateGeneratedArtifacts();
+    partial void OnIncludeStartupChanged(bool value) => InvalidateGeneratedArtifacts();
+    partial void OnIncludeCleanupChanged(bool value) => InvalidateGeneratedArtifacts();
+    partial void OnIncludeVisualOptimizationChanged(bool value) => InvalidateGeneratedArtifacts();
+    partial void OnIncludeRestorePointChanged(bool value) => InvalidateGeneratedArtifacts();
+    partial void OnIncludeSmartChanged(bool value) => InvalidateGeneratedArtifacts();
+    partial void OnIncludeSmartTestsChanged(bool value) => InvalidateGeneratedArtifacts();
+    partial void OnIncludeRecommendationsChanged(bool value) => InvalidateGeneratedArtifacts();
+    partial void OnSelectedDiagnosticReportChanged(DiagnosticReport? value) => InvalidateGeneratedArtifacts();
+    partial void OnSelectedStartupAnalysisChanged(StartupAnalysis? value) => InvalidateGeneratedArtifacts();
+    partial void OnSelectedCleanupResultChanged(TempCleanupResult? value) => InvalidateGeneratedArtifacts();
+    partial void OnSelectedVisualOptimizationResultChanged(VisualOptimizationResult? value) => InvalidateGeneratedArtifacts();
+    partial void OnSelectedRestorePointResultChanged(RestorePointResult? value) => InvalidateGeneratedArtifacts();
+    partial void OnSelectedSmartAnalysisChanged(SmartAnalysisResult? value) => InvalidateGeneratedArtifacts();
+    partial void OnFinalObservationsChanged(string value) => InvalidateGeneratedArtifacts();
 
     /// <summary>
     /// Compare the EXACT client report captured for this export, not whatever
@@ -537,6 +563,9 @@ public partial class ReportViewModel : ObservableObject
     private async Task GenerateReportAsync()
     {
         ClearMessages();
+        // A failed new attempt must not leave previous-customer HTML/PDF
+        // exposed as if it described the current selections.
+        InvalidateGeneratedArtifacts();
         IsRunning = true;
         StatusText = "Generando informe...";
 
@@ -560,28 +589,7 @@ public partial class ReportViewModel : ObservableObject
 
             var filePath = await _reportService.GenerateHtmlReportAsync(options);
 
-            // Guardar info del informe
-            var info = new GeneratedReportInfo
-            {
-                ClientName = options.IncludeClient
-                    ? options.ServiceReport?.Client?.Name ?? "Sin cliente" : "Sin cliente",
-                EquipmentName = options.IncludeClient
-                    ? $"{options.ServiceReport?.Equipment?.Brand} {options.ServiceReport?.Equipment?.Model}"
-                    : string.Empty,
-                HtmlPath = filePath,
-                Notes = FinalObservations
-            };
-
-            if (IncludeCompany) info.IncludedSections.Add("Empresa");
-            if (IncludeClient) info.IncludedSections.Add("Cliente");
-            if (IncludeDiagnostic) info.IncludedSections.Add("Diagnóstico");
-            if (IncludeStartup) info.IncludedSections.Add("Inicio");
-            if (IncludeCleanup) info.IncludedSections.Add("Limpieza");
-            if (IncludeVisualOptimization) info.IncludedSections.Add("Optimización");
-            if (IncludeRestorePoint) info.IncludedSections.Add("Restauración");
-            if (IncludeSmart && SelectedSmartAnalysis != null) info.IncludedSections.Add("SMART");
-            if (IncludeSmartTests && AvailableSmartTestSessions.Any(x => x.IsSelected)) info.IncludedSections.Add("SMART Self-Tests");
-            if (IncludeRecommendations) info.IncludedSections.Add("Recomendaciones");
+            var info = CreateGeneratedReportInfo(options, filePath);
 
             await _reportService.SaveReportInfoAsync(info);
 
@@ -609,7 +617,7 @@ public partial class ReportViewModel : ObservableObject
     [RelayCommand]
     private async Task OpenReportAsync()
     {
-        if (!string.IsNullOrEmpty(LastReportPath))
+        if (HasGeneratedReport && !string.IsNullOrEmpty(LastReportPath))
         {
             await _reportService.OpenReportAsync(LastReportPath);
         }
@@ -630,6 +638,10 @@ public partial class ReportViewModel : ObservableObject
     [RelayCommand]
     private async Task ExportPdfAsync()
     {
+        ClearMessages();
+        // Starting or failing a new export must revoke the previous PDF.
+        // This only clears UI state and never deletes historical documents.
+        InvalidateGeneratedArtifacts();
         // Siempre regenerar HTML con el snapshot actual de datos (fix SMOKE-B1R-006)
         // Esto asegura que el PDF refleje las selecciones actuales, no un HTML stale.
         StatusText = "Generando HTML primero...";
@@ -689,18 +701,7 @@ public partial class ReportViewModel : ObservableObject
                 PdfStatusText = "PDF generado";
                 ShowSuccess($"PDF guardado: {Path.GetFileName(pdfPath)}");
 
-                // Actualizar info del informe
-                var info = new GeneratedReportInfo
-                {
-                    ClientName = options.IncludeClient
-                    ? options.ServiceReport?.Client?.Name ?? "Sin cliente" : "Sin cliente",
-                    EquipmentName = options.IncludeClient
-                    ? $"{options.ServiceReport?.Equipment?.Brand} {options.ServiceReport?.Equipment?.Model}"
-                    : string.Empty,
-                    HtmlPath = htmlPath,
-                    PdfPath = pdfPath,
-                    Notes = FinalObservations
-                };
+                var info = CreateGeneratedReportInfo(options, htmlPath, pdfPath);
                 await _reportService.SaveReportInfoAsync(info);
             }
             else
@@ -727,10 +728,46 @@ public partial class ReportViewModel : ObservableObject
     [RelayCommand]
     private async Task OpenPdfAsync()
     {
-        if (!string.IsNullOrEmpty(LastPdfPath))
+        if (HasGeneratedPdf && !string.IsNullOrEmpty(LastPdfPath))
         {
             await _pdfExportService.OpenPdfAsync(LastPdfPath);
         }
+    }
+
+    /// <summary>
+    /// HTML and PDF history use one immutable export-options view. Reading
+    /// live WPF properties after awaits could label another customer's PDF or
+    /// omit included sections from history.
+    /// </summary>
+    private static GeneratedReportInfo CreateGeneratedReportInfo(
+        ReportGenerationOptions options, string htmlPath, string? pdfPath = null)
+    {
+        var info = new GeneratedReportInfo
+        {
+            ClientName = options.IncludeClient
+                ? options.ServiceReport?.Client?.Name ?? "Sin cliente" : "Sin cliente",
+            EquipmentName = options.IncludeClient
+                ? $"{options.ServiceReport?.Equipment?.Brand} {options.ServiceReport?.Equipment?.Model}"
+                : string.Empty,
+            HtmlPath = htmlPath,
+            PdfPath = pdfPath ?? string.Empty,
+            Notes = options.FinalObservations
+        };
+
+        if (options.IncludeCompany) info.IncludedSections.Add("Empresa");
+        if (options.IncludeClient) info.IncludedSections.Add("Cliente");
+        if (options.IncludeDiagnostic) info.IncludedSections.Add("Diagnóstico");
+        if (options.IncludeStartup) info.IncludedSections.Add("Inicio");
+        if (options.IncludeCleanup) info.IncludedSections.Add("Limpieza");
+        if (options.IncludeVisualOptimization) info.IncludedSections.Add("Optimización");
+        if (options.IncludeRestorePoint) info.IncludedSections.Add("Restauración");
+        if (options.IncludeSmart && options.SmartAnalysis is not null)
+            info.IncludedSections.Add("SMART");
+        if (options.IncludeSmartTests && options.SmartTestSessions.Count > 0)
+            info.IncludedSections.Add("SMART Self-Tests");
+        if (options.IncludeRecommendations)
+            info.IncludedSections.Add("Recomendaciones");
+        return info;
     }
 
     /// <summary>
