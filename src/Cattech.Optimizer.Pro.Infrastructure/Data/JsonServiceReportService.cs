@@ -155,6 +155,82 @@ public class JsonServiceReportService : IServiceReportService
         }
     }
 
+    /// <summary>
+    /// Read-only diagnostic inventory. The returned snapshot never grants
+    /// permission to load or delete reports; those actions revalidate.
+    /// No client details, paths or raw exception messages are returned.
+    /// </summary>
+    public async Task<ServiceReportInventory> InspectReportInventoryAsync()
+    {
+        await _lock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (!Directory.Exists(_reportsDirectory))
+                return new ServiceReportInventory(0, 0, 0, 0, false);
+
+            string[] files;
+            try
+            {
+                files = Directory.GetFiles(_reportsDirectory, "service-report-*.json");
+            }
+            catch (IOException)
+            {
+                return new ServiceReportInventory(0, 0, 0, 0, true);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return new ServiceReportInventory(0, 0, 0, 0, true);
+            }
+
+            var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+            var invalid = 0;
+            foreach (var file in files)
+            {
+                try
+                {
+                    var json = await File.ReadAllTextAsync(file).ConfigureAwait(false);
+                    using var doc = JsonDocument.Parse(json);
+                    if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                    {
+                        invalid++;
+                        continue;
+                    }
+
+                    var ids = doc.RootElement.EnumerateObject()
+                        .Where(p => p.NameEquals("id")).ToArray();
+                    if (ids.Length != 1 || ids[0].Value.ValueKind != JsonValueKind.String
+                        || string.IsNullOrWhiteSpace(ids[0].Value.GetString()))
+                    {
+                        invalid++;
+                        continue;
+                    }
+
+                    var report = JsonSerializer.Deserialize<ServiceReport>(json, SerializerOptions);
+                    if (report is null || report.Id != ids[0].Value.GetString()
+                        || report.Client is null || report.Equipment is null)
+                    {
+                        invalid++;
+                        continue;
+                    }
+
+                    counts.TryGetValue(report.Id, out var count);
+                    counts[report.Id] = count + 1;
+                }
+                catch (IOException) { invalid++; }
+                catch (UnauthorizedAccessException) { invalid++; }
+                catch (JsonException) { invalid++; }
+            }
+
+            var duplicates = counts.Values.Where(count => count > 1).Sum();
+            return new ServiceReportInventory(files.Length, counts.Values.Sum() - duplicates,
+                duplicates, invalid, false);
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
     /// <inheritdoc/>
     public async Task<bool> DeleteReportAsync(string reportId)
     {
@@ -250,4 +326,14 @@ public class JsonServiceReportService : IServiceReportService
             Directory.CreateDirectory(_reportsDirectory);
         }
     }
+}
+
+/// <summary>
+/// Privacy-minimized snapshot of report storage health. Not an authorization token.
+/// </summary>
+public sealed record ServiceReportInventory(
+    int TotalFiles, int UniqueEntries, int AmbiguousEntries,
+    int InvalidEntries, bool ScanFailed)
+{
+    public bool RequiresReview => ScanFailed || AmbiguousEntries != 0 || InvalidEntries != 0;
 }
