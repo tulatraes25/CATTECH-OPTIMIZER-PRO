@@ -206,6 +206,59 @@ public class RepairCenterViewModelTests
         Assert.Contains("Sin revisar este plan", vm.PreflightStatusText);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PlanAtoBtoA_DuringPreflight_NeverReusesStaleResult(bool providerFails)
+    {
+        var entered = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        using var release = new ManualResetEventSlim(false);
+        var preflight = new FakePreflight
+        {
+            Next = operation =>
+            {
+                entered.TrySetResult(true);
+                if (!release.Wait(TimeSpan.FromSeconds(30)))
+                    throw new TimeoutException("Synthetic preflight reader not released.");
+
+                if (providerFails)
+                    throw new IOException("synthetic private preflight failure");
+                return new SystemRepairPreflightResult
+                {
+                    Operation = operation,
+                    Status = SystemRepairPreflightStatus.ReviewRequired
+                };
+            }
+        };
+        var vm = NewVm(new FakeWindowsUpdateInspection(), preflight);
+        var planA = vm.Plans[0];
+        var planB = vm.Plans[1];
+        vm.SelectedPlan = planA;
+
+        var pending = vm.InspectSelectedPlanCommand.ExecuteAsync(null);
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+
+            vm.SelectedPlan = planB;
+            vm.SelectedPlan = planA;
+            Assert.Contains("Sin revisar este plan", vm.PreflightStatusText);
+        }
+        finally
+        {
+            release.Set();
+        }
+        await pending.WaitAsync(TimeSpan.FromSeconds(15));
+
+        Assert.Equal(1, preflight.Calls);
+        Assert.Equal(planA.Operation, preflight.Requested);
+        Assert.Contains("Sin revisar este plan", vm.PreflightStatusText);
+        Assert.DoesNotContain("Requisitos inspeccionados", vm.PreflightStatusText);
+        Assert.DoesNotContain("private preflight", vm.PreflightStatusText);
+        Assert.False(vm.IsBusy);
+    }
+
     [Fact]
     public async Task UnrecognizedPlanCannotBeInspected()
     {

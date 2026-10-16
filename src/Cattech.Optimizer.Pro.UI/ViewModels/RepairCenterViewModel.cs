@@ -91,8 +91,13 @@ public partial class RepairCenterViewModel : ObservableObject
             Plans.Add(RepairPlanDisplayItem.FromPlan(plan));
     }
 
+    private long _planSelectionRevision;
+
     partial void OnSelectedPlanChanged(RepairPlanDisplayItem? value)
     {
+        // A -> B -> A must not resurrect an earlier asynchronous preflight.
+        // This is a presentation revision, not execution authorization.
+        _planSelectionRevision++;
         // The previous preflight must never be displayed for a newly selected plan.
         PreflightStatusText =
             "Sin revisar este plan. No se ejecutan comandos ni se autoriza una reparación.";
@@ -174,13 +179,15 @@ public partial class RepairCenterViewModel : ObservableObject
         if (IsBusy || plan == null || !Plans.Contains(plan))
             return;
 
+        var selectionRevision = _planSelectionRevision;
         IsBusy = true;
         PreflightStatusText = "Revisando requisitos sin ejecutar la herramienta...";
         try
         {
             var result = await Task.Run(() => _preflight.Inspect(plan.Operation));
-            // Do not accept a result for another selection, including while awaiting.
-            if (SelectedPlan != plan)
+            // Reject selection ABA even if the exact same plan object returns.
+            // The source check is read-only and never authorizes execution.
+            if (_planSelectionRevision != selectionRevision || SelectedPlan != plan)
                 return;
 
             if (result.Operation != plan.Operation || result.ExecutionAuthorized)
@@ -206,7 +213,7 @@ public partial class RepairCenterViewModel : ObservableObject
         }
         catch (Exception)
         {
-            if (SelectedPlan == plan)
+            if (_planSelectionRevision == selectionRevision && SelectedPlan == plan)
                 PreflightStatusText = "No se ejecutó nada: no se pudieron verificar los requisitos.";
         }
         finally
