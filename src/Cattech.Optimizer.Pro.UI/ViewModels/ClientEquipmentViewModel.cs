@@ -476,17 +476,50 @@ public partial class ClientEquipmentViewModel : ObservableObject
         ErrorMessage = string.Empty;
     }
 
+    // Changing the logical customer/equipment identity invalidates telemetry
+    // captured for a previous form, including an in-flight async detection.
+    // This is NOT hardware attestation: the technician still must verify
+    // that the detected machine belongs to the selected customer.
+    private void InvalidateHardwareForIdentityChange()
+    {
+        ++_hardwareDetectionGeneration;
+        IsDetecting = false;
+        HasDetectedData = false;
+        DetectionStatus = "Sin detectar";
+        _detectedDiskFreeKnown = false;
+        _detectedSystemVolumeCapacityGb = 0;
+        _detectedSystemVolumeFreeGb = 0;
+        WindowsVersion = string.Empty;
+        DetectedOS = string.Empty;
+        DetectedEdition = string.Empty;
+        DetectedArchitecture = string.Empty;
+        DetectedProcessor = string.Empty;
+        DetectedRam = string.Empty;
+        DetectedDisk = string.Empty;
+        DetectedDiskCapacity = string.Empty;
+        DetectedDiskFree = string.Empty;
+        DetectedDiskType = string.Empty;
+        DetectedComputerName = string.Empty;
+        DetectedUser = string.Empty;
+    }
+
+    private void MarkIdentityChanged()
+    {
+        InvalidateHardwareForIdentityChange();
+        MarkDirty();
+    }
+
     // Detectar cambios
-    partial void OnClientNameChanged(string value) => MarkDirty();
+    partial void OnClientNameChanged(string value) => MarkIdentityChanged();
     partial void OnClientPhoneChanged(string value) => MarkDirty();
     partial void OnClientEmailChanged(string value) => MarkDirty();
     partial void OnClientCompanyChanged(string value) => MarkDirty();
     partial void OnClientAddressChanged(string value) => MarkDirty();
     partial void OnClientNotesChanged(string value) => MarkDirty();
-    partial void OnEquipmentBrandChanged(string value) => MarkDirty();
-    partial void OnEquipmentModelChanged(string value) => MarkDirty();
-    partial void OnSerialNumberChanged(string value) => MarkDirty();
-    partial void OnEquipmentTypeChanged(string value) => MarkDirty();
+    partial void OnEquipmentBrandChanged(string value) => MarkIdentityChanged();
+    partial void OnEquipmentModelChanged(string value) => MarkIdentityChanged();
+    partial void OnSerialNumberChanged(string value) => MarkIdentityChanged();
+    partial void OnEquipmentTypeChanged(string value) => MarkIdentityChanged();
     partial void OnServiceReasonChanged(string value) => MarkDirty();
     partial void OnEquipmentNotesChanged(string value) => MarkDirty();
 
