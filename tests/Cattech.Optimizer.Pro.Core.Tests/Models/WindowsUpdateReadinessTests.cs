@@ -109,6 +109,64 @@ public class WindowsUpdateReadinessTests
     }
 
     [Fact]
+    public void NullProviderSnapshot_IsReadErrorWithoutLeakingContext()
+    {
+        var fake = new FakeReader(() => null!);
+
+        var result = new WindowsUpdateReadinessService(fake).Inspect();
+
+        Assert.Equal(WindowsUpdateReadinessStatus.ReadError, result.Status);
+        Assert.Empty(result.Services);
+        Assert.Contains("inconsistente", result.Message);
+    }
+
+    [Fact]
+    public void RepeatedServiceNamesWithConflictingStates_AreNotAcceptedAsObserved()
+    {
+        var fake = new FakeReader(
+            S("wuauserv", "Running", "Auto"),
+            S("WUAUSERV", "Stopped", "Disabled"),
+            S("BITS", "Running", "Auto"),
+            S("cryptsvc", "Running", "Auto"),
+            S("UsoSvc", "Running", "Auto"));
+
+        var result = new WindowsUpdateReadinessService(fake).Inspect();
+
+        Assert.Equal(WindowsUpdateReadinessStatus.ReadError, result.Status);
+        Assert.Empty(result.Services);
+        Assert.DoesNotContain("observó", result.Message);
+    }
+
+    [Fact]
+    public void UnexpectedProviderService_DoesNotBecomeACompleteObservation()
+    {
+        var fake = new FakeReader(
+            S("wuauserv", "Running", "Auto"),
+            S("BITS", "Running", "Auto"),
+            S("cryptsvc", "Running", "Auto"),
+            S("UsoSvc", "Running", "Auto"),
+            S(@"C:\Users\SyntheticPrivatePath", "Stopped", "Disabled"));
+
+        var result = new WindowsUpdateReadinessService(fake).Inspect();
+
+        Assert.Equal(WindowsUpdateReadinessStatus.ReadError, result.Status);
+        Assert.Empty(result.Services);
+        Assert.DoesNotContain("SyntheticPrivatePath", result.Message);
+    }
+
+    [Fact]
+    public void NullProviderRow_IsReadErrorRatherThanAThrownUiException()
+    {
+        var fake = new FakeReader(
+            S("wuauserv", "Running", "Auto"), null!);
+
+        var result = new WindowsUpdateReadinessService(fake).Inspect();
+
+        Assert.Equal(WindowsUpdateReadinessStatus.ReadError, result.Status);
+        Assert.Empty(result.Services);
+    }
+
+    [Fact]
     public void NonWindows_NeverQueriesProvider()
     {
         var reader = new FakeReader(S("wuauserv", "Running", "Auto"));

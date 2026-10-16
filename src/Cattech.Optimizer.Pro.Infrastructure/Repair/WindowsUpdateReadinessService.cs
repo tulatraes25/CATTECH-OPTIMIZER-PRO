@@ -100,6 +100,25 @@ public sealed class WindowsUpdateReadinessService : IWindowsUpdateReadinessServi
                 "No se pudo completar la consulta de servicios.");
         }
 
+        // WMI normally returns at most one entry for each of the four
+        // explicitly requested service names. Duplicates or foreign rows
+        // make a "complete" observation ambiguous; never choose the first
+        // contradictory result or repeat provider-supplied private text.
+        if (raw is null)
+            return Failure(WindowsUpdateReadinessStatus.ReadError,
+                "La consulta devolvió información inconsistente.");
+
+        var allowed = new HashSet<string>(ServiceNames,
+            StringComparer.OrdinalIgnoreCase);
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in raw)
+        {
+            if (item is null || !allowed.Contains(item.Name)
+                || !seen.Add(item.Name))
+                return Failure(WindowsUpdateReadinessStatus.ReadError,
+                    "La consulta devolvió información inconsistente.");
+        }
+
         var observations = ServiceNames.Select(name =>
         {
             var item = raw.FirstOrDefault(x =>
