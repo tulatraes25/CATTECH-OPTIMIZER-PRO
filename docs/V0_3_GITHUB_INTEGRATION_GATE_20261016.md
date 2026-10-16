@@ -24,8 +24,10 @@ No release, direct merge into main, force push, hardware claims, silent suppress
 
 ## TASKS / DISPOSITION
 - [x] Create isolated integration baseline at verified coverage SHA.
-- [ ] Compare all relevant side branches for **semantic** changes; integrate missing tests/fixes atomically.
-- [ ] Obtain Windows full CI green on **integration** HEAD and inspect real logs.
+- [x] Port and adapt 5 cross-case/empty-evidence passport scenarios from side PR #62; exact SHA `011c93dfd9193cd508232fb92ac7d4209daaae1a`, Windows CI #180 PASS (1574/0/0). This resolves only this test-file parity slice, not every branch.
+- [ ] Compare remaining parallel branches for **semantic** changes; integrate missing tests/fixes atomically.
+- [x] Windows CI #180 on `011c93dfd9193cd508232fb92ac7d4209daaae1a`: Restore PASS, Release Build PASS (157 warnings, 0 errors), xUnit 1574 passed / 0 failed / 0 skipped, two separate Cobertura outputs each 64.62% line / 60.42% branch; raw logs inspected.
+- [ ] Re-run exact-HEAD CI for each subsequent integration commit; documentation-only updates do not inherit certification automatically.
 - [ ] Resolve P0 branch governance and prepare explicit release candidate.
 - [ ] Handoff exact certified SHA to OpenCode for local synchronization and physical validation.
 
