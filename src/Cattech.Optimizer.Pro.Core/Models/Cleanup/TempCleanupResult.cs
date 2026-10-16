@@ -79,7 +79,7 @@ public class TempCleanupResult
     /// <summary>
     /// Si la limpieza fue exitosa (sin errores críticos).
     /// </summary>
-    public bool IsSuccess => Errors.Count == 0;
+    public bool IsSuccess => Errors.Count == 0 && FailedFiles == 0;
 
     /// <summary>
     /// Si hubo advertencias (archivos omitidos pero limpieza completada).
