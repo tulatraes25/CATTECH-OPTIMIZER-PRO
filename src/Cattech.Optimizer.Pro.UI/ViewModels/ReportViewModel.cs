@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Cattech.Optimizer.Pro.Core.Interfaces;
@@ -274,13 +275,14 @@ public partial class ReportViewModel : ObservableObject
         try
         {
             var live = await _serviceReportService.LoadReportAsync(selected.Id);
+            // Compare the full semantic report, not only name/model/serial:
+            // phone, service notes, actions and all exportable values matter.
+            // Do not log or persist the serialized customer payload.
+            // This reduces stale data, but cannot pin on-disk identity or
+            // prevent external writes immediately after this check.
             if (live is not null
-                && string.Equals(live.Id, selected.Id, StringComparison.Ordinal)
-                && string.Equals(live.Client?.Name, selected.Client?.Name, StringComparison.Ordinal)
-                && string.Equals(live.Equipment?.Brand, selected.Equipment?.Brand, StringComparison.Ordinal)
-                && string.Equals(live.Equipment?.Model, selected.Equipment?.Model, StringComparison.Ordinal)
-                && string.Equals(live.Equipment?.SerialNumber, selected.Equipment?.SerialNumber,
-                    StringComparison.Ordinal))
+                && string.Equals(JsonSerializer.Serialize(live),
+                    JsonSerializer.Serialize(selected), StringComparison.Ordinal))
                 return true;
         }
         catch (Exception)
