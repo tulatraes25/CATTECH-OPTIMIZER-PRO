@@ -72,6 +72,23 @@ public class ParallelPassportBranchParityTests
                 new[] { outcome }));
     }
 
+    [Fact]
+    public void Passport_WithValidEvidence_DoesNotExposePrivateCaseOrDiskIdentifiers()
+    {
+        var local = Observation(BeforeId, CaseA, "healthy", At.AddMinutes(-10));
+        var passport = TechnicalPassportBuilder.Build(CaseA, ExportId, At,
+            new[] { local }, Array.Empty<DiagnosticAssessment>(),
+            Array.Empty<RepairOutcomeAssessment>());
+
+        Assert.True(passport.HasMatchingDigest());
+        Assert.DoesNotContain(CaseA.Value.ToString(), passport.PayloadJson,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(Disk.Value.ToString(), passport.PayloadJson,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(BeforeId.ToString(), passport.PayloadJson,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
