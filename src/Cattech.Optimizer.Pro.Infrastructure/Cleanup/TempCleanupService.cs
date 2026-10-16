@@ -447,6 +447,49 @@ public class TempCleanupService : ITempCleanupService
         }
     }
 
+    /// <summary>
+    /// A scan is complete only when every candidate was inspected. Even one
+    /// unreadable file invalidates the aggregate; never publish a partial
+    /// count or let a failed scan enable the cleanup checkbox.
+    /// The evaluator is injectable only to test I/O failures without touching
+    /// real protected filesystem objects.
+    /// </summary>
+    internal static bool TrySummarizeCandidates(
+        IEnumerable<string> files, Func<string, (bool Protected, long Length)> evaluate,
+        out long bytes, out int count)
+    {
+        ArgumentNullException.ThrowIfNull(files);
+        ArgumentNullException.ThrowIfNull(evaluate);
+        bytes = 0;
+        count = 0;
+        try
+        {
+            foreach (var file in files)
+            {
+                var (isProtected, length) = evaluate(file);
+                if (isProtected)
+                    continue;
+                if (length < 0)
+                {
+                    bytes = 0;
+                    count = 0;
+                    return false;
+                }
+                bytes = checked(bytes + length);
+                count = checked(count + 1);
+            }
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException
+            or UnauthorizedAccessException or System.Security.SecurityException
+            or ArgumentException or NotSupportedException or OverflowException)
+        {
+            bytes = 0;
+            count = 0;
+            return false;
+        }
+    }
+
     // --- Métodos de escaneo ---
 
     // Internal for read-only, isolated synthetic scan regressions.
@@ -474,20 +517,20 @@ public class TempCleanupService : ITempCleanupService
             return;
         }
 
-        foreach (var file in files)
-        {
-            try
+        // A partially readable inventory must not look like a successful
+        // complete scan. No deletion occurs while scanning.
+        if (!TrySummarizeCandidates(files, file =>
             {
                 var info = new FileInfo(file);
-                if (IsProtectedFile(info))
-                    continue;
-                target.EstimatedSizeBytes += info.Length;
-                target.EstimatedFileCount++;
-            }
-            catch (IOException) { }
-            catch (UnauthorizedAccessException) { }
+                return (IsProtectedFile(info), info.Length);
+            }, out var bytes, out var count))
+        {
+            target.ScanNotes = "No disponible: un archivo no se pudo verificar.";
+            return;
         }
 
+        target.EstimatedSizeBytes = bytes;
+        target.EstimatedFileCount = count;
         target.IsAccessible = true;
         target.IsSelected = wasSelected; // Preserve trusted default selection only.
         target.ScanNotes = target.IsSystemLocation
@@ -517,20 +560,20 @@ public class TempCleanupService : ITempCleanupService
             return;
         }
 
-        foreach (var file in files)
-        {
-            try
+        // A partially readable inventory must not look like a successful
+        // complete scan. No deletion occurs while scanning.
+        if (!TrySummarizeCandidates(files, file =>
             {
                 var info = new FileInfo(file);
-                if (IsProtectedFile(info))
-                    continue;
-                target.EstimatedSizeBytes += info.Length;
-                target.EstimatedFileCount++;
-            }
-            catch (IOException) { }
-            catch (UnauthorizedAccessException) { }
+                return (IsProtectedFile(info), info.Length);
+            }, out var bytes, out var count))
+        {
+            target.ScanNotes = "No disponible: un archivo no se pudo verificar.";
+            return;
         }
 
+        target.EstimatedSizeBytes = bytes;
+        target.EstimatedFileCount = count;
         target.IsAccessible = true;
         target.IsSelected = wasSelected;
         target.ScanNotes = "Solo archivos thumbcache_*.db";
