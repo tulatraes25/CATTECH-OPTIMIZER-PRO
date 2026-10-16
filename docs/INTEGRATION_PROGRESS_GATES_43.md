@@ -123,3 +123,42 @@ reviewed CI job logs; then semantic comparison of the remaining passport
 constructor, forbidden-mixed-assessment and WPF cases.
 **G3 remains OPEN** despite selected parity tests. No WPF interactive
 certification, real hardware, public release or `main` merge.
+
+## 6. Stage 3: derived-count uniqueness (2026-10-16)
+
+### GOAL
+A client-facing passport must not inflate its conclusions if an enumerable
+contains the same diagnostic assessment or repair postcheck repeatedly.
+Stage 2 ensured there is **at least one** real case-bound evidence record;
+stage 3 ensures each derived basis is counted **at most once**.
+
+### DESIGN
+The Core passport builder checks two logical identities before computing
+public aggregate status counts:
+
+- Diagnostic: rule ID+version and the **full ordered supporting/contradicting
+  evidence ID sets**, plus missing/future fact and subject references.
+  Status is intentionally not part of the identity: conflicting statuses
+  over the same basis cannot both become separate results.
+- Postcheck: rule ID+version, fact key and the exact before/after evidence
+  pair. A duplicate pair cannot add a second improvement.
+
+Different subjects/disks remain valid when their underlying evidence
+identities differ, including multiple assessments using one rule. This
+avoids the simplistic but incorrect "one rule ID per equipment" ban.
+
+### ACCEPTANCE / EVIDENCE
+Six deterministic synthetic tests check both repeated object references and
+independently reconstructed equivalent assessments/outcomes; also prove
+that two distinct disks can both contribute valid results for the same
+rules. No API accepts caller-fabricated arbitrary improvement status.
+Exact-SHA Windows Release build, all xUnit 0 fails/skips and raw CI logs
+are mandatory before marking code VERIFIED.
+
+### LIMITS / DISPOSITION
+No cryptographic physical component attestation; no direct repair calls,
+filesystem modifications, client PII or actual clipboard. The public
+passport v1 has **no evaluation event ID/time**, so repeated independent
+evaluations of precisely the same basis must fail closed rather than
+claim separate events. A future schema may add explicit event identity.
+**G3 remains open** until the full source-diff parity matrix is reconciled.
