@@ -221,7 +221,24 @@ public partial class CompanySettingsViewModel : ObservableObject
         if (!string.IsNullOrWhiteSpace(Email) && !IsValidEmail(Email))
             return "El formato del email no es válido.";
 
+        // The report renderer rejects arbitrary CSS. Tell the operator at
+        // save time rather than silently losing the intended brand color.
+        if (!IsValidBrandColor(PrimaryColor?.Trim()))
+            return "El color principal debe tener formato hexadecimal #RGB o #RRGGBB (por ejemplo #0078D4).";
+
         return null;
+    }
+
+    public static bool IsValidBrandColor(string? color)
+    {
+        if (color is null || color.Length is not (4 or 7)
+            || color[0] != '#')
+            return false;
+
+        for (var i = 1; i < color.Length; i++)
+            if (!Uri.IsHexDigit(color[i]))
+                return false;
+        return true;
     }
 
     /// <summary>
