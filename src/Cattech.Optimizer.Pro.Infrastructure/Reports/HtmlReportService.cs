@@ -249,26 +249,74 @@ public class HtmlReportService : IReportGenerationService
         return configured;
     }
 
+    private const long MaximumReportLogoBytes = 4 * 1024 * 1024;
+
+    /// <summary>
+    /// Only embed small PNG/JPEG files with the expected byte headers.
+    /// Settings may contain arbitrary paths: do not read generic or oversized
+    /// local files into a customer-facing HTML/PDF. Header checks are not a
+    /// full image decoder or a universal race-free identity guarantee.
+    /// </summary>
+    private static string BuildSafeLogoHtml(string? logoPath)
+    {
+        if (string.IsNullOrWhiteSpace(logoPath))
+            return string.Empty;
+
+        var mime = Path.GetExtension(logoPath).ToLowerInvariant() switch
+        {
+            ".png" => "image/png",
+            ".jpg" or ".jpeg" => "image/jpeg",
+            _ => null
+        };
+        if (mime is null)
+            return string.Empty;
+
+        try
+        {
+            // Reject a direct symlink/junction, keeping the report read-only.
+            // File sharing and a bounded read reduce races; this is not a
+            // promise about every ancestor or third-party filesystem filter.
+            if ((File.GetAttributes(logoPath) &
+                (FileAttributes.ReparsePoint | FileAttributes.Directory)) != 0)
+                return string.Empty;
+
+            using var stream = new FileStream(logoPath, FileMode.Open,
+                FileAccess.Read, FileShare.Read);
+            if (stream.Length < 16 || stream.Length > MaximumReportLogoBytes)
+                return string.Empty;
+
+            var imageBytes = new byte[(int)stream.Length];
+            stream.ReadExactly(imageBytes);
+
+            var validHeader = mime == "image/png"
+                ? imageBytes.AsSpan(0, 8).SequenceEqual(
+                    new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 })
+                  && imageBytes.Length >= 24
+                  && Encoding.ASCII.GetString(imageBytes, 12, 4) == "IHDR"
+                : imageBytes[0] == 0xFF && imageBytes[1] == 0xD8
+                  && imageBytes[2] == 0xFF;
+            if (!validHeader)
+                return string.Empty;
+
+            var base64 = Convert.ToBase64String(imageBytes);
+            return $"<img src=\"data:{mime};base64,{base64}\" alt=\"Logo\" class=\"logo\">";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+            or System.Security.SecurityException or ArgumentException
+            or NotSupportedException)
+        {
+            // An inaccessible/invalid optional logo must not disclose paths.
+            return string.Empty;
+        }
+    }
+
     private string BuildHeader(ReportGenerationOptions options)
     {
         var company = options.Settings?.Company;
         // Settings are editable JSON; never interpolate arbitrary text into
         // quoted style attributes in customer-facing HTML/PDF.
         var color = SafeBrandColor(company?.PrimaryColor);
-        var logoHtml = "";
-
-        if (company != null && !string.IsNullOrEmpty(company.LogoPath) && File.Exists(company.LogoPath))
-        {
-            try
-            {
-                var imageBytes = File.ReadAllBytes(company.LogoPath);
-                var base64 = Convert.ToBase64String(imageBytes);
-                var ext = Path.GetExtension(company.LogoPath).ToLowerInvariant();
-                var mime = ext == ".png" ? "image/png" : "image/jpeg";
-                logoHtml = $"<img src=\"data:{mime};base64,{base64}\" alt=\"Logo\" class=\"logo\">";
-            }
-            catch { }
-        }
+        var logoHtml = BuildSafeLogoHtml(company?.LogoPath);
 
         return $@"
 <div class='header' style='border-bottom: 4px solid {color};'>
