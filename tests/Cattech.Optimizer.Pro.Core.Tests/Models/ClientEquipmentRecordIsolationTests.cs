@@ -15,13 +15,14 @@ public sealed class ClientEquipmentRecordIsolationTests
         public List<ServiceReport> Saved { get; } = new();
         public bool ThrowOnSave { get; set; }
         public string SavedFileName { get; set; } = "fictitious-qa.json";
+        public TaskCompletionSource<string>? PendingSave { get; set; }
 
         public Task<string> SaveReportAsync(ServiceReport report)
         {
             if (ThrowOnSave)
                 throw new IOException(@"Synthetic PRIVATE C:\Users\PRIVATE\service.json");
             Saved.Add(report);
-            return Task.FromResult(SavedFileName);
+            return PendingSave?.Task ?? Task.FromResult(SavedFileName);
         }
 
         public Task<ServiceReport?> LoadReportAsync(string reportId)
@@ -104,6 +105,81 @@ public sealed class ClientEquipmentRecordIsolationTests
         vm.ClientName = name;
         vm.ServiceReason = "QA regression";
         vm.EquipmentType = "Notebook";
+    }
+
+    [Fact]
+    public async Task SaveStartedForOldClient_DoesNotMarkNewClientFormAsSaved()
+    {
+        var storage = new CapturingReportService
+        {
+            PendingSave = new TaskCompletionSource<string>(
+                TaskCreationOptions.RunContinuationsAsynchronously)
+        };
+        var vm = NewViewModel(storage, new FakeHardwareService());
+        PopulateRequiredFields(vm, "Synthetic Client A");
+
+        var inFlight = vm.SaveCommand.ExecuteAsync(null);
+        Assert.Single(storage.Saved);
+        vm.NewRecordCommand.Execute(null);
+        PopulateRequiredFields(vm, "Synthetic Client B");
+        Assert.True(vm.HasUnsavedChanges);
+
+        storage.PendingSave.SetResult("synthetic-old-report.json");
+        await inFlight;
+
+        Assert.Equal("Synthetic Client B", vm.ClientName);
+        Assert.True(vm.HasUnsavedChanges);
+        Assert.False(vm.IsSuccess);
+        Assert.False(vm.HasError);
+        Assert.Contains("formulario actual no fue guardado", vm.StatusMessage);
+        Assert.Equal("Synthetic Client A", Assert.Single(storage.Saved).Client.Name);
+    }
+
+    [Fact]
+    public async Task ChangedFormDuringSave_PreservesDirtyStateInsteadOfFalseSuccess()
+    {
+        var storage = new CapturingReportService
+        {
+            PendingSave = new TaskCompletionSource<string>(
+                TaskCreationOptions.RunContinuationsAsynchronously)
+        };
+        var vm = NewViewModel(storage, new FakeHardwareService());
+        PopulateRequiredFields(vm, "Synthetic Client A");
+
+        var inFlight = vm.SaveCommand.ExecuteAsync(null);
+        vm.ClientPhone = "synthetic-new-phone";
+        storage.PendingSave.SetResult("previous-record.json");
+        await inFlight;
+
+        Assert.True(vm.HasUnsavedChanges);
+        Assert.False(vm.IsSuccess);
+        Assert.Contains("formulario actual no fue guardado", vm.StatusMessage);
+        Assert.Equal("", Assert.Single(storage.Saved).Client.Phone);
+    }
+
+    [Fact]
+    public async Task OldSaveFailure_AfterSwitch_IsSanitizedAndDoesNotClearNewEdits()
+    {
+        var storage = new CapturingReportService
+        {
+            PendingSave = new TaskCompletionSource<string>(
+                TaskCreationOptions.RunContinuationsAsynchronously)
+        };
+        var vm = NewViewModel(storage, new FakeHardwareService());
+        PopulateRequiredFields(vm, "Synthetic Client A");
+
+        var inFlight = vm.SaveCommand.ExecuteAsync(null);
+        vm.NewRecordCommand.Execute(null);
+        PopulateRequiredFields(vm, "Synthetic Client B");
+        storage.PendingSave.SetException(new IOException(
+            @"C:\Users\PRIVATE\OldCustomer\file.json"));
+        await inFlight;
+
+        Assert.True(vm.HasUnsavedChanges);
+        Assert.Equal("Synthetic Client B", vm.ClientName);
+        Assert.True(vm.HasError);
+        Assert.Contains("registro anterior", vm.ErrorMessage);
+        Assert.DoesNotContain("PRIVATE", vm.ErrorMessage);
     }
 
     [Fact]
