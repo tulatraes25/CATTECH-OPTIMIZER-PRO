@@ -18,6 +18,7 @@ public partial class ClientEquipmentViewModel : ObservableObject
     private double _detectedSystemVolumeCapacityGb;
     private double _detectedSystemVolumeFreeGb;
     private int _hardwareDetectionGeneration;
+    private long _formRevision;
 
     // --- Campos del formulario: Cliente ---
 
@@ -249,10 +250,22 @@ public partial class ClientEquipmentViewModel : ObservableObject
             return;
         }
 
+        // An in-flight save owns a snapshot of one revision, not whichever
+        // client/equipment form happens to be visible when I/O finishes.
+        var saveRevision = _formRevision;
         try
         {
             var report = BuildReportFromForm();
             await _reportService.SaveReportAsync(report);
+
+            if (saveRevision != _formRevision)
+            {
+                StatusMessage = "Finalizó un guardado anterior. El formulario actual no fue guardado.";
+                IsSuccess = false;
+                HasError = false;
+                ErrorMessage = string.Empty;
+                return;
+            }
 
             HasUnsavedChanges = false;
             // Storage filenames and raw exceptions can contain private
@@ -261,6 +274,13 @@ public partial class ClientEquipmentViewModel : ObservableObject
         }
         catch (Exception)
         {
+            // Do not label a newly selected case with a previous case's
+            // save error, or expose the original storage exception.
+            if (saveRevision != _formRevision)
+            {
+                ShowError("No se confirmó el guardado del registro anterior. Revisá Informes.");
+                return;
+            }
             // A storage failure may happen after some I/O; do not claim that
             // the write was certainly absent or advise a blind retry.
             ShowError("No se pudo confirmar el guardado. Revisá Informes antes de intentar nuevamente.");
@@ -273,6 +293,8 @@ public partial class ClientEquipmentViewModel : ObservableObject
     [RelayCommand]
     private void NewRecord()
     {
+        // Even a blank/unchanged new record is a new selection revision.
+        ++_formRevision;
         // Invalidate outstanding async detection before touching bound fields.
         ++_hardwareDetectionGeneration;
         _detectedDiskFreeKnown = false;
@@ -470,6 +492,7 @@ public partial class ClientEquipmentViewModel : ObservableObject
 
     private void MarkDirty()
     {
+        unchecked { ++_formRevision; }
         HasUnsavedChanges = true;
         ClearMessages();
     }
