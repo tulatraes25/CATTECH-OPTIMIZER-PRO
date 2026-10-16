@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Windows.Threading;
 using System.Runtime.CompilerServices;
 using Cattech.Optimizer.Pro.Core.Interfaces;
 using Cattech.Optimizer.Pro.Core.Models.Hardware;
@@ -1600,6 +1601,10 @@ public class HardwareViewModelTests
 
     private static void RunNavigationTestSync()
     {
+        // Emulate WPF's Dispatcher synchronization context on this dedicated
+        // STA thread. A blocking wait would prevent cancellation continuations.
+        SynchronizationContext.SetSynchronizationContext(
+            new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
         var service = new FakeHardwareSensorService();
         var mainVm = new MainViewModel(service);
 
@@ -1619,20 +1624,34 @@ public class HardwareViewModelTests
     }
 
     /// <summary>
-    /// Espera manteniendo el hilo de llamada (STA): el polling no cambia de hilo,
-    /// así las operaciones WPF posteriores siguen en el hilo STA.
+    /// Pump the real STA dispatcher while waiting for an asynchronous monitor
+    /// transition. Never block it with Task.Delay().GetResult(), which can
+    /// deadlock a captured DispatcherSynchronizationContext after cancellation.
+    /// This is a deterministic WPF test harness, not production polling.
     /// </summary>
-    private static void WaitUntilSync(Func<bool> condition, int timeoutMs = 3000)
+    private static void WaitUntilSync(Func<bool> condition, int timeoutMs = 5000)
     {
-        var sw = Stopwatch.StartNew();
+        var watch = Stopwatch.StartNew();
+        var dispatcher = Dispatcher.CurrentDispatcher;
         while (!condition())
         {
-            if (sw.ElapsedMilliseconds > timeoutMs)
-            {
-                throw new TimeoutException("La condición no se cumplió a tiempo.");
-            }
+            if (watch.ElapsedMilliseconds >= timeoutMs)
+                throw new TimeoutException(
+                    "La transición de monitoreo no terminó en el dispatcher STA.");
 
-            Task.Delay(20).GetAwaiter().GetResult();
+            var frame = new DispatcherFrame();
+            var timer = new DispatcherTimer(DispatcherPriority.Background, dispatcher)
+            {
+                Interval = TimeSpan.FromMilliseconds(20)
+            };
+            timer.Tick += (_, _) =>
+            {
+                timer.Stop();
+                frame.Continue = false;
+            };
+            timer.Start();
+            Dispatcher.PushFrame(frame);
+            timer.Stop();
         }
     }
 
@@ -2280,6 +2299,10 @@ public class HardwareViewModelTests
 
     private static void RunNavigationReuseTestSync()
     {
+        // Emulate WPF's Dispatcher synchronization context on this dedicated
+        // STA thread. A blocking wait would prevent cancellation continuations.
+        SynchronizationContext.SetSynchronizationContext(
+            new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
         var service = new FakeHardwareSensorService();
         var mainVm = new MainViewModel(service);
 
