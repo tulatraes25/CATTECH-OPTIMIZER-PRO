@@ -489,7 +489,13 @@ public class ReportViewModelTests
             Company = new CompanyInfo { Name = "CATTECH QA" },
             Technician = new TechnicianInfo { Name = "Técnico QA" }
         };
-        public event EventHandler<AppSettings>? SettingsChanged;
+        // This settings fake is immutable and never raises changes. Explicit
+        // accessors avoid an unused-event warning without changing behavior.
+        public event EventHandler<AppSettings>? SettingsChanged
+        {
+            add { }
+            remove { }
+        }
     }
 
     private class FakeServiceReportService : IServiceReportService, IServiceReportInventoryReader
