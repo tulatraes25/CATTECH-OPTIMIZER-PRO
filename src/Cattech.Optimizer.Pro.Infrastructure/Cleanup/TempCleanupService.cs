@@ -248,6 +248,11 @@ public class TempCleanupService : ITempCleanupService
     public async Task<string> SaveResultAsync(TempCleanupResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
+        // Derived IsSuccess/HasWarnings properties may dereference Errors while
+        // serializing: validate nullable nested collections first.
+        if (result.Errors is null || result.TargetResults is null)
+            throw new ArgumentException(
+                "El historial contiene listas estructurales inválidas.", nameof(result));
         // Validate before creating any filesystem artefact; keep the exact
         // snapshot bytes which passed the same reader contract.
         var json = JsonSerializer.Serialize(result, SerializerOptions);
