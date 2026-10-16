@@ -252,14 +252,18 @@ public partial class ClientEquipmentViewModel : ObservableObject
         try
         {
             var report = BuildReportFromForm();
-            var fileName = await _reportService.SaveReportAsync(report);
+            await _reportService.SaveReportAsync(report);
 
             HasUnsavedChanges = false;
-            ShowSuccess($"Reporte guardado: {fileName}");
+            // Storage filenames and raw exceptions can contain private
+            // directory, technician or customer data. Keep UI messages safe.
+            ShowSuccess("Registro guardado correctamente. Podés consultarlo en Informes.");
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            ShowError($"Error al guardar: {ex.Message}");
+            // A storage failure may happen after some I/O; do not claim that
+            // the write was certainly absent or advise a blind retry.
+            ShowError("No se pudo confirmar el guardado. Revisá Informes antes de intentar nuevamente.");
         }
     }
 
