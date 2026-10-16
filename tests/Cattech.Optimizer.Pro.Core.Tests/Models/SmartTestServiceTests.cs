@@ -676,27 +676,27 @@ public class SmartTestServiceTests
     }
 
     [Fact]
-    public void ExtendedTest_UsesLongCommand()
+    public async Task ExtendedTest_UsesLongCommand()
     {
         var mock = new MockSmartctlRunner();
         mock.SetupStartResponse(0);
         var service = new SmartTestService(mock, Path.Combine(Path.GetTempPath(), $"cattech_smart_test_{Guid.NewGuid():N}"));
 
         var device = new SmartDiskDevice { Name = "/dev/sda", ApproximateDiskType = "HDD" };
-        service.StartExtendedTestAsync(device).GetAwaiter().GetResult();
+        await service.StartExtendedTestAsync(device);
 
         Assert.Contains("-t long -j", mock.LastArguments);
     }
 
     [Fact]
-    public void ShortTest_StillUsesShortCommand()
+    public async Task ShortTest_StillUsesShortCommand()
     {
         var mock = new MockSmartctlRunner();
         mock.SetupStartResponse(0);
         var service = new SmartTestService(mock, Path.Combine(Path.GetTempPath(), $"cattech_smart_test_{Guid.NewGuid():N}"));
 
         var device = new SmartDiskDevice { Name = "/dev/sda", ApproximateDiskType = "HDD" };
-        service.StartShortTestAsync(device).GetAwaiter().GetResult();
+        await service.StartShortTestAsync(device);
 
         Assert.Contains("-t short -j", mock.LastArguments);
     }
