@@ -312,6 +312,42 @@ public class ReportViewModelTests
         Assert.True(vm.HasError);
     }
 
+    [Fact]
+    public async Task ReportViewModel_ExcludedClient_DoesNotReachHtmlOptionsOrHistory()
+    {
+        var (vm, generator) = CreateViewModel();
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        Assert.NotNull(vm.SelectedServiceReport);
+        vm.IncludeClient = false;
+        vm.IncludeDiagnostic = false;
+
+        await vm.GenerateReportCommand.ExecuteAsync(null);
+
+        Assert.NotNull(generator.LastCapturedOptions);
+        Assert.False(generator.LastCapturedOptions.IncludeClient);
+        Assert.Null(generator.LastCapturedOptions.ServiceReport);
+        Assert.NotNull(generator.LastSavedInfo);
+        Assert.Equal("Sin cliente", generator.LastSavedInfo.ClientName);
+        Assert.Equal(string.Empty, generator.LastSavedInfo.EquipmentName);
+    }
+
+    [Fact]
+    public async Task ReportViewModel_ExcludedClient_DoesNotReachPdfHistory()
+    {
+        var (vm, generator) = CreateViewModel();
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        vm.IncludeClient = false;
+        vm.IncludeDiagnostic = false;
+
+        await vm.ExportPdfCommand.ExecuteAsync(null);
+
+        Assert.NotNull(generator.LastCapturedOptions);
+        Assert.Null(generator.LastCapturedOptions.ServiceReport);
+        Assert.NotNull(generator.LastSavedInfo);
+        Assert.Equal("Sin cliente", generator.LastSavedInfo.ClientName);
+        Assert.Equal(string.Empty, generator.LastSavedInfo.EquipmentName);
+    }
+
     // ===== Helper =====
 
     private static (ReportViewModel vm, FakeReportGenerationService fakeReportService) CreateViewModel(FakeServiceReportService? storedReports = null)
@@ -366,7 +402,12 @@ public class ReportViewModelTests
             return Task.FromResult(filePath);
         }
 
-        public Task SaveReportInfoAsync(GeneratedReportInfo info) => Task.CompletedTask;
+        public GeneratedReportInfo? LastSavedInfo { get; private set; }
+        public Task SaveReportInfoAsync(GeneratedReportInfo info)
+        {
+            LastSavedInfo = info;
+            return Task.CompletedTask;
+        }
         public Task<List<GeneratedReportInfo>> ListGeneratedReportsAsync(int maxResults = 20) => Task.FromResult(new List<GeneratedReportInfo>());
         public Task OpenReportAsync(string htmlPath) => Task.CompletedTask;
         public Task OpenReportsFolderAsync() => Task.CompletedTask;
