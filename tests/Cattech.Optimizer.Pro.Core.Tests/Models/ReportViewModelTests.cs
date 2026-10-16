@@ -539,6 +539,83 @@ public class ReportViewModelTests
         }
     }
 
+    [Fact]
+    public async Task SmartTestCheckboxEdit_RevokesPreviousHtmlWithoutDeletingHistory()
+    {
+        var (vm, _) = CreateViewModel();
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        var selection = new SmartTestSessionSelectionItem
+        {
+            Session = new SmartTestSession(),
+            IsSelected = false
+        };
+        vm.AvailableSmartTestSessions.Add(selection);
+        await vm.GenerateReportCommand.ExecuteAsync(null);
+        Assert.True(vm.HasGeneratedReport);
+        var previousHtml = vm.LastReportPath;
+
+        try
+        {
+            selection.IsSelected = true;
+
+            Assert.False(vm.HasGeneratedReport);
+            Assert.False(vm.HasGeneratedPdf);
+            Assert.Empty(vm.LastReportPath);
+            Assert.Empty(vm.LastPdfPath);
+            // UI revocation does NOT delete historic user files.
+            Assert.True(File.Exists(previousHtml));
+        }
+        finally
+        {
+            if (File.Exists(previousHtml)) File.Delete(previousHtml);
+        }
+    }
+
+    [Fact]
+    public async Task SmartTestCollectionChangesDetachOldListenersAndRevokeOutputs()
+    {
+        var (vm, _) = CreateViewModel();
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        var selection = new SmartTestSessionSelectionItem
+        {
+            Session = new SmartTestSession(),
+            IsSelected = false
+        };
+        vm.AvailableSmartTestSessions.Add(selection);
+        vm.AvailableSmartTestSessions.Remove(selection);
+
+        await vm.GenerateReportCommand.ExecuteAsync(null);
+        var previousHtml = vm.LastReportPath;
+        try
+        {
+            // The removed child is no longer subscribed to the active report.
+            selection.IsSelected = true;
+            Assert.True(vm.HasGeneratedReport);
+            Assert.Equal(previousHtml, vm.LastReportPath);
+
+            vm.AvailableSmartTestSessions.Add(selection);
+            Assert.False(vm.HasGeneratedReport);
+            Assert.Empty(vm.LastReportPath);
+
+            await vm.GenerateReportCommand.ExecuteAsync(null);
+            var nextHtml = vm.LastReportPath;
+            try
+            {
+                vm.AvailableSmartTestSessions.Clear();
+                Assert.False(vm.HasGeneratedReport);
+                Assert.Empty(vm.LastReportPath);
+            }
+            finally
+            {
+                if (File.Exists(nextHtml)) File.Delete(nextHtml);
+            }
+        }
+        finally
+        {
+            if (File.Exists(previousHtml)) File.Delete(previousHtml);
+        }
+    }
+
     // ===== TEST E: Missing selection guard (GenerateReport) =====
 
     [Fact]
