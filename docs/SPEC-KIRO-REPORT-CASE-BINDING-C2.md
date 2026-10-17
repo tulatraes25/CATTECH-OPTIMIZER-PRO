@@ -146,3 +146,10 @@ C1/C1b established the case ID and generated-report trace. C2-A and C2-B source/
 - Source-binding creation and revocation now pass the user-review CancellationToken through the shared cross-process file-lease helper. A canceled review interrupts its retry delay instead of waiting up to 15 seconds for another process; existing report-store callers continue using the optional uncancelled default.
 - The journal also checks cancellation immediately before publishing a staged claim/revocation file without overwrite. Synthetic tests hold the marker in an independent FileStream and cancel both creation/revocation attempts: no delayed receipt, no private raw evidence mutation, no orphan temp file.
 - Cancellation remains cooperative; an event already atomically published before a later user change cannot be undone by canceling a token. Revocations and fresh source verification at C2-D export-time remain mandatory.
+
+
+## C2-D1 — same-handle detached diagnostic capture (pre-export)
+- ReportSourceFingerprintReader.CaptureDiagnosticAsync deserializes a diagnostic from the SAME already path-verified Windows file handle and bounded byte buffer used to calculate source ID and SHA-256. An independently reloaded DTO must not be treated as equivalent to the examined bytes.
+- The diagnostic capture rejects case-insensitive duplicate JSON property names at any depth, malformed model values and ID mismatches; the input byte buffer is cleared after use. Only the detached model and its internal fingerprint survive the read, never raw JSON or client-identifying paths in the report UI.
+- Synthetic tests check replacement between reads, nested duplicate fields, invalid typed payloads and unsafe relative paths. No customer report is rendered, and the existing named-client fail-closed policy is unchanged.
+- Important: the detached model remains a mutable in-memory object, not a signed or lasting authorization. C2-D2 must bind the EXACT saved case and active non-revoked audit receipt to an immutable staged export with revalidation near HTML/PDF/index publication; physical Windows QA remains required.

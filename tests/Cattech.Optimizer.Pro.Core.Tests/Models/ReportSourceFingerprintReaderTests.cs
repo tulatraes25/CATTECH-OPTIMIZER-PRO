@@ -261,6 +261,79 @@ public sealed class ReportSourceFingerprintReaderTests
         finally { Directory.Delete(root, true); }
     }
 
+    [Fact]
+    public async Task CapturedDiagnosticHasSameHandleFingerprintAndDetachedPayload()
+    {
+        var root = NewRoot();
+        try
+        {
+            const string relative = "diagnostics/diagnostic-qa.json";
+            const string first = "{\"id\":\"ABCDEF12\",\"osName\":\"Windows QA A\",\"computerName\":\"PRIVATE_SYNTHETIC_A\"}";
+            const string second = "{\"id\":\"ABCDEF12\",\"osName\":\"Windows QA B\",\"computerName\":\"PRIVATE_SYNTHETIC_B\"}";
+            await WriteSourceAsync(root, relative, first);
+            var reader = new ReportSourceFingerprintReader(root);
+            var old = await reader.CaptureDiagnosticAsync(relative);
+            Assert.True(old.HasReadableSnapshot);
+            Assert.Equal("ABCDEF12", old.Snapshot!.Report.Id);
+            Assert.Equal("Windows QA A", old.Snapshot.Report.OsName);
+            Assert.Equal(Convert.ToHexString(SHA256.HashData(
+                Encoding.UTF8.GetBytes(first))), old.Snapshot.Fingerprint.Sha256);
+            Assert.DoesNotContain("PRIVATE_SYNTHETIC_A",
+                old.Snapshot.Fingerprint.ToString());
+
+            await WriteSourceAsync(root, relative, second);
+            var current = await reader.CaptureDiagnosticAsync(relative);
+            Assert.True(current.HasReadableSnapshot);
+            Assert.Equal("Windows QA B", current.Snapshot!.Report.OsName);
+            Assert.NotEqual(old.Snapshot.Fingerprint.Sha256,
+                current.Snapshot.Fingerprint.Sha256);
+            // The first detached object is not silently changed by replacing
+            // the on-disk file; neither model is an authorization.
+            Assert.Equal("Windows QA A", old.Snapshot.Report.OsName);
+            Assert.False(Directory.Exists(Path.Combine(root, "reports")));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Theory]
+    [InlineData("{\"id\":\"ABCDEF12\",\"osName\":\"A\",\"OsName\":\"B\"}")]
+    [InlineData("{\"id\":\"ABCDEF12\",\"startup\":{\"totalCount\":1,\"TotalCount\":5}}")]
+    [InlineData("{\"id\":\"ABCDEF12\",\"alerts\":[{\"message\":\"A\",\"Message\":\"B\"}]}")]
+    [InlineData("{\"id\":\"ABCDEF12\",\"serviceCaseId\":\"not-a-guid\"}")]
+    [InlineData("{\"id\":\"ABCDEF12\",\"ramTotalGB\":\"not-a-number\"}")]
+    public async Task AmbiguousOrUnparseableDiagnosticCannotYieldDetachedPayload(
+        string sourceJson)
+    {
+        var root = NewRoot();
+        try
+        {
+            const string relative = "diagnostics/diagnostic-invalid.json";
+            await WriteSourceAsync(root, relative, sourceJson);
+            var inspected = await new ReportSourceFingerprintReader(root)
+                .CaptureDiagnosticAsync(relative);
+            Assert.False(inspected.HasReadableSnapshot);
+            Assert.Null(inspected.Snapshot);
+            Assert.Equal(SourceFingerprintFailure.InvalidPayload, inspected.Failure);
+            Assert.False(Directory.Exists(Path.Combine(root, "reports")));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task CapturedDiagnosticCannotEscapeApprovedStore()
+    {
+        var root = NewRoot();
+        try
+        {
+            var result = await new ReportSourceFingerprintReader(root)
+                .CaptureDiagnosticAsync("diagnostics/../foreign.json");
+            Assert.Equal(SourceFingerprintFailure.UnsafeScope, result.Failure);
+            Assert.Null(result.Snapshot);
+            Assert.False(Directory.Exists(Path.Combine(root, "data")));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
     private static string NewRoot()
     {
         var root = Path.Combine(Path.GetTempPath(),

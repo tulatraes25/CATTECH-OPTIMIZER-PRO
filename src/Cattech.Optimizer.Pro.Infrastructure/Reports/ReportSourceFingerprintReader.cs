@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Win32.SafeHandles;
 using Cattech.Optimizer.Pro.Core.Models.Reports;
+using Cattech.Optimizer.Pro.Core.Models.Diagnostics;
 
 namespace Cattech.Optimizer.Pro.Infrastructure.Reports;
 
@@ -32,6 +33,21 @@ internal sealed record SourceFingerprintInspection(
 }
 
 /// <summary>
+/// Detached diagnostic model from the SAME verified file handle as its digest.
+/// This snapshot is not an export permit: case, current journal and revocations
+/// still need independent revalidation at the eventual C2-D output boundary.
+/// Do not cache as authorization or serialize the source path into reports.
+/// </summary>
+internal sealed record DiagnosticSourceSnapshot(
+    SourceFileFingerprint Fingerprint, DiagnosticReport Report);
+internal sealed record DiagnosticSnapshotInspection(
+    SourceFingerprintFailure Failure, DiagnosticSourceSnapshot? Snapshot)
+{
+    public bool HasReadableSnapshot =>
+        Failure == SourceFingerprintFailure.None && Snapshot is not null;
+}
+
+/// <summary>
 /// Unique local source ID resolution ONLY. A match never proves technician
 /// consent, machine identity or permission to associate a named client.
 /// </summary>
@@ -57,6 +73,12 @@ internal sealed class ReportSourceFingerprintReader
 {
     private const int MaxSourceBytes = 4 * 1024 * 1024;
     private readonly string _dataRoot;
+    private static readonly JsonSerializerOptions DiagnosticOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = false,
+        MaxDepth = 32
+    };
 
     internal ReportSourceFingerprintReader(string baseDirectory)
     {
@@ -146,9 +168,43 @@ internal sealed class ReportSourceFingerprintReader
         }
     }
 
-    internal async Task<SourceFingerprintInspection> InspectAsync(
+    internal Task<SourceFingerprintInspection> InspectAsync(
         string sourceKind, string relativePath,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        ReadVerifiedAsync(sourceKind, relativePath, cancellationToken, null);
+
+    /// <summary>
+    /// C2-D1: one read-only Windows handle feeds BOTH fingerprint and
+    /// diagnostic deserialization. Never deserialize a second unverified
+    /// File.ReadAllTextAsync result into a named-client report.
+    /// </summary>
+    internal async Task<DiagnosticSnapshotInspection> CaptureDiagnosticAsync(
+        string relativePath, CancellationToken cancellationToken = default)
+    {
+        DiagnosticReport? diagnostic = null;
+        var inspection = await ReadVerifiedAsync(
+            "Diagnostic", relativePath, cancellationToken,
+            (document, fingerprint) =>
+            {
+                if (!HasUniqueProperties(document.RootElement))
+                    throw new JsonException("Ambiguous diagnostic properties.");
+                var parsed = document.RootElement.Deserialize<DiagnosticReport>(
+                    DiagnosticOptions);
+                if (parsed is null || !string.Equals(parsed.Id,
+                        fingerprint.SourceRecordId, StringComparison.Ordinal))
+                    throw new JsonException("Diagnostic source ID mismatch.");
+                diagnostic = parsed;
+            }).ConfigureAwait(false);
+        return new(inspection.Failure,
+            inspection.HasReadableSnapshot && diagnostic is not null
+                ? new DiagnosticSourceSnapshot(inspection.Fingerprint!, diagnostic)
+                : null);
+    }
+
+    private async Task<SourceFingerprintInspection> ReadVerifiedAsync(
+        string sourceKind, string relativePath,
+        CancellationToken cancellationToken,
+        Action<JsonDocument, SourceFileFingerprint>? onVerifiedDocument)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!OperatingSystem.IsWindows())
@@ -225,9 +281,12 @@ internal sealed class ReportSourceFingerprintReader
                     return new(SourceFingerprintFailure.InvalidPayload, null);
 
                 var hash = Convert.ToHexString(SHA256.HashData(buffer));
-                return new(SourceFingerprintFailure.None,
-                    new SourceFileFingerprint(sourceKind, sourceId!,
-                        relativePath, hash));
+                var fingerprint = new SourceFileFingerprint(
+                    sourceKind, sourceId!, relativePath, hash);
+                // Callback executes while this same validated FileStream
+                // remains open. An invalid/ambiguous payload fails closed.
+                onVerifiedDocument?.Invoke(document, fingerprint);
+                return new(SourceFingerprintFailure.None, fingerprint);
             }
             finally
             {
@@ -255,6 +314,26 @@ internal sealed class ReportSourceFingerprintReader
         {
             return new(SourceFingerprintFailure.UnsafeScope, null);
         }
+    }
+
+    private static bool HasUniqueProperties(JsonElement node)
+    {
+        if (node.ValueKind == JsonValueKind.Object)
+        {
+            var unique = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var entry in node.EnumerateObject())
+            {
+                if (!unique.Add(entry.Name) || !HasUniqueProperties(entry.Value))
+                    return false;
+            }
+        }
+        else if (node.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var entry in node.EnumerateArray())
+                if (!HasUniqueProperties(entry))
+                    return false;
+        }
+        return true;
     }
 
     private static bool HasNoReparsePoints(string fullPath)
