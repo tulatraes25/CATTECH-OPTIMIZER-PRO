@@ -64,7 +64,7 @@ Each phase is a small GitHub PR/commit and needs a fresh exact-SHA Windows CI pl
 No deletion of old records; no network/cloud account, no fake hardware attestation, no automatic binding by serial/hostname, no real cleanup/SFC/DISM/Defender changes; no public release or main merge.
 
 ## CURRENT DISPOSITION
-C1/C1b established the case ID and generated-report trace. C2-A through C2-E remain **NOT IMPLEMENTED**. Current `ReportSourceCasePolicy.HasMatchingExplicitCase` is a necessary **not sufficient** condition; its existing passing test proves only equal GUIDs, not provenance. Maintain issue #92 P0 until real binding, negative tests and Windows physical QA pass.
+C1/C1b established the case ID and generated-report trace. C2-A and C2-B source/journal foundations are implemented and CI-verified in development; C2-C, C2-D and C2-E remain **NOT IMPLEMENTED**. Current `ReportSourceCasePolicy.HasMatchingExplicitCase` is a necessary **not sufficient** condition; its existing passing test proves only equal GUIDs, not provenance. Maintain issue #92 P0 until real binding, negative tests and Windows physical QA pass.
 
 ## P0 interim containment — pending C2 audited binding
 - A matching mutable GUID no longer grants permission to attribute independent diagnostic, startup, SMART or self-test measurements to a named customer's equipment. HTML, PDF and direct recommendation generation enforce this before attributed output.
@@ -95,3 +95,9 @@ C1/C1b established the case ID and generated-report trace. C2-A through C2-E rem
 - The same per-store OS process lease protects review and revocation publication; malformed, duplicated or orphaned revocation files invalidate new source-review writes rather than being ignored.
 - This initial stage deliberately does not silently rebind a revoked source to a new case. Future C2-C requires a fresh explicit review/reassignment workflow; C2-D must inspect the CURRENT revocation journal on every export, not merely an old stored GUID.
 - Local record files remain under workstation administrator control, so these are auditable-by-application receipts, not tamper-proof external attestations. No named-client mixed output is enabled.
+
+## C2-B2-C — read-only live state and fail-closed revocation custody
+- An internal InspectCurrentAsync checks a specific binding against an intact, complete claim and revocation inventory, the requested case identity and a NEW independent on-disk SHA-256 reading. Invalid or orphaned revocation events block reading and further review.
+- Inspection opens the existing OS coordination marker with FileMode.Open: it creates no directory, marker, record or source file. Concurrent journal writing yields an explicit unsafe/invalid state, never an optimistic match.
+- Matching status is ephemeral ONLY. Export is still prohibited from using it directly: C2-C/D must provide explicit UI consent and re-open the source under its own validated output boundary, including revocations checked again at the point of use.
+- New negative tests include synthetic two-customer mismatch, same ID and serial but different source bytes, revocation, corrupted/orphan journal and locked store.

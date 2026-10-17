@@ -269,6 +269,149 @@ public sealed class SourceBindingReviewJournalTests
         finally { Directory.Delete(root, true); }
     }
 
+    [Fact]
+    public async Task CurrentReadOnlyInspection_RequiresExactCaseAndUnalteredBytes()
+    {
+        var root = NewRoot();
+        try
+        {
+            var source = await WriteSourceAsync(root, "diagnostics/source.json",
+                "{\"id\":\"ABCDEF12\",\"serial\":\"SYNTHETIC\"}");
+            var journal = new SourceBindingReviewJournal(root);
+            var recorded = await journal.RecordReviewedAsync(CaseA, "Diagnostic",
+                "diagnostics/source.json", "TechQA", true);
+            Assert.Equal(SourceBindingJournalStatus.Recorded, recorded.Status);
+            var bindingId = recorded.BindingId!.Value;
+            var folder = JournalDirectory(root);
+            var before = Directory.GetFiles(folder).OrderBy(x => x).ToArray();
+
+            var matching = await journal.InspectCurrentAsync(bindingId, CaseA,
+                "Diagnostic", "diagnostics/source.json");
+            Assert.Equal(SourceBindingReadStatus.CurrentSnapshot, matching.Status);
+            var foreign = await journal.InspectCurrentAsync(bindingId, CaseB,
+                "Diagnostic", "diagnostics/source.json");
+            Assert.Equal(SourceBindingReadStatus.CaseMismatch, foreign.Status);
+            var wrongKind = await journal.InspectCurrentAsync(bindingId, CaseA,
+                "SmartAnalysis", "diagnostics/source.json");
+            Assert.Equal(SourceBindingReadStatus.SourceChanged, wrongKind.Status);
+            var wrongFile = await journal.InspectCurrentAsync(bindingId, CaseA,
+                "Diagnostic", "diagnostics/other.json");
+            Assert.Equal(SourceBindingReadStatus.SourceChanged, wrongFile.Status);
+            Assert.Equal(before, Directory.GetFiles(folder).OrderBy(x => x).ToArray());
+
+            // The source keeps its ID and any spoofable equipment serial.
+            // A byte change must nevertheless revoke current-snapshot status.
+            await File.WriteAllTextAsync(source,
+                "{\"id\":\"ABCDEF12\",\"serial\":\"SYNTHETIC\",\"changed\":true}");
+            var changed = await journal.InspectCurrentAsync(bindingId, CaseA,
+                "Diagnostic", "diagnostics/source.json");
+            Assert.Equal(SourceBindingReadStatus.SourceChanged, changed.Status);
+            Assert.Equal(before, Directory.GetFiles(folder).OrderBy(x => x).ToArray());
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task RevokedBinding_NeverAppearsCurrentEvenWithUnchangedSource()
+    {
+        var root = NewRoot();
+        try
+        {
+            await WriteSourceAsync(root, "smart-reports/disk.json",
+                "{\"id\":\"DEADBEEF\"}");
+            var journal = new SourceBindingReviewJournal(root);
+            var receipt = await journal.RecordReviewedAsync(CaseA, "SmartAnalysis",
+                "smart-reports/disk.json", "TechQA", true);
+            Assert.Equal(SourceBindingJournalStatus.Recorded, receipt.Status);
+            Assert.Equal(SourceBindingReadStatus.CurrentSnapshot,
+                (await journal.InspectCurrentAsync(receipt.BindingId!.Value,
+                    CaseA, "SmartAnalysis", "smart-reports/disk.json")).Status);
+
+            Assert.Equal(SourceBindingJournalStatus.Revoked,
+                (await journal.RevokeAsync(receipt.BindingId.Value, "TechQA", true)).Status);
+            Assert.Equal(SourceBindingReadStatus.Revoked,
+                (await journal.InspectCurrentAsync(receipt.BindingId.Value,
+                    CaseA, "SmartAnalysis", "smart-reports/disk.json")).Status);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task UnknownInspection_NeverCreatesDirectoryOrMarker()
+    {
+        var root = NewRoot();
+        try
+        {
+            var outcome = await new SourceBindingReviewJournal(root)
+                .InspectCurrentAsync(Guid.NewGuid(), CaseA,
+                    "Diagnostic", "diagnostics/missing.json");
+            Assert.Equal(SourceBindingReadStatus.UnknownBinding, outcome.Status);
+            Assert.False(Directory.Exists(JournalDirectory(root)));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task OrphanedRevocationFailsAllInspectionsAndNewReviews()
+    {
+        var root = NewRoot();
+        try
+        {
+            await WriteSourceAsync(root, "diagnostics/a.json",
+                "{\"id\":\"ABCD1234\"}");
+            await WriteSourceAsync(root, "diagnostics/b.json",
+                "{\"id\":\"DEADBEEF\"}");
+            var journal = new SourceBindingReviewJournal(root);
+            var receipt = await journal.RecordReviewedAsync(CaseA, "Diagnostic",
+                "diagnostics/a.json", "TechQA", true);
+            Assert.Equal(SourceBindingJournalStatus.Recorded, receipt.Status);
+
+            var revocation = new SourceBindingRevocationEntry(1, Guid.NewGuid(),
+                Guid.NewGuid(), DateTimeOffset.UtcNow, "TechQA");
+            var orphanFile = Path.Combine(JournalDirectory(root),
+                "revoked-" + revocation.BindingId.ToString("N") + ".json");
+            await File.WriteAllTextAsync(orphanFile,
+                JsonSerializer.Serialize(revocation, new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                }));
+            Assert.Equal(SourceBindingReadStatus.InvalidJournal,
+                (await journal.InspectCurrentAsync(receipt.BindingId!.Value,
+                    CaseA, "Diagnostic", "diagnostics/a.json")).Status);
+            Assert.Equal(SourceBindingJournalStatus.InvalidJournal,
+                (await journal.RecordReviewedAsync(CaseB, "Diagnostic",
+                    "diagnostics/b.json", "TechQA", true)).Status);
+            Assert.Single(Directory.GetFiles(JournalDirectory(root),
+                "binding-*.json"));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task BusyJournal_InspectionFailsClosedWithoutChangingReceipts()
+    {
+        var root = NewRoot();
+        try
+        {
+            await WriteSourceAsync(root, "diagnostics/a.json",
+                "{\"id\":\"ABCDEF12\"}");
+            var journal = new SourceBindingReviewJournal(root);
+            var receipt = await journal.RecordReviewedAsync(CaseA, "Diagnostic",
+                "diagnostics/a.json", "TechQA", true);
+            Assert.Equal(SourceBindingJournalStatus.Recorded, receipt.Status);
+            var marker = Path.Combine(JournalDirectory(root),
+                ".cattech-source-binding.lock");
+            await using var exclusive = new FileStream(marker, FileMode.Open,
+                FileAccess.ReadWrite, FileShare.None);
+            var result = await journal.InspectCurrentAsync(receipt.BindingId!.Value,
+                CaseA, "Diagnostic", "diagnostics/a.json");
+            Assert.Equal(SourceBindingReadStatus.InvalidJournal, result.Status);
+            Assert.Single(Directory.GetFiles(JournalDirectory(root),
+                "binding-*.json"));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
     private static string NewRoot()
     {
         var root = Path.Combine(Path.GetTempPath(),

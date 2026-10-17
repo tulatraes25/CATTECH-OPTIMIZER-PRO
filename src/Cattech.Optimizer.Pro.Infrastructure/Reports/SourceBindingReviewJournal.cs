@@ -37,6 +37,24 @@ internal sealed record SourceBindingJournalOutcome(
     SourceBindingJournalStatus Status, Guid? BindingId = null);
 
 /// <summary>
+/// Read-only CURRENT snapshot inspection, not a grant to create an attributed
+/// HTML/PDF. A file or revocation may change as soon as this method returns.
+/// </summary>
+internal enum SourceBindingReadStatus
+{
+    CurrentSnapshot,
+    UnknownBinding,
+    Revoked,
+    CaseMismatch,
+    SourceChanged,
+    SourceUnavailable,
+    UnsafeStore,
+    InvalidJournal
+}
+
+internal sealed record SourceBindingReadOutcome(SourceBindingReadStatus Status);
+
+/// <summary>
 /// SPEC #92 C2-B2-A: local, append-only claim receipts for future explicit
 /// technician-reviewed binding workflow. No public HTML/PDF integration.
 /// Files are staged then published without overwrite under a process lease.
@@ -67,6 +85,88 @@ internal sealed class SourceBindingReviewJournal
         _journalDirectory = Path.Combine(dataRoot, "source-binding-journal");
         _marker = Path.Combine(_journalDirectory, ".cattech-source-binding.lock");
         _sourceReader = new ReportSourceFingerprintReader(baseDirectory);
+    }
+
+    /// <summary>
+    /// Inspect one reviewed claim against the COMPLETE currently readable
+    /// journal and a fresh on-disk source fingerprint. No directories, files,
+    /// receipts or markers are created. Never cache this result as consent.
+    /// The C2-D renderer must re-open and verify during its actual output
+    /// transaction, not rely on a prior "CurrentSnapshot" status.
+    /// </summary>
+    internal async Task<SourceBindingReadOutcome> InspectCurrentAsync(
+        Guid bindingId, Guid serviceCaseId, string sourceKind,
+        string relativeSourcePath, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (bindingId == Guid.Empty || serviceCaseId == Guid.Empty
+            || !ServiceSourceBindingClaimPolicy.IsSafeRelativePath(relativeSourcePath)
+            || string.IsNullOrWhiteSpace(sourceKind))
+            return new(SourceBindingReadStatus.UnsafeStore);
+        if (!Directory.Exists(_journalDirectory))
+            return new(SourceBindingReadStatus.UnknownBinding);
+
+        try
+        {
+            if (!JournalAncestryIsSafe() || MarkerIsReparsePoint()
+                || !File.Exists(_marker))
+                return new(SourceBindingReadStatus.UnsafeStore);
+            // FileMode.Open is intentionally non-creating. FileShare.None
+            // coordinates with journal writers and readers without changing
+            // persistent state. Busy or missing lock => no positive result.
+            await using var lease = new FileStream(_marker, FileMode.Open,
+                FileAccess.Read, FileShare.None, 1, FileOptions.Asynchronous);
+            var claims = await ReadAllEntriesAsync(cancellationToken)
+                .ConfigureAwait(false);
+            var revocations = await ReadAllRevocationsAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (claims is null || revocations is null
+                || revocations.Any(e => !claims.Any(c =>
+                    c.Claim.BindingId == e.BindingId)))
+                return new(SourceBindingReadStatus.InvalidJournal);
+
+            var claimEntry = claims.SingleOrDefault(e => e.Claim.BindingId == bindingId);
+            if (claimEntry is null)
+                return new(SourceBindingReadStatus.UnknownBinding);
+            if (revocations.Any(e => e.BindingId == bindingId))
+                return new(SourceBindingReadStatus.Revoked);
+            var claim = claimEntry.Claim;
+            if (claim.ServiceCaseId != serviceCaseId)
+                return new(SourceBindingReadStatus.CaseMismatch);
+            if (!string.Equals(claim.SourceKind, sourceKind, StringComparison.Ordinal)
+                || !string.Equals(claim.RelativeSourcePath, relativeSourcePath,
+                    StringComparison.Ordinal))
+                return new(SourceBindingReadStatus.SourceChanged);
+
+            var observed = await _sourceReader.InspectAsync(sourceKind,
+                relativeSourcePath, cancellationToken).ConfigureAwait(false);
+            if (!observed.HasReadableSnapshot)
+                return new(SourceBindingReadStatus.SourceUnavailable);
+            var fingerprint = observed.Fingerprint!;
+            var validation = ServiceSourceBindingClaimPolicy.Validate(
+                claim, serviceCaseId, sourceKind, fingerprint.SourceRecordId,
+                fingerprint.Sha256, fingerprint.RelativePath,
+                claims.Select(e => e.Claim).ToArray());
+            return validation == ServiceSourceBindingFailure.None
+                ? new(SourceBindingReadStatus.CurrentSnapshot)
+                : new(SourceBindingReadStatus.SourceChanged);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (IOException)
+        {
+            return new(SourceBindingReadStatus.InvalidJournal);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return new(SourceBindingReadStatus.UnsafeStore);
+        }
+        catch (ArgumentException)
+        {
+            return new(SourceBindingReadStatus.UnsafeStore);
+        }
     }
 
     internal async Task<SourceBindingJournalOutcome> RecordReviewedAsync(
@@ -101,9 +201,11 @@ internal sealed class SourceBindingReviewJournal
 
             var previous = await ReadAllEntriesAsync(cancellationToken)
                 .ConfigureAwait(false);
-            if (previous is null
-                || await ReadAllRevocationsAsync(cancellationToken)
-                    .ConfigureAwait(false) is null)
+            var revocations = await ReadAllRevocationsAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (previous is null || revocations is null
+                || revocations.Any(e => !previous.Any(c =>
+                    c.Claim.BindingId == e.BindingId)))
                 return new(SourceBindingJournalStatus.InvalidJournal);
 
             // Capture again under the lease. Changes between captures,
