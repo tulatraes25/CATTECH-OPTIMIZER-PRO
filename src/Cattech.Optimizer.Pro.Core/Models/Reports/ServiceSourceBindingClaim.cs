@@ -146,8 +146,8 @@ public static class ServiceSourceBindingClaimPolicy
         // requires rooted, handle-based provenance checks in Infrastructure.
         foreach (var segment in value.Split('/'))
         {
-            if (segment.Length == 0 || segment.StartsWith('.', StringComparison.Ordinal)
-                || segment.EndsWith('.', StringComparison.Ordinal))
+            if (segment.Length == 0 || segment[0] == '.'
+                || segment[^1] == '.')
                 return false;
             var basename = segment.Split('.')[0].ToUpperInvariant();
             if (basename is "CON" or "PRN" or "AUX" or "NUL"
