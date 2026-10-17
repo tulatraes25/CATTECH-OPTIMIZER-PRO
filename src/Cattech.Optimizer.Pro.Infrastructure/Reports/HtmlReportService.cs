@@ -471,13 +471,15 @@ public class HtmlReportService : IReportGenerationService
         var results = new List<string>();
 
         // Resultado de limpieza
-        if (options.CleanupResult != null && options.CleanupResult.DeletedFiles > 0)
+        if (options.IncludeCleanup && options.CleanupResult != null
+            && options.CleanupResult.DeletedFiles > 0)
         {
             results.Add($"<div class='result-item'><strong>Espacio liberado:</strong> {options.CleanupResult.DeletedMB} MB ({options.CleanupResult.DeletedFiles} archivos eliminados)</div>");
         }
 
         // Resultado de optimización
-        if (options.VisualOptimizationResult != null && options.VisualOptimizationResult.AppliedCount > 0)
+        if (options.IncludeVisualOptimization && options.VisualOptimizationResult != null
+            && options.VisualOptimizationResult.AppliedCount > 0)
         {
             results.Add($"<div class='result-item'><strong>Ajustes visuales aplicados:</strong> {options.VisualOptimizationResult.AppliedCount}</div>");
             if (options.VisualOptimizationResult.RequiresRestart)
@@ -485,7 +487,7 @@ public class HtmlReportService : IReportGenerationService
         }
 
         // Punto de restauración
-        if (options.RestorePointResult != null)
+        if (options.IncludeRestorePoint && options.RestorePointResult != null)
         {
             if (options.RestorePointResult.Success)
                 results.Add($"<div class='result-item success'>✅ Punto de restauración creado: {EscapeHtml(options.RestorePointResult.RestorePointName)}</div>");
