@@ -590,4 +590,134 @@ public sealed class ClientEquipmentRecordIsolationTests
         Assert.Single(storage.Saved);
     }
 
+    [Fact]
+    public async Task FirstSave_PersistsNewNonEmptyCaseIdDistinctFromFileId()
+    {
+        var storage = new CapturingReportService();
+        var vm = NewViewModel(storage, new FakeHardwareService());
+        PopulateRequiredFields(vm, "Synthetic First Case");
+
+        await vm.SaveCommand.ExecuteAsync(null);
+
+        var saved = Assert.Single(storage.Saved);
+        Assert.NotNull(saved.ServiceCaseId);
+        Assert.NotEqual(Guid.Empty, saved.ServiceCaseId.Value);
+        Assert.NotEqual(saved.Id, saved.ServiceCaseId.Value.ToString("N"),
+            ignoreCase: true);
+        var json = System.Text.Json.JsonSerializer.Serialize(saved);
+        Assert.Contains("ServiceCaseId", json);
+        Assert.Equal(saved.ServiceCaseId,
+            System.Text.Json.JsonSerializer.Deserialize<ServiceReport>(json)!
+                .ServiceCaseId);
+    }
+
+    [Fact]
+    public async Task SameClientAndEquipment_PreservesCaseAcrossNormalWorkUpdates()
+    {
+        var storage = new CapturingReportService();
+        var vm = NewViewModel(storage, new FakeHardwareService());
+        PopulateRequiredFields(vm, "Synthetic Same Case");
+        vm.SerialNumber = "SYNTHETIC-A";
+        await vm.SaveCommand.ExecuteAsync(null);
+        var first = Assert.Single(storage.Saved);
+
+        vm.ClientPhone = "297-qa-contact-updated";
+        vm.ServiceReason = "SYNTHETIC-WORK-REASON-UPDATED";
+        vm.EquipmentNotes = "SYNTHETIC-SERVICE-NOTES";
+        await vm.SaveCommand.ExecuteAsync(null);
+        Assert.Equal(2, storage.Saved.Count);
+        Assert.Equal(first.ServiceCaseId, storage.Saved[1].ServiceCaseId);
+        Assert.NotEqual(first.Id, storage.Saved[1].Id);
+    }
+
+    [Theory]
+    [InlineData("client")]
+    [InlineData("company")]
+    [InlineData("serial")]
+    [InlineData("brand")]
+    [InlineData("model")]
+    [InlineData("type")]
+    public async Task ChangedClientOrMachineIdentity_RotatesServiceCaseId(string dimension)
+    {
+        var storage = new CapturingReportService();
+        var vm = NewViewModel(storage, new FakeHardwareService());
+        PopulateRequiredFields(vm, "Synthetic Original Client");
+        vm.EquipmentBrand = "SYNTHETIC-A";
+        vm.EquipmentModel = "SYNTHETIC-MODEL-A";
+        vm.SerialNumber = "SYNTHETIC-SERIAL-A";
+        await vm.SaveCommand.ExecuteAsync(null);
+        var previous = Assert.Single(storage.Saved);
+        switch (dimension)
+        {
+            case "client": vm.ClientName = "Synthetic Different Client"; break;
+            case "company": vm.ClientCompany = "Synthetic New Organization"; break;
+            case "serial": vm.SerialNumber = "SYNTHETIC-SERIAL-B"; break;
+            case "brand": vm.EquipmentBrand = "SYNTHETIC-B"; break;
+            case "model": vm.EquipmentModel = "SYNTHETIC-MODEL-B"; break;
+            case "type": vm.EquipmentType = "PC de escritorio"; break;
+        }
+        await vm.SaveCommand.ExecuteAsync(null);
+        Assert.Equal(2, storage.Saved.Count);
+        Assert.NotNull(storage.Saved[1].ServiceCaseId);
+        Assert.NotEqual(previous.ServiceCaseId, storage.Saved[1].ServiceCaseId);
+        Assert.Equal("Synthetic Original Client", previous.Client.Name);
+    }
+
+    [Fact]
+    public async Task CancelIdentityEdit_RestoresConfirmedCaseWithoutRotation()
+    {
+        var storage = new CapturingReportService();
+        var vm = NewViewModel(storage, new FakeHardwareService());
+        PopulateRequiredFields(vm, "Synthetic Confirmed Client");
+        vm.SerialNumber = "SYNTHETIC-SERIAL-A";
+        await vm.SaveCommand.ExecuteAsync(null);
+        var original = Assert.Single(storage.Saved);
+        vm.ClientName = "Other Synthetic Client";
+        vm.SerialNumber = "SYNTHETIC-SERIAL-B";
+
+        vm.CancelCommand.Execute(null);
+        Assert.Equal("Synthetic Confirmed Client", vm.ClientName);
+        Assert.Equal("SYNTHETIC-SERIAL-A", vm.SerialNumber);
+        await vm.SaveCommand.ExecuteAsync(null);
+        Assert.Equal(original.ServiceCaseId, storage.Saved[1].ServiceCaseId);
+    }
+
+    [Fact]
+    public async Task ExplicitNewRecord_RotatesCaseEvenWithIdenticalVisibleIdentity()
+    {
+        var storage = new CapturingReportService();
+        var vm = NewViewModel(storage, new FakeHardwareService());
+        PopulateRequiredFields(vm, "Synthetic Identical Name");
+        await vm.SaveCommand.ExecuteAsync(null);
+        var original = Assert.Single(storage.Saved);
+
+        vm.NewRecordCommand.Execute(null);
+        PopulateRequiredFields(vm, "Synthetic Identical Name");
+        await vm.SaveCommand.ExecuteAsync(null);
+        Assert.Equal(2, storage.Saved.Count);
+        Assert.NotEqual(original.ServiceCaseId, storage.Saved[1].ServiceCaseId);
+    }
+
+    [Fact]
+    public async Task OldInflightSave_KeepsOriginalCaseWhenNewCaseIsCreated()
+    {
+        var storage = new CapturingReportService
+        {
+            PendingSave = new TaskCompletionSource<string>(
+                TaskCreationOptions.RunContinuationsAsynchronously)
+        };
+        var vm = NewViewModel(storage, new FakeHardwareService());
+        PopulateRequiredFields(vm, "Synthetic A");
+        var oldSave = vm.SaveCommand.ExecuteAsync(null);
+        var oldCase = Assert.Single(storage.Saved).ServiceCaseId;
+        vm.NewRecordCommand.Execute(null);
+        PopulateRequiredFields(vm, "Synthetic B");
+        storage.PendingSave.SetResult("synthetic-previous.json");
+        await oldSave;
+        await vm.SaveCommand.ExecuteAsync(null);
+        Assert.Equal(2, storage.Saved.Count);
+        Assert.Equal(oldCase, storage.Saved[0].ServiceCaseId);
+        Assert.NotEqual(oldCase, storage.Saved[1].ServiceCaseId);
+    }
+
 }

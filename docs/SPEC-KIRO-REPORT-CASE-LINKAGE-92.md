@@ -24,3 +24,10 @@ La propiedad Guid? es mutable y NO constituye autentificacion, attestation ni pr
 
 ## ACCEPTANCE
 Compatibilidad JSON sin serializar null, coincidir solo GUIDs no vacios, xUnit completo y gate ZIP independiente. Estado del issue #92: OPEN hasta B-D.
+
+## ETAPA C1 — ID de caso en guardado nuevo (2026-10-17)
+- El formulario Cliente/equipo genera un GUID no vacío al crear un registro nuevo y lo persiste en `ServiceReport.ServiceCaseId`, separado del ID de archivo.
+- Las actualizaciones de datos no identitarios del mismo servicio conservan el vínculo; «Nuevo registro» y cambios de identidad de cliente/equipo tras un guardado confirmado generan otro GUID.
+- «Cancelar» restaura el caso confirmado; un guardado anterior que termina tarde no puede imponer su GUID al formulario nuevo.
+- Ninguna fuente diagnóstica/SMART/Inicio se enlaza automáticamente. El GUID no demuestra que un equipo físico pertenezca al cliente. Los registros históricos sin asociación siguen con `null`.
+- **PENDIENTE C2:** asociar fuentes individuales mediante revisión explícita/auditoría e integridad de origen antes de permitir un informe integral. Una propiedad mutable no sirve como certificación de procedencia.

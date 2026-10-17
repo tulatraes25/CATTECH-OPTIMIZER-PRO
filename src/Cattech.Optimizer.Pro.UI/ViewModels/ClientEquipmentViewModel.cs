@@ -19,6 +19,9 @@ public partial class ClientEquipmentViewModel : ObservableObject
     private double _detectedSystemVolumeFreeGb;
     private int _hardwareDetectionGeneration;
     private long _formRevision;
+    // Explicit service CASE identity, independent of each saved report file Id.
+    // This is a local case reference, not verified device attestation.
+    private Guid _activeServiceCaseId = Guid.NewGuid();
 
     // A confirmed rollback baseline exists only after storage reports a
     // successful save for the same form revision. This is an in-memory
@@ -41,9 +44,10 @@ public partial class ClientEquipmentViewModel : ObservableObject
         double SystemCapacityGb, double SystemFreeGb);
 
     private sealed record FormSnapshot(
-        ClientFields Client, EquipmentFields Equipment, DetectionFields Detection);
+        ClientFields Client, EquipmentFields Equipment, DetectionFields Detection,
+        Guid ServiceCaseId);
 
-    private FormSnapshot CaptureForm() => new(
+    private FormSnapshot CaptureForm(Guid caseId) => new(
         new ClientFields(ClientName, ClientPhone, ClientEmail, ClientCompany,
             ClientAddress, ClientNotes),
         new EquipmentFields(EquipmentBrand, EquipmentModel, SerialNumber,
@@ -53,7 +57,7 @@ public partial class ClientEquipmentViewModel : ObservableObject
             DetectedDiskFree, DetectedDiskType, DetectedComputerName, DetectedUser,
             WindowsVersion, DetectionStatus, HasDetectedData,
             _detectedDiskFreeKnown, _detectedSystemVolumeCapacityGb,
-            _detectedSystemVolumeFreeGb));
+            _detectedSystemVolumeFreeGb), caseId);
 
     private void RestoreConfirmedForm(FormSnapshot previous)
     {
@@ -93,6 +97,7 @@ public partial class ClientEquipmentViewModel : ObservableObject
         _detectedDiskFreeKnown = previous.Detection.DiskFreeKnown;
         _detectedSystemVolumeCapacityGb = previous.Detection.SystemCapacityGb;
         _detectedSystemVolumeFreeGb = previous.Detection.SystemFreeGb;
+        _activeServiceCaseId = previous.ServiceCaseId;
 
         HasUnsavedChanges = false;
         ClearMessages();
@@ -322,6 +327,31 @@ public partial class ClientEquipmentViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Reusing an existing case after a different client/device identity
+    /// would permit cross-equipment attribution. In a new blank draft, use
+    /// its fresh ID. A confirmed same-identity form may be saved repeatedly
+    /// with the same case; changing identity creates a new case ID.
+    /// Phone, email, notes and service reason are editable contact/work data,
+    /// not trustworthy device attestation.
+    /// </summary>
+    private Guid ResolveCaseIdForCurrentForm()
+    {
+        if (_lastConfirmedForm is not { } confirmed)
+            return _activeServiceCaseId;
+
+        static bool Same(string left, string right) =>
+            string.Equals(left.Trim(), right.Trim(), StringComparison.Ordinal);
+
+        return Same(ClientName, confirmed.Client.Name)
+            && Same(ClientCompany, confirmed.Client.Company)
+            && Same(EquipmentBrand, confirmed.Equipment.Brand)
+            && Same(EquipmentModel, confirmed.Equipment.Model)
+            && Same(SerialNumber, confirmed.Equipment.Serial)
+            && Same(EquipmentType, confirmed.Equipment.Type)
+                ? _activeServiceCaseId : Guid.NewGuid();
+    }
+
+    /// <summary>
     /// Guarda el reporte de servicio en disco.
     /// </summary>
     [RelayCommand]
@@ -339,10 +369,11 @@ public partial class ClientEquipmentViewModel : ObservableObject
         // An in-flight save owns a snapshot of one revision, not whichever
         // client/equipment form happens to be visible when I/O finishes.
         var saveRevision = _formRevision;
-        var confirmedSnapshot = CaptureForm();
+        var caseIdForSave = ResolveCaseIdForCurrentForm();
+        var confirmedSnapshot = CaptureForm(caseIdForSave);
         try
         {
-            var report = BuildReportFromForm();
+            var report = BuildReportFromForm(caseIdForSave);
             await _reportService.SaveReportAsync(report);
 
             if (saveRevision != _formRevision)
@@ -354,6 +385,7 @@ public partial class ClientEquipmentViewModel : ObservableObject
                 return;
             }
 
+            _activeServiceCaseId = caseIdForSave;
             _lastConfirmedForm = confirmedSnapshot;
             HasUnsavedChanges = false;
             // Storage filenames and raw exceptions can contain private
@@ -384,6 +416,7 @@ public partial class ClientEquipmentViewModel : ObservableObject
         // A genuinely new case must never be able to restore the prior
         // customer's confirmed snapshot through Cancel.
         _lastConfirmedForm = null;
+        _activeServiceCaseId = Guid.NewGuid();
         // Even a blank/unchanged new record is a new selection revision.
         ++_formRevision;
         // Invalidate outstanding async detection before touching bound fields.
@@ -445,12 +478,13 @@ public partial class ClientEquipmentViewModel : ObservableObject
 
     // --- Helpers privados ---
 
-    private ServiceReport BuildReportFromForm()
+    private ServiceReport BuildReportFromForm(Guid caseId)
     {
         var settings = _settingsService.CurrentSettings;
 
         return new ServiceReport
         {
+            ServiceCaseId = caseId,
             Client = new ClientInfo
             {
                 Name = ClientName.Trim(),
