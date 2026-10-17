@@ -296,7 +296,11 @@ public static class TechnicalPassportBuilder
             && (item.SupportingEvidenceIds.Count > 0
                 || item.ContradictingEvidenceIds.Count > 0)
             && !item.SupportingEvidenceIds.Any(sensitiveIds.Contains)
-            && !item.ContradictingEvidenceIds.Any(sensitiveIds.Contains));
+            && !item.ContradictingEvidenceIds.Any(sensitiveIds.Contains)
+            // Confidential unavailable/future observations may influence an
+            // evaluation without being supporting/contradicting IDs. Do not
+            // publish a conclusion derived from ANY such private reading.
+            && !item.EvaluatedObservations.Keys.Any(sensitiveIds.Contains));
         var safeOutcomes = postchecks.Where(item =>
             !sensitiveIds.Contains(item.BeforeEvidenceId)
             && !sensitiveIds.Contains(item.AfterEvidenceId));

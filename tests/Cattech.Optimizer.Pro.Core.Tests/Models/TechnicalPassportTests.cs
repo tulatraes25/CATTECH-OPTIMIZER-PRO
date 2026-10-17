@@ -126,6 +126,54 @@ public class TechnicalPassportTests
     }
 
     [Fact]
+    public void DiagnosticConsultingSensitiveUnavailableEvidence_StaysOutOfPublicCounts()
+    {
+        var healthy = Observed(FirstId, "healthy");
+        const string secret = "SYNTHETIC-PRIVATE-SOURCE-MARKER";
+        var sensitiveGap = EvidenceRecord.Missing(SensitiveId, Context, Subject,
+            secret, "windows.health", IssuedAt.AddMinutes(-30),
+            EvidenceAvailability.AccessDenied, secret,
+            EvidencePrivacyClass.Sensitive, secret);
+        var assessment = DeterministicDiagnosticEvaluator.Evaluate(Context,
+            new DiagnosticRule("safe-rule", "1", "fictional", "fictional",
+                new[] { new EvidenceExpectation(Subject, "windows.health",
+                    EvidenceValue.FromText("healthy")) }),
+            new[] { healthy, sensitiveGap }, IssuedAt);
+        Assert.Equal(DiagnosticAssessmentStatus.Corroborated, assessment.Status);
+        Assert.Single(assessment.SupportingEvidenceIds);
+
+        var passport = TechnicalPassportBuilder.Build(Context, ExportId, IssuedAt,
+            new[] { sensitiveGap, healthy }, new[] { assessment },
+            Array.Empty<RepairOutcomeAssessment>());
+        using var doc = JsonDocument.Parse(passport.PayloadJson);
+        Assert.Empty(doc.RootElement.GetProperty("diagnosticAssessments").EnumerateArray());
+        Assert.Equal(1, doc.RootElement.GetProperty("evidence")
+            .GetProperty("observed").GetInt32());
+        Assert.Equal(0, doc.RootElement.GetProperty("evidence")
+            .GetProperty("accessDenied").GetInt32());
+        Assert.DoesNotContain(secret, passport.PayloadJson);
+    }
+
+    [Fact]
+    public void UnrelatedPrivateFact_DoesNotSuppressIndependentPublicDiagnostic()
+    {
+        var healthy = Observed(FirstId, "healthy");
+        var sensitiveGap = EvidenceRecord.Missing(SensitiveId, Context, Subject,
+            "synthetic-sensitive-source", "private.unrelated",
+            IssuedAt.AddMinutes(-30), EvidenceAvailability.AccessDenied,
+            "synthetic", EvidencePrivacyClass.Sensitive, "fixture only");
+        var assessment = Diagnostic(healthy);
+
+        var passport = TechnicalPassportBuilder.Build(Context, ExportId, IssuedAt,
+            new[] { healthy, sensitiveGap }, new[] { assessment },
+            Array.Empty<RepairOutcomeAssessment>());
+        using var doc = JsonDocument.Parse(passport.PayloadJson);
+        Assert.Equal("Corroborated", Assert.Single(doc.RootElement
+            .GetProperty("diagnosticAssessments").EnumerateArray())
+            .GetProperty("status").GetString());
+    }
+
+    [Fact]
     public void MissingEvidence_IsNotReportedAsObserved()
     {
         var report = TechnicalPassportBuilder.Build(Context, ExportId, IssuedAt,
