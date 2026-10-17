@@ -141,6 +141,15 @@ public class GeneratedReportInfo
     public string ClientName { get; set; } = string.Empty;
 
     /// <summary>
+    /// Optional link to the saved service case represented by this generated
+    /// report. Null for legacy, unbound or client-opted-out exports.
+    /// This is attribution metadata, not authentic origin attestation.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(
+        Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public Guid? ServiceCaseId { get; set; }
+
+    /// <summary>
     /// Descripción del equipo.
     /// </summary>
     public string EquipmentName { get; set; } = string.Empty;

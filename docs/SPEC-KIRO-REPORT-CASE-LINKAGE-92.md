@@ -31,3 +31,8 @@ Compatibilidad JSON sin serializar null, coincidir solo GUIDs no vacios, xUnit c
 - «Cancelar» restaura el caso confirmado; un guardado anterior que termina tarde no puede imponer su GUID al formulario nuevo.
 - Ninguna fuente diagnóstica/SMART/Inicio se enlaza automáticamente. El GUID no demuestra que un equipo físico pertenezca al cliente. Los registros históricos sin asociación siguen con `null`.
 - **PENDIENTE C2:** asociar fuentes individuales mediante revisión explícita/auditoría e integridad de origen antes de permitir un informe integral. Una propiedad mutable no sirve como certificación de procedencia.
+
+## ETAPA C1b — trazabilidad del historial generado (2026-10-17)
+- `GeneratedReportInfo.ServiceCaseId` registra el identificador del caso sólo cuando el técnico incluyó efectivamente la sección Cliente y el ServiceReport tiene GUID válido, en HTML y PDF bajo las mismas opciones verificadas.
+- Informes antiguos sin la propiedad permanecen con `null`. Exportaciones sin cliente no guardan ese GUID ni lo publican por defecto; no hay inferencia por nombre/fecha/serial.
+- Este índice no constituye una prueba de procedencia ni un recibo auditado que permita enlazar diagnósticos externos. El bloqueo P0 #92 continúa hasta el workflow C2 y la validación de archivos en tiempo de uso.

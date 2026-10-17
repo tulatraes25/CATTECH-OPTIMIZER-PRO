@@ -1005,6 +1005,9 @@ public partial class ReportViewModel : ObservableObject
         {
             ClientName = options.IncludeClient
                 ? options.ServiceReport?.Client?.Name ?? "Sin cliente" : "Sin cliente",
+            ServiceCaseId = options.IncludeClient
+                && options.ServiceReport?.ServiceCaseId is { } caseId
+                && caseId != Guid.Empty ? caseId : null,
             EquipmentName = options.IncludeClient
                 ? $"{options.ServiceReport?.Equipment?.Brand} {options.ServiceReport?.Equipment?.Model}"
                 : string.Empty,

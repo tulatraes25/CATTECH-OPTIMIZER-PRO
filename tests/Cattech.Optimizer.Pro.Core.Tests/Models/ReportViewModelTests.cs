@@ -591,6 +591,78 @@ public class ReportViewModelTests
     }
 
     [Fact]
+    public async Task GeneratedHtmlAndPdfHistory_KeepSameExplicitCaseReference()
+    {
+        var caseId = Guid.Parse("fefefefe-fefe-4efe-8efe-fefefefefefe");
+        var store = new FakeServiceReportService { CaseId = caseId };
+        var (vm, generator) = CreateViewModel(storedReports: store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+
+        await vm.GenerateReportCommand.ExecuteAsync(null);
+        Assert.True(vm.HasGeneratedReport);
+        var html = Assert.IsType<GeneratedReportInfo>(generator.LastSavedInfo);
+        Assert.Equal(caseId, html.ServiceCaseId);
+        var firstPath = vm.LastReportPath;
+        try
+        {
+            await vm.ExportPdfCommand.ExecuteAsync(null);
+            Assert.True(vm.HasGeneratedPdf);
+            var pdf = Assert.IsType<GeneratedReportInfo>(generator.LastSavedInfo);
+            Assert.Equal(caseId, pdf.ServiceCaseId);
+            Assert.Equal(html.ServiceCaseId, pdf.ServiceCaseId);
+            Assert.Contains("ServiceCaseId",
+                System.Text.Json.JsonSerializer.Serialize(pdf));
+        }
+        finally
+        {
+            if (File.Exists(firstPath)) File.Delete(firstPath);
+            if (File.Exists(vm.LastReportPath)) File.Delete(vm.LastReportPath);
+            if (File.Exists(vm.LastPdfPath)) File.Delete(vm.LastPdfPath);
+        }
+    }
+
+    [Fact]
+    public async Task OptedOutClientHistory_NeverCarriesCaseIdentifier()
+    {
+        var caseId = Guid.Parse("dddddddd-dddd-4ddd-8ddd-dddddddddddd");
+        var (vm, generator) = CreateViewModel(
+            storedReports: new FakeServiceReportService { CaseId = caseId });
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        Assert.True(vm.HasClientData);
+
+        vm.IncludeClient = false;
+        await vm.GenerateReportCommand.ExecuteAsync(null);
+        var generatedPath = vm.LastReportPath;
+        try
+        {
+            var metadata = Assert.IsType<GeneratedReportInfo>(
+                generator.LastSavedInfo);
+            Assert.Null(metadata.ServiceCaseId);
+            Assert.Equal("Sin cliente", metadata.ClientName);
+            Assert.DoesNotContain("ServiceCaseId",
+                System.Text.Json.JsonSerializer.Serialize(metadata));
+            Assert.DoesNotContain(caseId.ToString(),
+                System.Text.Json.JsonSerializer.Serialize(metadata));
+        }
+        finally
+        {
+            if (File.Exists(generatedPath)) File.Delete(generatedPath);
+        }
+    }
+
+    [Fact]
+    public void LegacyGeneratedReportIndex_HasNoInferredCaseAssociation()
+    {
+        const string legacy = "{\"Id\":\"synthetic-legacy-report\",\"ClientName\":\"QA legacy\"}";
+        var historical = System.Text.Json.JsonSerializer
+            .Deserialize<GeneratedReportInfo>(legacy);
+        Assert.NotNull(historical);
+        Assert.Null(historical.ServiceCaseId);
+        Assert.DoesNotContain("ServiceCaseId",
+            System.Text.Json.JsonSerializer.Serialize(historical));
+    }
+
+    [Fact]
     public async Task SmartTestCheckboxEdit_RevokesPreviousHtmlWithoutDeletingHistory()
     {
         var (vm, _) = CreateViewModel();
