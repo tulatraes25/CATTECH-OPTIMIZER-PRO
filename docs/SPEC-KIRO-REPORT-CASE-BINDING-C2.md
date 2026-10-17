@@ -112,3 +112,8 @@ C1/C1b established the case ID and generated-report trace. C2-A and C2-B source/
 - Si cambia el contenido entre la revision y la confirmacion, se rechaza sin escribir; un segundo barrido dentro del candado de la bitacora comprueba identidad, ruta y unicidad otra vez.
 - Las comprobaciones son conservadoras frente a archivos hostiles y no prueban identidad fisica. La interfaz y el renderer siguen sin aceptar fuentes mixtas hasta C2-C/D.
 - El catalogo ahora limita la enumeracion antes de materializar el listado de mas de 4096 rutas.
+
+## C2-C0 — preparacion y confirmacion coordinada antes de UX
+- ReportSourceReviewCoordinator comprueba un caso de cliente guardado y unico, su hash serializado y una fuente del catalogo estrictamente unica. Prepara un token de revision local y efimero (5 minutos) sin datos personales visibles.
+- Al confirmar, exige consentimiento expreso, revisa nuevamente el caso y la fuente, y delega la escritura a la bitacora C2-B4 ligada a la huella examinada. Cambio de caso, duplicidad, expiracion o alteracion del origen bloquean la escritura.
+- Se mantiene privado de Infrastructure y desconectado de WPF/exportador hasta implementar C2-C UI y C2-D con validacion de bytes durante la generacion. Las pruebas son sinteticas.
