@@ -1402,6 +1402,63 @@ public class ReportViewModelTests
         Assert.False(vm.HasError);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ReloadDuringOldPdfConversion_ReleasesOldSpinner(bool oldPdfSucceeds)
+    {
+        var pdf = new FakePdfExportService
+        {
+            ShouldSucceed = oldPdfSucceeds,
+            ExportEntered = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously),
+            ResumeExport = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously)
+        };
+        var (vm, _) = CreateViewModel(pdfExporter: pdf);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        vm.IncludeClient = false;
+        vm.IncludeDiagnostic = false;
+        var oldPdf = vm.ExportPdfCommand.ExecuteAsync(null);
+
+        try
+        {
+            await pdf.ExportEntered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+            Assert.True(vm.IsExportingPdf);
+
+            await vm.LoadDataCommand.ExecuteAsync(null);
+            Assert.False(vm.IsExportingPdf);
+            Assert.False(vm.IsRunning);
+            Assert.True(vm.HasClientData);
+            Assert.NotNull(vm.SelectedServiceReport);
+            Assert.True(vm.HasDiagnosticData);
+
+            pdf.ResumeExport.TrySetResult(true);
+            await oldPdf.WaitAsync(TimeSpan.FromSeconds(15));
+
+            Assert.False(vm.IsExportingPdf);
+            Assert.False(vm.HasGeneratedPdf);
+            Assert.False(vm.HasGeneratedReport);
+            Assert.Empty(vm.LastPdfPath);
+            Assert.Empty(vm.LastReportPath);
+            Assert.False(vm.HasError);
+            Assert.True(vm.HasClientData);
+            Assert.NotNull(vm.SelectedServiceReport);
+            Assert.True(vm.HasDiagnosticData);
+        }
+        finally
+        {
+            pdf.ResumeExport.TrySetResult(true);
+            if (!string.IsNullOrWhiteSpace(pdf.LastExportedHtmlPath))
+            {
+                if (File.Exists(pdf.LastExportedHtmlPath))
+                    File.Delete(pdf.LastExportedHtmlPath);
+                var generated = pdf.GetPdfOutputPath(pdf.LastExportedHtmlPath);
+                if (File.Exists(generated)) File.Delete(generated);
+            }
+        }
+    }
+
     private static Task InvokeDirectReloadForRaceTest(ReportViewModel vm)
     {
         // Exercise out-of-order invocations even if the current WPF command
@@ -1503,6 +1560,7 @@ public class ReportViewModelTests
 
     private class FakePdfExportService : IPdfExportService
     {
+        public bool ShouldSucceed { get; set; } = true;
         public Exception? ExportFailure { get; set; }
         public int OpenPdfCalls { get; private set; }
         public TaskCompletionSource<bool>? ExportEntered { get; set; }
@@ -1520,8 +1578,9 @@ public class ReportViewModelTests
                 if (ResumeExport is not null)
                     await ResumeExport.Task.WaitAsync(TimeSpan.FromSeconds(15));
             }
-            File.WriteAllText(outputPdfPath, "%PDF-1.4 fake");
-            return true;
+            if (ShouldSucceed)
+                File.WriteAllText(outputPdfPath, "%PDF-1.4 fake");
+            return ShouldSucceed;
         }
         public string GetPdfOutputPath(string htmlPath) => htmlPath.Replace(".html", ".pdf");
         public Task OpenPdfAsync(string pdfPath)

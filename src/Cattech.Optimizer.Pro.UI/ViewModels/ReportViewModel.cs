@@ -530,6 +530,10 @@ public partial class ReportViewModel : ObservableObject
         // A new read invalidates all outstanding HTML/PDF attempts. Their
         // late callbacks may finish I/O but cannot touch new form feedback.
         Interlocked.Increment(ref _activeExportAttempt);
+        // A superseded PDF renderer may still finish external I/O, but it
+        // no longer owns the spinner. Its finally intentionally cannot reset
+        // a newer attempt's state, so revoke the old spinner here.
+        IsExportingPdf = false;
         _isLoadingData = true;
         ClearMessages();
         IsRunning = true;
