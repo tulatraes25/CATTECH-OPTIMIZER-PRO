@@ -1307,15 +1307,19 @@ public class ReportViewModelTests
     [Fact]
     public async Task SupersededLateSmartResult_CannotEraseNewerSelectedDiagnosis()
     {
+        var linkedCase = Guid.Parse("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee");
         var smart = new FakeSmartDiskService
         {
             ReturnOne = true,
+            CaseId = linkedCase,
             FirstListGate = new TaskCompletionSource<IReadOnlyList<SmartAnalysisResult>>(
                 TaskCreationOptions.RunContinuationsAsynchronously),
             FirstListEntered = new TaskCompletionSource<bool>(
                 TaskCreationOptions.RunContinuationsAsynchronously)
         };
-        var (vm, _) = CreateViewModel(smart: smart);
+        var (vm, _) = CreateViewModel(
+            storedReports: new FakeServiceReportService { CaseId = linkedCase },
+            smart: smart);
         var oldLoad = InvokeDirectReloadForRaceTest(vm);
         await smart.FirstListEntered.Task.WaitAsync(TimeSpan.FromSeconds(15));
 
@@ -1841,6 +1845,7 @@ public class ReportViewModelTests
     private class FakeSmartDiskService : ISmartDiskService
     {
         public bool ReturnOne { get; set; }
+        public Guid? CaseId { get; set; }
         public bool FailList { get; set; }
         public TaskCompletionSource<IReadOnlyList<SmartAnalysisResult>>? FirstListGate { get; set; }
         public TaskCompletionSource<bool>? FirstListEntered { get; set; }
@@ -1859,7 +1864,7 @@ public class ReportViewModelTests
             if (FailList)
                 throw new IOException(@"C:\SYNTHETIC-PRIVATE\smart-results.json");
             IReadOnlyList<SmartAnalysisResult> data = ReturnOne
-                ? new[] { new SmartAnalysisResult() }
+                ? new[] { new SmartAnalysisResult { ServiceCaseId = CaseId } }
                 : Array.Empty<SmartAnalysisResult>();
             return Task.FromResult(data);
         }

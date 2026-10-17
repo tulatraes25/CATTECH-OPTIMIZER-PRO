@@ -693,13 +693,16 @@ public partial class ReportViewModel : ObservableObject
                 && ((HasDiagnosticData && !IncludeDiagnostic)
                     || (HasStartupData && !IncludeStartup)
                     || (HasSmartData && !IncludeSmart));
+            var hasHistoryOnly = cleanupSummaries.Count > 0 || restoreSummaries.Count > 0;
             StatusText = HasReportInventoryWarning
                 ? "Informes requieren revisión"
-                : hasUnboundHistory
-                    ? "Datos cargados; fuentes históricas sin asociar al equipo"
-                    : cleanupSummaries.Count > 0 || restoreSummaries.Count > 0
-                        ? "Datos cargados; historiales de limpieza/restauración no exportables"
-                        : "Datos cargados";
+                : hasUnboundHistory && hasHistoryOnly
+                    ? "Datos cargados; fuentes sin asociar; limpieza/restauración no exportables"
+                    : hasUnboundHistory
+                        ? "Datos cargados; fuentes históricas sin asociar al equipo"
+                        : hasHistoryOnly
+                            ? "Datos cargados; historiales de limpieza/restauración no exportables"
+                            : "Datos cargados";
 
             // Invalidar artifacts generados previamente para forzar regeneración
             // con los datos actualmente cargados (fix SMOKE-B1R-006)

@@ -7,6 +7,11 @@ namespace Cattech.Optimizer.Pro.Core.Tests.Models;
 
 public sealed class DiskReportRenderingTests
 {
+    // Source-level disk-rendering regression: intentionally scoped to ONE
+    // synthetic case, unlike unrelated legacy histories.
+    private static readonly Guid LinkedCase =
+        Guid.Parse("dddddddd-dddd-4ddd-8ddd-dddddddddddd");
+
     private static ReportGenerationOptions Options(
         bool known, double capacity, double free, double percent) => new()
     {
@@ -15,6 +20,7 @@ public sealed class DiskReportRenderingTests
         IncludeRecommendations = false,
         ServiceReport = new ServiceReport
         {
+            ServiceCaseId = LinkedCase,
             Client = new ClientInfo { Name = "Synthetic Customer" },
             Equipment = new EquipmentInfo
             {
@@ -27,6 +33,7 @@ public sealed class DiskReportRenderingTests
         },
         DiagnosticReport = new DiagnosticReport
         {
+            ServiceCaseId = LinkedCase,
             PrimaryDiskName = "Synthetic Disk",
             DiskType = "SSD",
             DiskCapacityGB = capacity,
