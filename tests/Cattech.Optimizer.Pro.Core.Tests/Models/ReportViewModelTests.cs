@@ -1177,6 +1177,127 @@ public class ReportViewModelTests
         Assert.Empty(vm.FinalObservations);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SupersededSettingsCompletion_CannotOverwriteNewerLoad(bool throwOld)
+    {
+        var settings = new FakeSettingsService
+        {
+            FirstLoadGate = new TaskCompletionSource<AppSettings>(
+                TaskCreationOptions.RunContinuationsAsynchronously),
+            FirstLoadEntered = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously)
+        };
+        var (vm, _) = CreateViewModel(settings: settings);
+        var oldLoad = InvokeDirectReloadForRaceTest(vm);
+        await settings.FirstLoadEntered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+
+        var newLoad = InvokeDirectReloadForRaceTest(vm);
+        await newLoad.WaitAsync(TimeSpan.FromSeconds(15));
+        Assert.False(vm.HasError);
+        Assert.True(vm.HasClientData);
+        Assert.True(vm.HasDiagnosticData);
+        Assert.True(vm.HasCompanyData);
+        Assert.False(vm.IsRunning);
+
+        if (throwOld)
+            settings.FirstLoadGate.SetException(new IOException(
+                @"C:\SYNTHETIC-OLD-REPORT\private.json"));
+        else
+            settings.FirstLoadGate.SetResult(new AppSettings
+            {
+                Company = new CompanyInfo { Name = string.Empty }
+            });
+        await oldLoad.WaitAsync(TimeSpan.FromSeconds(15));
+
+        Assert.Equal(2, settings.LoadCallCount);
+        Assert.False(vm.HasError);
+        Assert.False(vm.HasReportInventoryWarning);
+        Assert.True(vm.HasClientData);
+        Assert.True(vm.HasDiagnosticData);
+        Assert.True(vm.HasCompanyData);
+        Assert.NotNull(vm.SelectedServiceReport);
+        Assert.NotNull(vm.SelectedDiagnosticReport);
+        Assert.False(vm.IsRunning);
+        Assert.DoesNotContain("SYNTHETIC-OLD-REPORT", vm.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task SupersededInventoryResult_CannotReplaceHealthyNewerInventory()
+    {
+        var reports = new FakeServiceReportService
+        {
+            FirstInventoryGate = new TaskCompletionSource<ServiceReportInventory>(
+                TaskCreationOptions.RunContinuationsAsynchronously),
+            FirstInventoryEntered = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously)
+        };
+        var (vm, _) = CreateViewModel(storedReports: reports);
+        var oldLoad = InvokeDirectReloadForRaceTest(vm);
+        await reports.FirstInventoryEntered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+
+        await InvokeDirectReloadForRaceTest(vm).WaitAsync(TimeSpan.FromSeconds(15));
+        Assert.True(vm.HasClientData);
+        Assert.False(vm.HasReportInventoryWarning);
+
+        // Old inventory comes back "corrupt", but cannot replace the newer
+        // verified inventory notice nor clear current client selection.
+        reports.FirstInventoryGate.SetResult(
+            new ServiceReportInventory(2, 0, 2, 0, false));
+        await oldLoad.WaitAsync(TimeSpan.FromSeconds(15));
+
+        Assert.False(vm.HasReportInventoryWarning);
+        Assert.True(vm.HasClientData);
+        Assert.NotNull(vm.SelectedServiceReport);
+        Assert.DoesNotContain("duplicado", vm.ReportInventoryMessage);
+    }
+
+    [Fact]
+    public async Task SupersededLateSmartResult_CannotEraseNewerSelectedDiagnosis()
+    {
+        var smart = new FakeSmartDiskService
+        {
+            ReturnOne = true,
+            FirstListGate = new TaskCompletionSource<IReadOnlyList<SmartAnalysisResult>>(
+                TaskCreationOptions.RunContinuationsAsynchronously),
+            FirstListEntered = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously)
+        };
+        var (vm, _) = CreateViewModel(smart: smart);
+        var oldLoad = InvokeDirectReloadForRaceTest(vm);
+        await smart.FirstListEntered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+
+        await InvokeDirectReloadForRaceTest(vm).WaitAsync(TimeSpan.FromSeconds(15));
+        Assert.True(vm.HasSmartData);
+        Assert.NotNull(vm.SelectedSmartAnalysis);
+        Assert.False(vm.HasReportInventoryWarning);
+        Assert.True(vm.HasDiagnosticData);
+        Assert.False(vm.IsRunning);
+
+        smart.FirstListGate.SetResult(Array.Empty<SmartAnalysisResult>());
+        await oldLoad.WaitAsync(TimeSpan.FromSeconds(15));
+
+        Assert.True(vm.HasSmartData);
+        Assert.NotNull(vm.SelectedSmartAnalysis);
+        Assert.True(vm.HasDiagnosticData);
+        Assert.NotNull(vm.SelectedDiagnosticReport);
+        Assert.True(vm.IncludeSmart);
+        Assert.False(vm.IsRunning);
+    }
+
+    private static Task InvokeDirectReloadForRaceTest(ReportViewModel vm)
+    {
+        // Exercise out-of-order invocations even if the current WPF command
+        // already serializes clicks: future programmatic callers must not
+        // be able to reinstate stale case data.
+        var method = typeof(ReportViewModel).GetMethod("LoadDataAsync",
+            System.Reflection.BindingFlags.Instance |
+            System.Reflection.BindingFlags.NonPublic);
+        Assert.NotNull(method);
+        return Assert.IsAssignableFrom<Task>(method.Invoke(vm, null));
+    }
+
     // ===== Helper =====
 
     private static (ReportViewModel vm, FakeReportGenerationService fakeReportService) CreateViewModel(FakeServiceReportService? storedReports = null, FakePdfExportService? pdfExporter = null, FakeSettingsService? settings = null, FakeCleanupService? cleanup = null, FakeRestorePointService? restore = null, FakeSmartDiskService? smart = null)
@@ -1297,8 +1418,16 @@ public class ReportViewModelTests
     private class FakeSettingsService : ISettingsService
     {
         public Exception? LoadFailure { get; set; }
+        public TaskCompletionSource<AppSettings>? FirstLoadGate { get; set; }
+        public TaskCompletionSource<bool>? FirstLoadEntered { get; set; }
+        public int LoadCallCount { get; private set; }
         public Task<AppSettings> LoadSettingsAsync()
         {
+            if (++LoadCallCount == 1 && FirstLoadGate is not null)
+            {
+                FirstLoadEntered?.TrySetResult(true);
+                return FirstLoadGate.Task;
+            }
             if (LoadFailure is not null)
                 throw LoadFailure;
             return Task.FromResult(new AppSettings
@@ -1335,8 +1464,19 @@ public class ReportViewModelTests
         public string TechnicianOverride { get; set; } = string.Empty;
         private static readonly DateTime StableDate =
             new(2026, 10, 15, 12, 0, 0, DateTimeKind.Utc);
-        public Task<ServiceReportInventory> InspectReportInventoryAsync() =>
-            Task.FromResult(Inventory);
+        public TaskCompletionSource<ServiceReportInventory>? FirstInventoryGate { get; set; }
+        public TaskCompletionSource<bool>? FirstInventoryEntered { get; set; }
+        private int _inspectionCount;
+        public Task<ServiceReportInventory> InspectReportInventoryAsync()
+        {
+            if (Interlocked.Increment(ref _inspectionCount) == 1
+                && FirstInventoryGate is not null)
+            {
+                FirstInventoryEntered?.TrySetResult(true);
+                return FirstInventoryGate.Task;
+            }
+            return Task.FromResult(Inventory);
+        }
 
         public Task<List<ServiceReportSummary>> ListReportsAsync(int maxResults = 50)
         {
@@ -1465,11 +1605,20 @@ public class ReportViewModelTests
     {
         public bool ReturnOne { get; set; }
         public bool FailList { get; set; }
+        public TaskCompletionSource<IReadOnlyList<SmartAnalysisResult>>? FirstListGate { get; set; }
+        public TaskCompletionSource<bool>? FirstListEntered { get; set; }
+        private int _listCount;
         public Task<SmartAnalysisResult> AnalyzeAllDisksAsync() => Task.FromResult(new SmartAnalysisResult());
         public Task<SmartDiskReport> AnalyzeDiskAsync(SmartDiskDevice device) => Task.FromResult(new SmartDiskReport());
         public Task<string> SaveResultAsync(SmartAnalysisResult result) => Task.FromResult("1");
         public Task<IReadOnlyList<SmartAnalysisResult>> ListResultsAsync(int maxResults = 20)
         {
+            if (Interlocked.Increment(ref _listCount) == 1
+                && FirstListGate is not null)
+            {
+                FirstListEntered?.TrySetResult(true);
+                return FirstListGate.Task;
+            }
             if (FailList)
                 throw new IOException(@"C:\SYNTHETIC-PRIVATE\smart-results.json");
             IReadOnlyList<SmartAnalysisResult> data = ReturnOne

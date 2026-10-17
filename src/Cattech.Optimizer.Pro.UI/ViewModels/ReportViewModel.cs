@@ -246,7 +246,7 @@ public partial class ReportViewModel : ObservableObject
     /// Advisory read-only check. Never use the snapshot as authorization to
     /// load, delete or export a specific file without revalidation.
     /// </summary>
-    private async Task<bool> CheckReportInventoryAsync()
+    private async Task<bool> CheckReportInventoryAsync(Func<bool>? stillCurrent = null)
     {
         if (_serviceReportService is not IServiceReportInventoryReader reader)
         {
@@ -259,6 +259,11 @@ public partial class ReportViewModel : ObservableObject
         try
         {
             var health = await reader.InspectReportInventoryAsync();
+            // Inventory checks are also called by exports; only a reload
+            // supplies its own epoch. An older read cannot overwrite the
+            // warning/message of a newer report form after its await.
+            if (stillCurrent is not null && !stillCurrent())
+                return false;
             if (health.ScanFailed)
             {
                 HasReportInventoryWarning = true;
@@ -289,6 +294,8 @@ public partial class ReportViewModel : ObservableObject
         }
         catch (Exception)
         {
+            if (stillCurrent is not null && !stillCurrent())
+                return false;
             // Never surface arbitrary file paths or exception text in the UI.
             HasReportInventoryWarning = true;
             ReportInventoryMessage = "No fue posible comprobar los informes de servicio. " +
@@ -303,6 +310,9 @@ public partial class ReportViewModel : ObservableObject
     private long _customerSelectionRevision;
     private long _artifactRevision;
     private long _activeExportAttempt;
+    private long _activeLoadAttempt;
+    private bool IsCurrentLoad(long attempt) =>
+        Interlocked.Read(ref _activeLoadAttempt) == attempt;
     private readonly HashSet<SmartTestSessionSelectionItem> _observedSmartTestSelections = new();
 
     partial void OnSelectedServiceReportChanged(ServiceReport? value)
@@ -493,6 +503,9 @@ public partial class ReportViewModel : ObservableObject
     [RelayCommand]
     private async Task LoadDataAsync()
     {
+        // A newer refresh always supersedes a pending older one, even when
+        // a provider ignores UI CanExecute and responds out of order.
+        var loadAttempt = Interlocked.Increment(ref _activeLoadAttempt);
         ClearMessages();
         IsRunning = true;
         StatusText = "Cargando datos...";
@@ -506,18 +519,24 @@ public partial class ReportViewModel : ObservableObject
         {
             // Empresa
             var settings = await _settingsService.LoadSettingsAsync();
+            if (!IsCurrentLoad(loadAttempt)) return;
             HasCompanyData = !string.IsNullOrWhiteSpace(settings.Company.Name);
             IncludeCompany = HasCompanyData;
 
             // Clientes: advertise problems before presenting any customer choice.
-            if (await CheckReportInventoryAsync())
+            var inventoryReady = await CheckReportInventoryAsync(
+                () => IsCurrentLoad(loadAttempt));
+            if (!IsCurrentLoad(loadAttempt)) return;
+            if (inventoryReady)
             {
                 try
                 {
                     var serviceReports = await _serviceReportService.ListReportsAsync(10);
+                    if (!IsCurrentLoad(loadAttempt)) return;
                     foreach (var sr in serviceReports)
                     {
                         var fullReport = await _serviceReportService.LoadReportAsync(sr.Id);
+                        if (!IsCurrentLoad(loadAttempt)) return;
                         if (fullReport is null)
                         {
                             // The store may have changed since the read-only scan.
@@ -545,10 +564,12 @@ public partial class ReportViewModel : ObservableObject
 
             // Diagnósticos
             var diagnosticSummaries = await _diagnosticService.ListDiagnosticsAsync(10);
+            if (!IsCurrentLoad(loadAttempt)) return;
             AvailableDiagnosticReports.Clear();
             foreach (var ds in diagnosticSummaries)
             {
                 var fullDiag = await _diagnosticService.LoadDiagnosticAsync(ds.Id);
+                if (!IsCurrentLoad(loadAttempt)) return;
                 if (fullDiag != null) AvailableDiagnosticReports.Add(fullDiag);
             }
             HasDiagnosticData = AvailableDiagnosticReports.Count > 0;
@@ -557,10 +578,12 @@ public partial class ReportViewModel : ObservableObject
 
             // Inicio
             var startupAnalyses = await _startupService.ListAnalysesAsync(5);
+            if (!IsCurrentLoad(loadAttempt)) return;
             AvailableStartupAnalyses.Clear();
             foreach (var sa in startupAnalyses)
             {
                 var fullSa = await _startupService.LoadAnalysisAsync(sa.Id);
+                if (!IsCurrentLoad(loadAttempt)) return;
                 if (fullSa != null) AvailableStartupAnalyses.Add(fullSa);
             }
             HasStartupData = AvailableStartupAnalyses.Count > 0;
@@ -570,6 +593,7 @@ public partial class ReportViewModel : ObservableObject
             // History entries are SUMMARIES, not selectable full results.
             // No audited LoadResultAsync exists; never invent missing details.
             var cleanupSummaries = await _cleanupService.ListResultsAsync(5);
+            if (!IsCurrentLoad(loadAttempt)) return;
             AvailableCleanupResults.Clear();
             SelectedCleanupResult = null;
             HasCleanupData = false;
@@ -582,6 +606,7 @@ public partial class ReportViewModel : ObservableObject
             // Restore history is likewise summary-only. A future full
             // loader needs stable IDs, schema validation and permission gates.
             var restoreSummaries = await _restorePointService.ListResultsAsync(5);
+            if (!IsCurrentLoad(loadAttempt)) return;
             AvailableRestorePointResults.Clear();
             SelectedRestorePointResult = null;
             HasRestorePointData = false;
@@ -589,6 +614,7 @@ public partial class ReportViewModel : ObservableObject
 
             // SMART (solo datos persistidos, NO se ejecuta smartctl)
             var smartAnalyses = await _smartDiskService.ListResultsAsync(10);
+            if (!IsCurrentLoad(loadAttempt)) return;
             AvailableSmartAnalyses.Clear();
             foreach (var smart in smartAnalyses)
                 AvailableSmartAnalyses.Add(smart);
@@ -606,6 +632,7 @@ public partial class ReportViewModel : ObservableObject
 
             // Self-tests SMART persistidos (solo lectura, NO se consulta estado)
             var smartTests = await _smartTestService.ListSessionsAsync(20);
+            if (!IsCurrentLoad(loadAttempt)) return;
             AvailableSmartTestSessions.Clear();
             foreach (var test in smartTests)
             {
@@ -630,6 +657,8 @@ public partial class ReportViewModel : ObservableObject
         }
         catch (Exception)
         {
+            if (!IsCurrentLoad(loadAttempt))
+                return; // Never let an old failure revoke newer case data.
             // Fail closed if loading stops after customer records were selected.
             // Exception messages may include local paths or personal data.
             StatusText = "Error al cargar";
@@ -640,7 +669,8 @@ public partial class ReportViewModel : ObservableObject
         }
         finally
         {
-            IsRunning = false;
+            if (IsCurrentLoad(loadAttempt))
+                IsRunning = false;
         }
     }
 
