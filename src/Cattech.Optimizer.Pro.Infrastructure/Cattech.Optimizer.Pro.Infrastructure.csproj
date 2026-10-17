@@ -1,7 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <!-- WMI, Registry, EventLog, native Windows services: Infrastructure is
+         Windows-only. Keep Core on net10.0 for portable pure models. -->
+    <TargetFramework>net10.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>Cattech.Optimizer.Pro.Infrastructure</RootNamespace>

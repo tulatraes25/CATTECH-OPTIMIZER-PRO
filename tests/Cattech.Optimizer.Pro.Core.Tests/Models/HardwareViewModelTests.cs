@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Windows.Threading;
 using System.Runtime.CompilerServices;
 using Cattech.Optimizer.Pro.Core.Interfaces;
 using Cattech.Optimizer.Pro.Core.Models.Hardware;
@@ -668,6 +669,24 @@ public class HardwareViewModelTests
         Assert.Equal("ASUS", vm.Motherboard.Manufacturer);
         Assert.Equal("Inventario parcial", vm.InventoryStatusText);
         Assert.Contains(vm.InventoryErrors, e => e.Contains("CPU:", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task InventoryErrors_DoNotLeakProviderPaths()
+    {
+        var hardware = InventoryService();
+        hardware.ThrowOnCpu = new IOException(
+            @"C:\Users\SyntheticPrivateUser\secret-device.log");
+        var vm = CreateViewModel(new FakeHardwareSensorService(), hardware);
+
+        await vm.RefreshInventoryCommand.ExecuteAsync(null);
+
+        Assert.Equal("Inventario parcial", vm.InventoryStatusText);
+        var error = Assert.Single(vm.InventoryErrors);
+        Assert.Contains("CPU:", error);
+        Assert.DoesNotContain("SyntheticPrivateUser", error);
+        Assert.DoesNotContain("secret-device", error);
+        Assert.Equal(2, vm.Gpus.Count);
     }
 
     [Fact]
@@ -1568,9 +1587,11 @@ public class HardwareViewModelTests
             }
         });
 
+        thread.IsBackground = true; // A stuck WPF STA test must not pin the runner.
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
-        thread.Join(TimeSpan.FromSeconds(15));
+        Assert.True(thread.Join(TimeSpan.FromSeconds(15)),
+            "Hardware navigation STA test did not terminate within 15 seconds.");
 
         if (failure != null)
         {
@@ -1580,14 +1601,18 @@ public class HardwareViewModelTests
 
     private static void RunNavigationTestSync()
     {
+        // Emulate WPF's Dispatcher synchronization context on this dedicated
+        // STA thread. A blocking wait would prevent cancellation continuations.
+        SynchronizationContext.SetSynchronizationContext(
+            new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
         var service = new FakeHardwareSensorService();
         var mainVm = new MainViewModel(service);
 
         mainVm.NavigateCommand.Execute("Hardware");
-        var hardwareVm = ((HardwareView)mainVm.CurrentView).DataContext as HardwareViewModel;
-        Assert.NotNull(hardwareVm);
+        var hardwareView = Assert.IsType<HardwareView>(mainVm.CurrentView);
+        var hardwareVm = Assert.IsType<HardwareViewModel>(hardwareView.DataContext);
 
-        hardwareVm!.StartMonitoringCommand.Execute(null);
+        hardwareVm.StartMonitoringCommand.Execute(null);
         WaitUntilSync(() => service.LastStreamToken != default);
         Assert.True(hardwareVm.IsMonitoring);
 
@@ -1599,20 +1624,34 @@ public class HardwareViewModelTests
     }
 
     /// <summary>
-    /// Espera manteniendo el hilo de llamada (STA): el polling no cambia de hilo,
-    /// así las operaciones WPF posteriores siguen en el hilo STA.
+    /// Pump the real STA dispatcher while waiting for an asynchronous monitor
+    /// transition. Never block it with Task.Delay().GetResult(), which can
+    /// deadlock a captured DispatcherSynchronizationContext after cancellation.
+    /// This is a deterministic WPF test harness, not production polling.
     /// </summary>
-    private static void WaitUntilSync(Func<bool> condition, int timeoutMs = 3000)
+    private static void WaitUntilSync(Func<bool> condition, int timeoutMs = 5000)
     {
-        var sw = Stopwatch.StartNew();
+        var watch = Stopwatch.StartNew();
+        var dispatcher = Dispatcher.CurrentDispatcher;
         while (!condition())
         {
-            if (sw.ElapsedMilliseconds > timeoutMs)
-            {
-                throw new TimeoutException("La condición no se cumplió a tiempo.");
-            }
+            if (watch.ElapsedMilliseconds >= timeoutMs)
+                throw new TimeoutException(
+                    "La transición de monitoreo no terminó en el dispatcher STA.");
 
-            Task.Delay(20).GetAwaiter().GetResult();
+            var frame = new DispatcherFrame();
+            var timer = new DispatcherTimer(DispatcherPriority.Background, dispatcher)
+            {
+                Interval = TimeSpan.FromMilliseconds(20)
+            };
+            timer.Tick += (_, _) =>
+            {
+                timer.Stop();
+                frame.Continue = false;
+            };
+            timer.Start();
+            Dispatcher.PushFrame(frame);
+            timer.Stop();
         }
     }
 
@@ -2246,9 +2285,11 @@ public class HardwareViewModelTests
             }
         });
 
+        thread.IsBackground = true;
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
-        thread.Join(TimeSpan.FromSeconds(20));
+        Assert.True(thread.Join(TimeSpan.FromSeconds(20)),
+            "Hardware return navigation STA test did not terminate within 20 seconds.");
 
         if (failure != null)
         {
@@ -2258,14 +2299,18 @@ public class HardwareViewModelTests
 
     private static void RunNavigationReuseTestSync()
     {
+        // Emulate WPF's Dispatcher synchronization context on this dedicated
+        // STA thread. A blocking wait would prevent cancellation continuations.
+        SynchronizationContext.SetSynchronizationContext(
+            new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
         var service = new FakeHardwareSensorService();
         var mainVm = new MainViewModel(service);
 
         mainVm.NavigateCommand.Execute("Hardware");
-        var firstVm = ((HardwareView)mainVm.CurrentView).DataContext as HardwareViewModel;
-        Assert.NotNull(firstVm);
+        var firstView = Assert.IsType<HardwareView>(mainVm.CurrentView);
+        var firstVm = Assert.IsType<HardwareViewModel>(firstView.DataContext);
 
-        firstVm!.StartMonitoringCommand.Execute(null);
+        firstVm.StartMonitoringCommand.Execute(null);
         WaitUntilSync(() => service.LastStreamToken != default);
         firstVm.StopMonitoringCommand.Execute(null);
         WaitUntilSync(() => !firstVm.IsMonitoring);

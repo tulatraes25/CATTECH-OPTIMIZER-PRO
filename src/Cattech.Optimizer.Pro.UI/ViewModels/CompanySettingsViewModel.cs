@@ -90,9 +90,10 @@ public partial class CompanySettingsViewModel : ObservableObject
             HasUnsavedChanges = false;
             ClearMessages();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            ShowError($"Error al cargar configuración: {ex.Message}");
+            // Settings/IO exceptions can include private local file paths.
+            ShowError("No se pudo cargar la configuración. Revisá el almacenamiento e intentá nuevamente.");
         }
     }
 
@@ -119,9 +120,9 @@ public partial class CompanySettingsViewModel : ObservableObject
                 ClearMessages();
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            ShowError($"Error al seleccionar archivo: {ex.Message}");
+            ShowError("No se pudo abrir el selector de logo. Reintentá la operación.");
         }
     }
 
@@ -149,10 +150,11 @@ public partial class CompanySettingsViewModel : ObservableObject
             HasUnsavedChanges = false;
             ShowSuccess("Configuración guardada correctamente.");
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            // TODO: Integrar con módulo de logging cuando esté disponible
-            ShowError($"Error al guardar: {ex.Message}");
+            // Never claim success or surface filesystem paths on a failed save.
+            HasUnsavedChanges = true;
+            ShowError("No se pudo guardar la configuración. Los cambios siguen sin guardar; revisá los permisos y reintentá.");
         }
     }
 
@@ -219,7 +221,24 @@ public partial class CompanySettingsViewModel : ObservableObject
         if (!string.IsNullOrWhiteSpace(Email) && !IsValidEmail(Email))
             return "El formato del email no es válido.";
 
+        // The report renderer rejects arbitrary CSS. Tell the operator at
+        // save time rather than silently losing the intended brand color.
+        if (!IsValidBrandColor(PrimaryColor?.Trim()))
+            return "El color principal debe tener formato hexadecimal #RGB o #RRGGBB (por ejemplo #0078D4).";
+
         return null;
+    }
+
+    public static bool IsValidBrandColor(string? color)
+    {
+        if (color is null || color.Length is not (4 or 7)
+            || color[0] != '#')
+            return false;
+
+        for (var i = 1; i < color.Length; i++)
+            if (!Uri.IsHexDigit(color[i]))
+                return false;
+        return true;
     }
 
     /// <summary>

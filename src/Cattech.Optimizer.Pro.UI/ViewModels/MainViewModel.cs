@@ -8,6 +8,7 @@ using Cattech.Optimizer.Pro.Infrastructure.Data;
 using Cattech.Optimizer.Pro.Infrastructure.Diagnostics;
 using Cattech.Optimizer.Pro.Infrastructure.Hardware;
 using Cattech.Optimizer.Pro.Infrastructure.Reports;
+using Cattech.Optimizer.Pro.Infrastructure.Repair;
 using Cattech.Optimizer.Pro.Infrastructure.RestorePoint;
 using Cattech.Optimizer.Pro.Infrastructure.Smart;
 using Cattech.Optimizer.Pro.Infrastructure.Startup;
@@ -50,6 +51,13 @@ public partial class MainViewModel : ObservableObject
     private readonly ISmartDiskService _smartDiskService;
     private readonly ISmartTestService _smartTestService;
     private readonly IHardwareSensorService _hardwareSensorService;
+    private readonly ICrashDumpDiscoveryService _crashDumpDiscoveryService;
+    private readonly ICrashEventDiscoveryService _crashEventDiscoveryService;
+    private readonly IBugCheckDecoder _bugCheckDecoder;
+    private readonly IDumpCheckService _dumpCheckService;
+    private readonly IWindowsUpdateReadinessService _windowsUpdateReadinessService;
+    private readonly ISystemRepairPlanService _systemRepairPlanService;
+    private readonly ISystemRepairPreflightService _systemRepairPreflightService;
 
     // ViewModels de secciones
     private CompanySettingsViewModel? _companySettingsViewModel;
@@ -62,6 +70,8 @@ public partial class MainViewModel : ObservableObject
     private ReportViewModel? _reportViewModel;
     private SmartDiskViewModel? _smartDiskViewModel;
     private HardwareViewModel? _hardwareViewModel;
+    private CrashEvidenceViewModel? _crashEvidenceViewModel;
+    private RepairCenterViewModel? _repairCenterViewModel;
 
     public MainViewModel()
         : this(new LibreHardwareSensorService())
@@ -85,6 +95,13 @@ public partial class MainViewModel : ObservableObject
         _smartDiskService = new SmartDiskService(_smartctlRunner);
         _smartTestService = new SmartTestService(_smartctlRunner);
         _hardwareSensorService = hardwareSensorService;
+        _crashDumpDiscoveryService = new CrashDumpDiscoveryService();
+        _crashEventDiscoveryService = new CrashEventDiscoveryService();
+        _bugCheckDecoder = new BugCheckDecoder();
+        _dumpCheckService = new DumpCheckService();
+        _windowsUpdateReadinessService = new WindowsUpdateReadinessService();
+        _systemRepairPlanService = new SystemRepairPlanService();
+        _systemRepairPreflightService = new SystemRepairPreflightService();
         NavigateTo("Home");
     }
 
@@ -113,6 +130,9 @@ public partial class MainViewModel : ObservableObject
             "Hardware" => CreateHardwareView(),
             "SmartDisk" => CreateSmartDiskView(),
             "Diagnostics" => CreateQuickDiagnosticView(),
+            "DecisionCenterDemo" => CreateDecisionCenterDemoView(),
+            "BlueScreens" => CreateCrashEvidenceView(),
+            "RepairCenter" => CreateRepairCenterView(),
             "TempCleanup" => CreateTempCleanupView(),
             "Optimization" => CreateVisualOptimizationView(),
             "RestorePoint" => CreateRestorePointView(),
@@ -155,6 +175,46 @@ public partial class MainViewModel : ObservableObject
         return new QuickDiagnosticView
         {
             DataContext = _quickDiagnosticViewModel
+        };
+    }
+
+    // Isolated demonstration: never receives real hardware providers,
+    // client records or services and never initiates system changes.
+    private static object CreateDecisionCenterDemoView() =>
+        new DecisionCenterDemoView
+        {
+            DataContext = new DecisionCenterDemoViewModel()
+        };
+
+    private object CreateCrashEvidenceView()
+    {
+        _crashEvidenceViewModel ??= new CrashEvidenceViewModel(
+            _crashDumpDiscoveryService, _crashEventDiscoveryService, _bugCheckDecoder,
+            _dumpCheckService, fileName => MessageBox.Show(
+                "Se abrirá localmente el archivo de volcado seleccionado mediante DumpChk " +
+                "(Windows Debugging Tools) para comprobar su legibilidad y código BugCheck.\n\n" +
+                $"Archivo: {fileName}\n\n" +
+                "Puede contener datos sensibles; no se subirá ni copiará automáticamente. " +
+                "No se descargarán símbolos ni se reparará Windows.\n\n" +
+                "¿Confirmás expresamente esta comprobación?",
+                "CATTECH — Confirmar DumpChk",
+                MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes);
+
+        return new CrashEvidenceView
+        {
+            DataContext = _crashEvidenceViewModel
+        };
+    }
+
+    private object CreateRepairCenterView()
+    {
+        _repairCenterViewModel ??= new RepairCenterViewModel(
+            _windowsUpdateReadinessService, _systemRepairPlanService,
+            _systemRepairPreflightService);
+
+        return new RepairCenterView
+        {
+            DataContext = _repairCenterViewModel
         };
     }
 
@@ -278,7 +338,7 @@ public partial class MainViewModel : ObservableObject
 
         var version = new TextBlock
         {
-            Text = "CATTECH OPTIMIZER PRO v0.2.2",
+            Text = "CATTECH OPTIMIZER PRO v0.3.0 (candidata)",
             FontSize = 12,
             Foreground = new System.Windows.Media.SolidColorBrush(
                 System.Windows.Media.Color.FromRgb(0x99, 0x99, 0x99))

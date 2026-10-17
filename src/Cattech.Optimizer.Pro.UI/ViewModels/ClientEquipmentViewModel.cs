@@ -14,6 +14,94 @@ public partial class ClientEquipmentViewModel : ObservableObject
     private readonly IServiceReportService _reportService;
     private readonly ISettingsService _settingsService;
     private readonly IHardwareService _hardwareService;
+    private bool _detectedDiskFreeKnown;
+    private double _detectedSystemVolumeCapacityGb;
+    private double _detectedSystemVolumeFreeGb;
+    private int _hardwareDetectionGeneration;
+    private long _formRevision;
+    // Explicit service CASE identity, independent of each saved report file Id.
+    // This is a local case reference, not verified device attestation.
+    private Guid _activeServiceCaseId = Guid.NewGuid();
+
+    // A confirmed rollback baseline exists only after storage reports a
+    // successful save for the same form revision. This is an in-memory
+    // snapshot, not a claim that older disk records were rolled back.
+    private FormSnapshot? _lastConfirmedForm;
+
+    private sealed record ClientFields(
+        string Name, string Phone, string Email, string Company,
+        string Address, string Notes);
+
+    private sealed record EquipmentFields(
+        string Brand, string Model, string Serial, string Type,
+        string ServiceReason, string Notes);
+
+    private sealed record DetectionFields(
+        string Os, string Edition, string Architecture, string Processor,
+        string Ram, string Disk, string DiskCapacity, string DiskFree,
+        string DiskType, string ComputerName, string User, string WindowsVersion,
+        string Status, bool HasData, bool DiskFreeKnown,
+        double SystemCapacityGb, double SystemFreeGb);
+
+    private sealed record FormSnapshot(
+        ClientFields Client, EquipmentFields Equipment, DetectionFields Detection,
+        Guid ServiceCaseId);
+
+    private FormSnapshot CaptureForm(Guid caseId) => new(
+        new ClientFields(ClientName, ClientPhone, ClientEmail, ClientCompany,
+            ClientAddress, ClientNotes),
+        new EquipmentFields(EquipmentBrand, EquipmentModel, SerialNumber,
+            EquipmentType, ServiceReason, EquipmentNotes),
+        new DetectionFields(DetectedOS, DetectedEdition, DetectedArchitecture,
+            DetectedProcessor, DetectedRam, DetectedDisk, DetectedDiskCapacity,
+            DetectedDiskFree, DetectedDiskType, DetectedComputerName, DetectedUser,
+            WindowsVersion, DetectionStatus, HasDetectedData,
+            _detectedDiskFreeKnown, _detectedSystemVolumeCapacityGb,
+            _detectedSystemVolumeFreeGb), caseId);
+
+    private void RestoreConfirmedForm(FormSnapshot previous)
+    {
+        // Revokes in-flight reads and saves, including A->B->A selections.
+        unchecked { ++_formRevision; ++_hardwareDetectionGeneration; }
+        IsDetecting = false;
+
+        // Identity setters intentionally clear old telemetry. Restore the
+        // confirmed telemetry only AFTER all customer/equipment setters.
+        ClientName = previous.Client.Name;
+        ClientPhone = previous.Client.Phone;
+        ClientEmail = previous.Client.Email;
+        ClientCompany = previous.Client.Company;
+        ClientAddress = previous.Client.Address;
+        ClientNotes = previous.Client.Notes;
+        EquipmentBrand = previous.Equipment.Brand;
+        EquipmentModel = previous.Equipment.Model;
+        SerialNumber = previous.Equipment.Serial;
+        EquipmentType = previous.Equipment.Type;
+        ServiceReason = previous.Equipment.ServiceReason;
+        EquipmentNotes = previous.Equipment.Notes;
+
+        DetectedOS = previous.Detection.Os;
+        DetectedEdition = previous.Detection.Edition;
+        DetectedArchitecture = previous.Detection.Architecture;
+        DetectedProcessor = previous.Detection.Processor;
+        DetectedRam = previous.Detection.Ram;
+        DetectedDisk = previous.Detection.Disk;
+        DetectedDiskCapacity = previous.Detection.DiskCapacity;
+        DetectedDiskFree = previous.Detection.DiskFree;
+        DetectedDiskType = previous.Detection.DiskType;
+        DetectedComputerName = previous.Detection.ComputerName;
+        DetectedUser = previous.Detection.User;
+        WindowsVersion = previous.Detection.WindowsVersion;
+        DetectionStatus = previous.Detection.Status;
+        HasDetectedData = previous.Detection.HasData;
+        _detectedDiskFreeKnown = previous.Detection.DiskFreeKnown;
+        _detectedSystemVolumeCapacityGb = previous.Detection.SystemCapacityGb;
+        _detectedSystemVolumeFreeGb = previous.Detection.SystemFreeGb;
+        _activeServiceCaseId = previous.ServiceCaseId;
+
+        HasUnsavedChanges = false;
+        ClearMessages();
+    }
 
     // --- Campos del formulario: Cliente ---
 
@@ -143,13 +231,28 @@ public partial class ClientEquipmentViewModel : ObservableObject
     [RelayCommand]
     private async Task DetectHardwareAsync()
     {
+        // A new detection invalidates old telemetry immediately. Previously
+        // verified disk/OS measurements are never carried into a new probe.
+        InvalidateHardwareForIdentityChange();
+        var generation = ++_hardwareDetectionGeneration;
+        unchecked { ++_formRevision; }
+        HasUnsavedChanges = true;
         ClearMessages();
         IsDetecting = true;
         DetectionStatus = "Detectando...";
+        _detectedDiskFreeKnown = false;
+        _detectedSystemVolumeCapacityGb = 0;
+        _detectedSystemVolumeFreeGb = 0;
+        DetectedDisk = "No detectado";
+        DetectedDiskCapacity = "No disponible";
+        DetectedDiskFree = "No disponible";
+        DetectedDiskType = "No determinado";
 
         try
         {
             var report = await _hardwareService.GetHardwareReportAsync();
+            if (generation != _hardwareDetectionGeneration)
+                return; // A newer record owns the form; discard old data.
 
             // Sistema operativo
             DetectedOS = report.System.OsName;
@@ -166,20 +269,29 @@ public partial class ClientEquipmentViewModel : ObservableObject
                 ? $"{report.Memory.TotalGB} GB"
                 : "No disponible";
 
-            // Disco principal
-            var mainDisk = report.Disks.FirstOrDefault();
+            // Disco del volumen del sistema: no asumir primer disco WMI.
+            _detectedDiskFreeKnown = false;
+            var candidates = report.Disks.Where(d => d.VolumeAssociationsVerified &&
+                d.Volumes.Count(v => v.IsSystemVolume) == 1).ToArray();
+            var mainDisk = candidates.Length == 1 ? candidates[0] : null;
             if (mainDisk != null)
             {
+                var volume = mainDisk.SystemVolume!;
                 DetectedDisk = mainDisk.Name;
-                DetectedDiskCapacity = mainDisk.TotalGB > 0
-                    ? $"{mainDisk.TotalGB} GB"
+                DetectedDiskCapacity = volume.CapacityGB.HasValue
+                    ? $"{volume.CapacityGB.Value:F2} GB"
                     : "No disponible";
-                DetectedDiskFree = mainDisk.FreeGB > 0
-                    ? $"{mainDisk.FreeGB} GB"
+                DetectedDiskFree = volume.FreeGB.HasValue
+                    ? $"{volume.FreeGB.Value:F2} GB"
                     : "No disponible";
-                DetectedDiskType = !string.IsNullOrEmpty(mainDisk.MediaType)
-                    ? mainDisk.MediaType
-                    : "No detectado";
+                DetectedDiskType = string.IsNullOrWhiteSpace(mainDisk.MediaType)
+                    ? "No determinado" : mainDisk.MediaType;
+                _detectedDiskFreeKnown = volume.FreePercent.HasValue;
+                if (_detectedDiskFreeKnown)
+                {
+                    _detectedSystemVolumeCapacityGb = volume.CapacityGB!.Value;
+                    _detectedSystemVolumeFreeGb = volume.FreeGB!.Value;
+                }
             }
             else
             {
@@ -194,16 +306,49 @@ public partial class ClientEquipmentViewModel : ObservableObject
 
             DetectionStatus = "Detectado correctamente";
             HasDetectedData = true;
+            // Finishing a probe changes the data that a later save will carry.
+            // A save started before completion cannot claim this newer form.
+            unchecked { ++_formRevision; }
+            HasUnsavedChanges = true;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            DetectionStatus = "Error al detectar";
-            ShowError($"Error durante la detección: {ex.Message}");
+            if (generation == _hardwareDetectionGeneration)
+            {
+                DetectionStatus = "Error al detectar";
+                ShowError("No se pudo completar la detección de hardware.");
+            }
         }
         finally
         {
-            IsDetecting = false;
+            if (generation == _hardwareDetectionGeneration)
+                IsDetecting = false;
         }
+    }
+
+    /// <summary>
+    /// Reusing an existing case after a different client/device identity
+    /// would permit cross-equipment attribution. In a new blank draft, use
+    /// its fresh ID. A confirmed same-identity form may be saved repeatedly
+    /// with the same case; changing identity creates a new case ID.
+    /// Phone, email, notes and service reason are editable contact/work data,
+    /// not trustworthy device attestation.
+    /// </summary>
+    private Guid ResolveCaseIdForCurrentForm()
+    {
+        if (_lastConfirmedForm is not { } confirmed)
+            return _activeServiceCaseId;
+
+        static bool Same(string left, string right) =>
+            string.Equals(left.Trim(), right.Trim(), StringComparison.Ordinal);
+
+        return Same(ClientName, confirmed.Client.Name)
+            && Same(ClientCompany, confirmed.Client.Company)
+            && Same(EquipmentBrand, confirmed.Equipment.Brand)
+            && Same(EquipmentModel, confirmed.Equipment.Model)
+            && Same(SerialNumber, confirmed.Equipment.Serial)
+            && Same(EquipmentType, confirmed.Equipment.Type)
+                ? _activeServiceCaseId : Guid.NewGuid();
     }
 
     /// <summary>
@@ -221,17 +366,44 @@ public partial class ClientEquipmentViewModel : ObservableObject
             return;
         }
 
+        // An in-flight save owns a snapshot of one revision, not whichever
+        // client/equipment form happens to be visible when I/O finishes.
+        var saveRevision = _formRevision;
+        var caseIdForSave = ResolveCaseIdForCurrentForm();
+        var confirmedSnapshot = CaptureForm(caseIdForSave);
         try
         {
-            var report = BuildReportFromForm();
-            var fileName = await _reportService.SaveReportAsync(report);
+            var report = BuildReportFromForm(caseIdForSave);
+            await _reportService.SaveReportAsync(report);
 
+            if (saveRevision != _formRevision)
+            {
+                StatusMessage = "Finalizó un guardado anterior. El formulario actual no fue guardado.";
+                IsSuccess = false;
+                HasError = false;
+                ErrorMessage = string.Empty;
+                return;
+            }
+
+            _activeServiceCaseId = caseIdForSave;
+            _lastConfirmedForm = confirmedSnapshot;
             HasUnsavedChanges = false;
-            ShowSuccess($"Reporte guardado: {fileName}");
+            // Storage filenames and raw exceptions can contain private
+            // directory, technician or customer data. Keep UI messages safe.
+            ShowSuccess("Registro guardado correctamente. Podés consultarlo en Informes.");
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            ShowError($"Error al guardar: {ex.Message}");
+            // Do not label a newly selected case with a previous case's
+            // save error, or expose the original storage exception.
+            if (saveRevision != _formRevision)
+            {
+                ShowError("No se confirmó el guardado del registro anterior. Revisá Informes.");
+                return;
+            }
+            // A storage failure may happen after some I/O; do not claim that
+            // the write was certainly absent or advise a blind retry.
+            ShowError("No se pudo confirmar el guardado. Revisá Informes antes de intentar nuevamente.");
         }
     }
 
@@ -241,6 +413,20 @@ public partial class ClientEquipmentViewModel : ObservableObject
     [RelayCommand]
     private void NewRecord()
     {
+        // A genuinely new case must never be able to restore the prior
+        // customer's confirmed snapshot through Cancel.
+        _lastConfirmedForm = null;
+        _activeServiceCaseId = Guid.NewGuid();
+        // Even a blank/unchanged new record is a new selection revision.
+        ++_formRevision;
+        // Invalidate outstanding async detection before touching bound fields.
+        ++_hardwareDetectionGeneration;
+        _detectedDiskFreeKnown = false;
+        _detectedSystemVolumeCapacityGb = 0;
+        _detectedSystemVolumeFreeGb = 0;
+        WindowsVersion = string.Empty;
+        IsDetecting = false;
+
         // Cliente
         ClientName = string.Empty;
         ClientPhone = string.Empty;
@@ -277,23 +463,28 @@ public partial class ClientEquipmentViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Cancela los cambios (resetea al último estado guardado).
+    /// Discard current edits and revoke outstanding asynchronous work.
+    /// Restore only the most recent confirmed save for this same form;
+    /// a never-saved or newly opened form is reset to an empty draft.
     /// </summary>
     [RelayCommand]
     private void Cancel()
     {
-        HasUnsavedChanges = false;
-        ClearMessages();
+        if (_lastConfirmedForm is { } previous)
+            RestoreConfirmedForm(previous);
+        else
+            NewRecord();
     }
 
     // --- Helpers privados ---
 
-    private ServiceReport BuildReportFromForm()
+    private ServiceReport BuildReportFromForm(Guid caseId)
     {
         var settings = _settingsService.CurrentSettings;
 
         return new ServiceReport
         {
+            ServiceCaseId = caseId,
             Client = new ClientInfo
             {
                 Name = ClientName.Trim(),
@@ -316,8 +507,11 @@ public partial class ClientEquipmentViewModel : ObservableObject
                 Processor = DetectedProcessor,
                 RamTotalGB = ParseRamGB(DetectedRam),
                 PrimaryDisk = DetectedDisk,
-                DiskCapacityGB = ParseDiskGB(DetectedDiskCapacity),
-                DiskFreeGB = ParseDiskGB(DetectedDiskFree),
+                DiskCapacityGB = _detectedDiskFreeKnown
+                    ? _detectedSystemVolumeCapacityGb : 0,
+                DiskFreeGB = _detectedDiskFreeKnown
+                    ? _detectedSystemVolumeFreeGb : 0,
+                DiskFreeSpaceKnown = _detectedDiskFreeKnown,
                 DiskType = DetectedDiskType,
                 ComputerName = DetectedComputerName,
                 CurrentUser = DetectedUser,
@@ -350,10 +544,13 @@ public partial class ClientEquipmentViewModel : ObservableObject
         return ParseRamGB(diskText); // Mismo formato
     }
 
-    private string? WindowsVersion { get; set; }
+    private string WindowsVersion { get; set; } = string.Empty;
 
     private string? Validate()
     {
+        if (IsDetecting)
+            return "La detección de hardware sigue en curso. Esperá a que finalice o cancelala antes de guardar.";
+
         if (string.IsNullOrWhiteSpace(ClientName))
             return "El nombre del cliente es obligatorio.";
 
@@ -411,22 +608,56 @@ public partial class ClientEquipmentViewModel : ObservableObject
         ErrorMessage = string.Empty;
     }
 
+    // Changing the logical customer/equipment identity invalidates telemetry
+    // captured for a previous form, including an in-flight async detection.
+    // This is NOT hardware attestation: the technician still must verify
+    // that the detected machine belongs to the selected customer.
+    private void InvalidateHardwareForIdentityChange()
+    {
+        ++_hardwareDetectionGeneration;
+        IsDetecting = false;
+        HasDetectedData = false;
+        DetectionStatus = "Sin detectar";
+        _detectedDiskFreeKnown = false;
+        _detectedSystemVolumeCapacityGb = 0;
+        _detectedSystemVolumeFreeGb = 0;
+        WindowsVersion = string.Empty;
+        DetectedOS = string.Empty;
+        DetectedEdition = string.Empty;
+        DetectedArchitecture = string.Empty;
+        DetectedProcessor = string.Empty;
+        DetectedRam = string.Empty;
+        DetectedDisk = string.Empty;
+        DetectedDiskCapacity = string.Empty;
+        DetectedDiskFree = string.Empty;
+        DetectedDiskType = string.Empty;
+        DetectedComputerName = string.Empty;
+        DetectedUser = string.Empty;
+    }
+
+    private void MarkIdentityChanged()
+    {
+        InvalidateHardwareForIdentityChange();
+        MarkDirty();
+    }
+
     // Detectar cambios
-    partial void OnClientNameChanged(string value) => MarkDirty();
+    partial void OnClientNameChanged(string value) => MarkIdentityChanged();
     partial void OnClientPhoneChanged(string value) => MarkDirty();
     partial void OnClientEmailChanged(string value) => MarkDirty();
     partial void OnClientCompanyChanged(string value) => MarkDirty();
     partial void OnClientAddressChanged(string value) => MarkDirty();
     partial void OnClientNotesChanged(string value) => MarkDirty();
-    partial void OnEquipmentBrandChanged(string value) => MarkDirty();
-    partial void OnEquipmentModelChanged(string value) => MarkDirty();
-    partial void OnSerialNumberChanged(string value) => MarkDirty();
-    partial void OnEquipmentTypeChanged(string value) => MarkDirty();
+    partial void OnEquipmentBrandChanged(string value) => MarkIdentityChanged();
+    partial void OnEquipmentModelChanged(string value) => MarkIdentityChanged();
+    partial void OnSerialNumberChanged(string value) => MarkIdentityChanged();
+    partial void OnEquipmentTypeChanged(string value) => MarkIdentityChanged();
     partial void OnServiceReasonChanged(string value) => MarkDirty();
     partial void OnEquipmentNotesChanged(string value) => MarkDirty();
 
     private void MarkDirty()
     {
+        unchecked { ++_formRevision; }
         HasUnsavedChanges = true;
         ClearMessages();
     }

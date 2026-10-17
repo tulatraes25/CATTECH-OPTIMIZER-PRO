@@ -36,6 +36,16 @@ public class SmartTestSession
     /// <summary>ID único de la sesión.</summary>
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8].ToUpper();
 
+    /// <summary>
+    /// Optional explicit service case. Null means legacy/unbound evidence;
+    /// never infer this link from latest timestamp, short ID or serial.
+    /// Not hardware attestation or proof of origin.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(
+        Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public Guid? ServiceCaseId { get; set; }
+
+
     /// <summary>Nombre del dispositivo (ej: /dev/sda).</summary>
     public string Device { get; set; } = string.Empty;
 

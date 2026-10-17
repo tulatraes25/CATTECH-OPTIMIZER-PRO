@@ -135,6 +135,16 @@ public class StartupAnalysis
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8].ToUpper();
 
     /// <summary>
+    /// Optional explicit service case. Null means legacy/unbound evidence;
+    /// never infer this link from latest timestamp, short ID or serial.
+    /// Not hardware attestation or proof of origin.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(
+        Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public Guid? ServiceCaseId { get; set; }
+
+
+    /// <summary>
     /// Fecha y hora del análisis.
     /// </summary>
     public DateTime AnalysisDate { get; set; } = DateTime.Now;

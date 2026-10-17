@@ -26,6 +26,18 @@
 
         <!-- Row 1: Mensajes -->
         <StackPanel Grid.Row="1">
+            <!-- Advisory, read-only integrity warning; never offers file deletion. -->
+            <Border CornerRadius="6" Padding="12,10" Margin="0,0,0,10"
+                    Visibility="{Binding HasReportInventoryWarning, Converter={StaticResource BoolToVis}}"
+                    Background="#FFF4DC" BorderBrush="#B36B00" BorderThickness="1">
+                <StackPanel>
+                    <TextBlock Text="ATENCIÓN · INTEGRIDAD DE INFORMES"
+                               FontSize="12" FontWeight="Bold" Foreground="#754400"
+                               Margin="0,0,0,5" />
+                    <TextBlock Text="{Binding ReportInventoryMessage}" TextWrapping="Wrap"
+                               FontSize="12" Foreground="#603900" />
+                </StackPanel>
+            </Border>
             <Border CornerRadius="6" Padding="12,10" Margin="0,0,0,10"
                     Visibility="{Binding IsSuccess, Converter={StaticResource BoolToVis}}"
                     Background="#E6F4EA" BorderBrush="#34A853" BorderThickness="1">
@@ -130,11 +142,29 @@
 
                             <!-- Cliente/Equipo -->
                             <TextBlock Text="Cliente/Equipo:" FontSize="11" FontWeight="SemiBold" Foreground="#555" Margin="0,0,0,4" />
+                            <!-- Do not show indistinguishable duplicate client names:
+                                 include equipment and service date, never raw serial/ID. -->
                             <ComboBox ItemsSource="{Binding AvailableServiceReports}"
                                       SelectedItem="{Binding SelectedServiceReport}"
-                                      DisplayMemberPath="Client.Name"
                                       FontSize="11" Padding="8,6" Margin="0,0,0,10"
-                                      IsEnabled="{Binding HasClientData}" />
+                                      IsEnabled="{Binding HasClientData}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding Client.Name}"
+                                                       FontWeight="SemiBold" />
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding Equipment.Brand}" Foreground="#666" />
+                                                <TextBlock Text=" · " Foreground="#777" />
+                                                <TextBlock Text="{Binding Equipment.Model}" Foreground="#666" />
+                                                <TextBlock Text=" · " Foreground="#777" />
+                                                <TextBlock Text="{Binding CreatedAt, StringFormat={}{0:dd/MM/yy HH:mm}}"
+                                                           Foreground="#666" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
 
                             <!-- Diagnóstico -->
                             <TextBlock Text="Diagnóstico:" FontSize="11" FontWeight="SemiBold" Foreground="#555" Margin="0,0,0,4" />

@@ -93,8 +93,22 @@
                     </StackPanel>
                 </Border>
 
+                <!-- Footer -->
+                <Border DockPanel.Dock="Bottom" 
+                        Height="40" 
+                        VerticalAlignment="Bottom"
+                        Background="#D0D0D0">
+                    <TextBlock Text="v0.3.0 (candidata)" 
+                               HorizontalAlignment="Center" 
+                               VerticalAlignment="Center"
+                               FontSize="11"
+                               Foreground="#666666" />
+                </Border>
+
                 <!-- Botones de navegación -->
-                <StackPanel Margin="0,10,0,0">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="0,10,0,0">
                     <Button Content="🏠 Inicio" 
                             Style="{Binding Source={x:Static vm:MainViewModel.HomeButtonStyle}}"
                             Command="{Binding NavigateCommand}" 
@@ -117,6 +131,18 @@
                             Style="{Binding Source={x:Static vm:MainViewModel.DiagnosticsButtonStyle}}"
                             Command="{Binding NavigateCommand}" 
                             CommandParameter="Diagnostics"
+                            Height="45" />
+                    <Button Content="🧭 Decisiones · DEMO"
+                            Command="{Binding NavigateCommand}"
+                            CommandParameter="DecisionCenterDemo"
+                            Height="45" />
+                    <Button Content="🟦 Pantallas azules"
+                            Command="{Binding NavigateCommand}"
+                            CommandParameter="BlueScreens"
+                            Height="45" />
+                    <Button Content="🛠️ Reparaciones (vista previa)"
+                            Command="{Binding NavigateCommand}"
+                            CommandParameter="RepairCenter"
                             Height="45" />
                     <Button Content="🚀 Programas de inicio" 
                             Command="{Binding NavigateCommand}" 
@@ -145,19 +171,9 @@
                             Command="{Binding NavigateCommand}" 
                             CommandParameter="Settings"
                             Height="45" />
-                </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
 
-                <!-- Footer -->
-                <Border DockPanel.Dock="Bottom" 
-                        Height="40" 
-                        VerticalAlignment="Bottom"
-                        Background="#D0D0D0">
-                    <TextBlock Text="v0.2.2" 
-                               HorizontalAlignment="Center" 
-                               VerticalAlignment="Center"
-                               FontSize="11"
-                               Foreground="#666666" />
-                </Border>
             </DockPanel>
         </Border>
 

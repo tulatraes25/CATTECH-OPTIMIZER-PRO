@@ -58,6 +58,8 @@ env:
   NUGET_XMLDOC_MODE: skip
   CONFIGURATION: Release
   RUNTIME: win-x64
+  CATTECH_INPUT_VERSION: ${{ inputs.version }}
+  CATTECH_INPUT_SOURCE_REF: ${{ inputs.source_ref }}
 
 jobs:
   package:
@@ -83,7 +85,7 @@ jobs:
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 10.0.x
 
       - name: Resolve source SHA
         id: source-sha
@@ -96,7 +98,7 @@ jobs:
       - name: Validate version
         shell: pwsh
         run: |
-          $version = "${{ inputs.version }}"
+          $version = "$env:CATTECH_INPUT_VERSION"
           if ($version -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
             throw "Invalid semantic version: '$version'. Expected MAJOR.MINOR.PATCH (e.g. 0.3.0)."
           }
@@ -105,7 +107,7 @@ jobs:
       - name: Validate csproj version
         shell: pwsh
         run: |
-          $version = "${{ inputs.version }}"
+          $version = "$env:CATTECH_INPUT_VERSION"
           $expectedAssembly = "$version.0"
           [xml]$csproj = Get-Content "src/Cattech.Optimizer.Pro.UI/Cattech.Optimizer.Pro.UI.csproj"
           $versionTag = $csproj.Project.PropertyGroup.Version
@@ -119,7 +121,7 @@ jobs:
       - name: Validate visible versions
         shell: pwsh
         run: |
-          $version = "${{ inputs.version }}"
+          $version = "$env:CATTECH_INPUT_VERSION"
           $readme = Get-Content "README.md" -Raw
           $mainWindow = Get-Content "src/Cattech.Optimizer.Pro.UI/MainWindow.xaml" -Raw
           $mainVm = Get-Content "src/Cattech.Optimizer.Pro.UI/ViewModels/MainViewModel.cs" -Raw
@@ -139,9 +141,11 @@ jobs:
         run: dotnet build src/Cattech.Optimizer.Pro.sln --configuration Release --no-restore
 
       - name: Test Release #1
+        id: test-one
         run: dotnet test src/Cattech.Optimizer.Pro.sln --configuration Release --no-build --logger "trx;LogFileName=release-candidate-1.trx" --results-directory "${{ github.workspace }}\TestResults\Run1"
 
       - name: Test Release #2
+        id: test-two
         run: dotnet test src/Cattech.Optimizer.Pro.sln --configuration Release --no-build --logger "trx;LogFileName=release-candidate-2.trx" --results-directory "${{ github.workspace }}\TestResults\Run2"
 
       - name: Restore RID
@@ -158,7 +162,7 @@ jobs:
         shell: pwsh
         run: |
           $publishDir = "${{ github.workspace }}\output\release-package\win-x64"
-          $required = @("Cattech.Optimizer.Pro.UI.exe", "LibreHardwareMonitorLib.dll", "config\herramientas.json")
+          $required = @("Cattech.Optimizer.Pro.UI.exe", "LibreHardwareMonitorLib.dll", "config\herramientas.json", "config\bugcheckcodes.json")
           foreach ($file in $required) {
             if (-not (Test-Path (Join-Path $publishDir $file))) {
               throw "Missing critical file: $file"
@@ -177,6 +181,19 @@ jobs:
             throw "herramientas.json contains personal paths or secrets"
           }
           Write-Output "herramientas.json valid and clean"
+
+      - name: Validate bugcheckcodes.json
+        shell: pwsh
+        run: |
+          $file = "${{ github.workspace }}\output\release-package\win-x64\config\bugcheckcodes.json"
+          $records = @(Get-Content $file -Raw | ConvertFrom-Json)
+          if ($records.Count -lt 14) { throw "BUGCHECK catalog coverage below expected minimum (14)" }
+          $requiredCodes = @("0x0000000A", "0x0000009F", "0x00000124", "0x00000133")
+          foreach ($code in $requiredCodes) {
+            $matched = @($records | Where-Object { $_.code -eq $code -and -not [string]::IsNullOrWhiteSpace($_.name) })
+            if ($matched.Count -ne 1) { throw "BUGCHECK catalog invalid/missing code: $code" }
+          }
+          Write-Output "BUGCHECK catalog validated: $($records.Count) entries"
 
       - name: Validate smartctl absent
         shell: pwsh
@@ -209,7 +226,7 @@ jobs:
         id: exe-version
         shell: pwsh
         run: |
-          $version = "${{ inputs.version }}"
+          $version = "$env:CATTECH_INPUT_VERSION"
           $sourceSha = "${{ steps.source-sha.outputs.source_sha }}"
           $exe = "${{ github.workspace }}\output\release-package\win-x64\Cattech.Optimizer.Pro.UI.exe"
           $info = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($exe)
@@ -231,7 +248,7 @@ jobs:
         id: checksum
         shell: pwsh
         run: |
-          $version = "${{ inputs.version }}"
+          $version = "$env:CATTECH_INPUT_VERSION"
           $publishDir = "${{ github.workspace }}\output\release-package\win-x64"
           $zipName = "CATTECH-Optimizer-Pro-v$version-win-x64.zip"
           $checksumName = "CATTECH-Optimizer-Pro-v$version-win-x64.sha256.txt"
@@ -247,13 +264,13 @@ jobs:
         shell: pwsh
         run: |
           Add-Type -AssemblyName System.IO.Compression.FileSystem
-          $version = "${{ inputs.version }}"
+          $version = "$env:CATTECH_INPUT_VERSION"
           $zipPath = "${{ github.workspace }}\output\CATTECH-Optimizer-Pro-v$version-win-x64.zip"
           $zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
           try {
             # Compress-Archive (pwsh/.NET) normalizes separators to '/'
             $names = $zip.Entries | ForEach-Object { $_.FullName.Replace('\', '/') }
-            foreach ($required in @("Cattech.Optimizer.Pro.UI.exe", "LibreHardwareMonitorLib.dll", "config/herramientas.json", "README.md", "LICENSE")) {
+            foreach ($required in @("Cattech.Optimizer.Pro.UI.exe", "LibreHardwareMonitorLib.dll", "config/herramientas.json", "config/bugcheckcodes.json", "README.md", "LICENSE")) {
               if (-not ($names -contains $required)) { throw "ZIP missing entry: $required" }
             }
             if ($names -match "smartctl\.exe") { throw "ZIP contains smartctl.exe" }
@@ -267,7 +284,7 @@ jobs:
         id: metadata
         shell: pwsh
         run: |
-          $version = "${{ inputs.version }}"
+          $version = "$env:CATTECH_INPUT_VERSION"
           $artifactName = "cattech-release-v$version-win-x64"
           $zipName = "CATTECH-Optimizer-Pro-v$version-win-x64.zip"
           $checksumName = "CATTECH-Optimizer-Pro-v$version-win-x64.sha256.txt"
@@ -276,6 +293,7 @@ jobs:
           Write-Output "checksum_name=$checksumName" >> $env:GITHUB_OUTPUT
 
       - name: Upload release candidate
+        id: release-artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cattech-release-v${{ inputs.version }}-win-x64
@@ -298,27 +316,42 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          $version = "${{ inputs.version }}"
-          $sourceRef = "${{ inputs.source_ref }}"
+          $version = "$env:CATTECH_INPUT_VERSION"
+          $sourceRef = "$env:CATTECH_INPUT_SOURCE_REF"
           $sourceSha = "${{ steps.source-sha.outputs.source_sha }}"
           $sha = "${{ steps.checksum.outputs.sha256 }}"
+          # The summary must show actual outcomes, even when a gate failed.
+          $jobState = "${{ job.status }}"
+          $testOne = "${{ steps.test-one.outcome }}"
+          $testTwo = "${{ steps.test-two.outcome }}"
+          $exeVersionOutcome = "${{ steps.exe-version.outcome }}"
+          $uploadOutcome = "${{ steps.release-artifact.outcome }}"
+          $verified = ($jobState -eq "success" -and $testOne -eq "success" -and
+            $testTwo -eq "success" -and $exeVersionOutcome -eq "success" -and
+            $uploadOutcome -eq "success" -and -not [string]::IsNullOrWhiteSpace($sha))
+          $gate = if ($verified) { "PASS" } else { "FAILED / INCOMPLETE" }
+          $provenance = if ($exeVersionOutcome -eq "success") { "PASS" } else { "NOT VERIFIED" }
+          $upload = if ($uploadOutcome -eq "success") { "UPLOADED" } else { "NOT UPLOADED" }
+          $zipName = if ($verified) { "CATTECH-Optimizer-Pro-v$version-win-x64.zip" } else { "NOT CERTIFIED" }
           $lines = @(
             "## CATTECH Release Package",
             "",
             "| Field | Value |",
             "|-------|-------|",
+            "| Gate | $gate |",
             "| Version | v$version |",
             "| Source ref | $sourceRef |",
             "| Source SHA | $sourceSha |",
             "| ProductVersion | ${{ steps.exe-version.outputs.product_version }} |",
-            "| Source provenance | PASS |",
+            "| Source provenance | $provenance |",
             "| Configuration | Release |",
             "| Runtime | win-x64 |",
-            "| Self-contained | Si |",
-            "| Tests run #1 | PASS |",
-            "| Tests run #2 | PASS |",
-            "| ZIP | CATTECH-Optimizer-Pro-v$version-win-x64.zip |",
+            "| Self-contained requested | Si |",
+            "| Tests run #1 | $testOne |",
+            "| Tests run #2 | $testTwo |",
+            "| ZIP | $zipName |",
             "| SHA-256 | $sha |",
+            "| Candidate upload | $upload |",
             "| smartctl included | No |",
             "| GitHub Release | NO - package candidate only |"
           )

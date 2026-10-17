@@ -60,7 +60,28 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
-Cambios posteriores a v0.2.2.
+No se publicó aún la v0.3.0. La rama de integración y los paquetes temporales de Actions son candidatos de QA, no releases oficiales.
+
+---
+
+## [0.3.0] - 2026-10-16 (CANDIDATA, NO PUBLICADA)
+
+### Added
+- Diagnóstico BSOD y revisión conservadora de evidencia: código de error, módulos candidatos, permisos y estados de disponibilidad, sin atribución causal automática.
+- Vistas previas de reparación Windows Update y archivos del sistema con controles de privilegios, consentimiento y verificaciones posteriores.
+- Evidence Engine y pasaporte técnico de revisión con separación de cliente, equipo, sesión, componente y consentimiento; las superficies DEMO no deben presentarse como diagnóstico físico certificado.
+
+### Safety / Reliability
+- Aislamiento entre casos y almacenamiento de informes, control de exportaciones HTML/PDF, índices concurrentes y errores de lectura sin datos falsamente saludables.
+- Limpieza restringida a rutas/archivos verificados, exclusiones de edad/atributos, auditoría inmutable y feedback que diferencia omisiones y fallas.
+- Cliente/equipo: Cancelar restaura exclusivamente el último guardado confirmado o limpia el borrador nuevo; protege mediciones pendientes y evita guardado parcial.
+- Procesos externos de diagnóstico acotados y requisitos explícitos para cualquier reparación real.
+- GitHub Actions preflight de inputs de publicación y 14 casos adversariales en ejecución sintética.
+
+### Platform / QA
+- Migración de código a .NET 10 LTS: Windows CI #221 y #222 con 1650/1650 xUnit, sin fallas u omisiones; no prueba real de hardware.
+- La compatibilidad del candidato comprende Windows 11 y ediciones Windows 10 LTSC admitidas oficialmente por .NET 10; otras ediciones se evalúan por separado.
+- **Pendiente**: certificado de paquete win-x64, verificación física Windows/WPF/WMI/SMART/DXGI/Edge, protección administrativa de main e integración final. **NO RELEASE**.
 
 ---
 

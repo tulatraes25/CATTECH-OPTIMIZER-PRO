@@ -158,6 +158,16 @@ public class DiagnosticReport
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8].ToUpper();
 
     /// <summary>
+    /// Optional explicit service case. Null means legacy/unbound evidence;
+    /// never infer this link from latest timestamp, short ID or serial.
+    /// Not hardware attestation or proof of origin.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(
+        Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public Guid? ServiceCaseId { get; set; }
+
+
+    /// <summary>
     /// Fecha y hora del diagnóstico.
     /// </summary>
     public DateTime DiagnosisDate { get; set; } = DateTime.Now;
@@ -244,9 +254,19 @@ public class DiagnosticReport
     public double DiskFreeGB { get; set; }
 
     /// <summary>
-    /// Porcentaje de espacio libre.
+    /// Porcentaje de espacio libre en el volumen del sistema, no del disco físico.
     /// </summary>
     public double DiskFreePercent { get; set; }
+
+    /// <summary>
+    /// True only when the system volume was explicitly associated with one
+    /// physical disk and both capacity and free bytes were valid. False for
+    /// old/unknown diagnostic reports: a default 0 is NOT a full drive.
+    /// </summary>
+    public bool DiskFreeSpaceKnown { get; set; }
+
+    /// <summary>Verified drive letter of the Windows system volume, if any.</summary>
+    public string SystemVolumeLetter { get; set; } = string.Empty;
 
     // --- Programas de inicio ---
 

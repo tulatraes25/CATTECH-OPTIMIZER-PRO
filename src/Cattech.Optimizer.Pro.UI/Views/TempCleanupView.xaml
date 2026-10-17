@@ -32,7 +32,8 @@
         <!-- Row 0: Título -->
         <StackPanel Grid.Row="0" Margin="0,0,0,10">
             <TextBlock Text="Limpieza Segura de Temporales" FontSize="26" FontWeight="Bold" Foreground="#1B1B1B" />
-            <TextBlock Text="Escaneá y limpiá archivos temporales seguros. No se tocan datos personales ni carpetas sensibles." FontSize="13" Foreground="#666" Margin="0,5,0,0" />
+            <TextBlock Text="Revisá cuidadosamente las ubicaciones seleccionadas: los temporales pueden contener datos de aplicaciones." FontSize="13" Foreground="#666" Margin="0,5,0,0" />
+            <TextBlock Text="{Binding StatusText}" FontSize="12" FontWeight="SemiBold" Foreground="#555" Margin="0,6,0,0" />
         </StackPanel>
 
         <!-- Row 1: Mensajes -->
@@ -71,15 +72,17 @@
             <Button Grid.Column="2" Content="🧹 Limpiar seleccionados"
                     Command="{Binding CleanupCommand}" Padding="16,8" FontSize="12" FontWeight="SemiBold"
                     Background="#E53935" Foreground="White" BorderThickness="0"
-                    IsEnabled="{Binding HasScanned, Converter={StaticResource BoolToVis}}" />
+                    IsEnabled="{Binding CanStartCleanup}" />
 
             <Button Grid.Column="4" Content="Seleccionar bajos riesgo"
                     Command="{Binding SelectAllLowRiskCommand}" Padding="12,8" FontSize="11"
-                    Background="#F3F3F3" Foreground="#333" BorderBrush="#CCC" BorderThickness="1" />
+                    Background="#F3F3F3" Foreground="#333" BorderBrush="#CCC" BorderThickness="1"
+                    IsEnabled="{Binding IsRunning, Converter={StaticResource InvertBool}}" />
 
             <Button Grid.Column="6" Content="Limpiar selección"
                     Command="{Binding DeselectAllCommand}" Padding="12,8" FontSize="11"
-                    Background="#F3F3F3" Foreground="#333" BorderBrush="#CCC" BorderThickness="1" />
+                    Background="#F3F3F3" Foreground="#333" BorderBrush="#CCC" BorderThickness="1"
+                    IsEnabled="{Binding IsRunning, Converter={StaticResource InvertBool}}" />
 
             <StackPanel Grid.Column="8" Orientation="Horizontal" VerticalAlignment="Center">
                 <TextBlock Text="{Binding SelectedTargetsCount}" FontSize="14" FontWeight="Bold" Foreground="#333" Margin="0,0,5,0" />
@@ -88,11 +91,17 @@
             </StackPanel>
         </Grid>
 
-        <!-- Row 3: Barra de progreso -->
-        <ProgressBar Grid.Row="3" Value="{Binding ProgressPercent}" Maximum="100"
-                     Height="6" Margin="0,0,0,10"
-                     Background="#E0E0E0" Foreground="#0078D4"
-                     Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}" />
+        <!-- Row 3: Confirmación explícita y progreso -->
+        <StackPanel Grid.Row="3" Margin="0,0,0,10">
+            <CheckBox Content="Confirmo que deseo eliminar los archivos temporales seleccionados. Esta acción puede ser irreversible y no crea una copia de seguridad."
+                      IsChecked="{Binding HasCleanupConsent, Mode=TwoWay}"
+                      IsEnabled="{Binding CanReviewCleanupConsent}"
+                      FontSize="12" FontWeight="SemiBold" Foreground="#A13B24"
+                      Margin="0,0,0,8" />
+            <ProgressBar Value="{Binding ProgressPercent}" Maximum="100"
+                         Height="6" Background="#E0E0E0" Foreground="#0078D4"
+                         Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}" />
+        </StackPanel>
 
         <!-- Row 4: Contenido principal -->
         <Grid Grid.Row="4">
@@ -124,9 +133,26 @@
                                         </Grid.ColumnDefinitions>
 
                                         <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected, Mode=TwoWay}"
-                                                  IsEnabled="{Binding IsAccessible}" VerticalAlignment="Top" Margin="0,2,10,0"
+                                                  VerticalAlignment="Top" Margin="0,2,10,0"
                                                   Command="{Binding DataContext.ToggleTargetCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                  CommandParameter="{Binding}" />
+                                                  CommandParameter="{Binding}">
+                                            <CheckBox.Style>
+                                                <Style TargetType="CheckBox">
+                                                    <Setter Property="IsEnabled" Value="True" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsAccessible}" Value="False">
+                                                            <Setter Property="IsEnabled" Value="False" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding IsScanned}" Value="False">
+                                                            <Setter Property="IsEnabled" Value="False" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding DataContext.IsRunning, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
+                                                            <Setter Property="IsEnabled" Value="False" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </CheckBox.Style>
+                                        </CheckBox>
 
                                         <StackPanel Grid.Column="1">
                                             <Grid>
@@ -249,10 +275,10 @@
                             <StackPanel>
                                 <TextBlock Text="⚠️ Notas de seguridad" FontSize="11" FontWeight="SemiBold"
                                            Foreground="#E65100" Margin="0,0,0,4" />
-                                <TextBlock Text="• No se eliminan archivos bloqueados o en uso" FontSize="10" Foreground="#666" />
-                                <TextBlock Text="• No se tocan Descargas, Documentos ni Escritorio" FontSize="10" Foreground="#666" />
-                                <TextBlock Text="• No se eliminan perfiles de navegador" FontSize="10" Foreground="#666" />
-                                <TextBlock Text="• Se omite Papelera si no fue seleccionada" FontSize="10" Foreground="#666" />
+                                <TextBlock Text="• Solo se autorizan ubicaciones temporales predefinidas y escaneadas." FontSize="10" Foreground="#666" />
+                                <TextBlock Text="• Los archivos temporales pueden contener datos útiles de aplicaciones." FontSize="10" Foreground="#666" />
+                                <TextBlock Text="• La Papelera está deshabilitada por seguridad." FontSize="10" Foreground="#666" />
+                                <TextBlock Text="• No se crea respaldo; la validación de enlaces no elimina todos los riesgos." FontSize="10" Foreground="#666" />
                             </StackPanel>
                         </Border>
                     </StackPanel>

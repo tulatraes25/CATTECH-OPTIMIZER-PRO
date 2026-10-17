@@ -93,14 +93,14 @@ public class ReleaseGateTests
     }
 
     [Fact]
-    public void Runner_MissingConfig_NoCrash()
+    public async Task Runner_MissingConfig_NoCrash()
     {
         var dir = CreateTempDir();
         try
         {
             var runner = new SmartctlRunner(baseDirectory: dir);
 
-            var availability = runner.CheckAvailabilityAsync().GetAwaiter().GetResult();
+            var availability = await runner.CheckAvailabilityAsync();
 
             Assert.False(availability.IsAvailable);
             Assert.NotEmpty(availability.ErrorMessage);
@@ -388,7 +388,7 @@ public class ReleaseGateTests
     }
 
     // =====================
-    // Consistencia de versión v0.2.2 (R.1)
+    // Consistencia de version del candidato v0.3.0 (R.1)
     // =====================
 
     private static string RepoRoot()
@@ -402,13 +402,13 @@ public class ReleaseGateTests
     }
 
     [Fact]
-    public void UiCsproj_Version_Is022()
+    public void UiCsproj_Version_Is030_Candidate()
     {
         var csproj = ReadRepoFile("src/Cattech.Optimizer.Pro.UI/Cattech.Optimizer.Pro.UI.csproj");
 
-        Assert.Contains("<Version>0.2.2</Version>", csproj);
-        Assert.Contains("<AssemblyVersion>0.2.2.0</AssemblyVersion>", csproj);
-        Assert.Contains("<FileVersion>0.2.2.0</FileVersion>", csproj);
+        Assert.Contains("<Version>0.3.0</Version>", csproj);
+        Assert.Contains("<AssemblyVersion>0.3.0.0</AssemblyVersion>", csproj);
+        Assert.Contains("<FileVersion>0.3.0.0</FileVersion>", csproj);
         Assert.DoesNotContain("<Version>0.1.1</Version>", csproj);
     }
 
@@ -423,39 +423,53 @@ public class ReleaseGateTests
     }
 
     [Fact]
-    public void MainWindow_Shows_022_NoPreRelease()
+    public void MainWindow_Identifies030Candidate()
     {
         var xaml = ReadRepoFile("src/Cattech.Optimizer.Pro.UI/MainWindow.xaml");
 
-        Assert.Contains("v0.2.2", xaml);
+        Assert.Contains("v0.3.0 (candidata)", xaml);
         Assert.DoesNotContain("pre-release", xaml);
         Assert.DoesNotContain("v0.1.1", xaml);
     }
 
     [Fact]
-    public void Home_Shows_022()
+    public void Home_Identifies030Candidate()
     {
         var vm = ReadRepoFile("src/Cattech.Optimizer.Pro.UI/ViewModels/MainViewModel.cs");
 
-        Assert.Contains("CATTECH OPTIMIZER PRO v0.2.2", vm);
+        Assert.Contains("CATTECH OPTIMIZER PRO v0.3.0 (candidata)", vm);
         Assert.DoesNotContain("versión en desarrollo", vm);
     }
 
     [Fact]
-    public void ReportFooter_Shows_022()
+    public void ReportFooter_Identifies030Candidate()
     {
         var service = ReadRepoFile("src/Cattech.Optimizer.Pro.Infrastructure/Reports/HtmlReportService.cs");
 
-        Assert.Contains("CATTECH OPTIMIZER PRO v0.2.2", service);
+        Assert.Contains("CATTECH OPTIMIZER PRO v0.3.0 (candidata)", service);
     }
 
     [Fact]
-    public void Readme_Header_Is_022_NotInDevelopment()
+    public void Readme_Header_Identifies030CandidateAndPublishedBaseline()
     {
         var readme = ReadRepoFile("README.md");
 
-        Assert.Contains("**Versión**: v0.2.2", readme);
+        Assert.Contains("**Versión**: v0.3.0 (candidata no publicada)", readme);
+        Assert.Contains("**Última release pública estable**", readme);
+        Assert.Contains("releases/tag/v0.2.2", readme);
         Assert.DoesNotContain("en desarrollo — release candidate", readme);
+    }
+
+    [Fact]
+    public void CandidateNotes_AndChangelog_ExplicitlyPreventPrematurePublish()
+    {
+        var notes = ReadRepoFile("docs/RELEASE_NOTES_V0_3.md");
+        var changes = ReadRepoFile("CHANGELOG.md");
+        Assert.Contains("v0.3.0", notes);
+        Assert.Contains("NO PUBLICADO", notes);
+        Assert.Contains("v0.2.2", notes);
+        Assert.Contains("## [0.3.0]", changes);
+        Assert.Contains("CANDIDATA, NO PUBLICADA", changes);
     }
 
     [Fact]

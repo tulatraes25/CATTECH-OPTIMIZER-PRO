@@ -21,12 +21,6 @@ public class TempCleanupService : ITempCleanupService
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    // Patrones de archivos que NO se deben borrar
-    private static readonly string[] ProtectedPatterns =
-    [
-        "*.lock", "*.pid", "*.socket"
-    ];
-
     // Extensiones de caché de miniaturas
     private static readonly string[] ThumbnailExtensions =
     [
@@ -40,10 +34,24 @@ public class TempCleanupService : ITempCleanupService
     }
 
     /// <inheritdoc/>
-    public Task<List<TempCleanupTarget>> ScanAsync(IProgress<int>? progress = null)
-    {
-        var targets = CleanupTargets.GetDefaultTargets();
+    public Task<List<TempCleanupTarget>> ScanAsync(IProgress<int>? progress = null) =>
+        ScanTargetsAsync(CleanupTargets.GetDefaultTargets(), progress);
 
+    /// <summary>
+    /// Offload potentially expensive bounded enumeration to a worker thread.
+    /// WPF owns the fresh target objects only after the awaited task completes.
+    /// Progress<T> continues to marshal reports to the captured UI context.
+    /// </summary>
+    internal static Task<List<TempCleanupTarget>> ScanTargetsAsync(
+        List<TempCleanupTarget> targets, IProgress<int>? progress = null)
+    {
+        ArgumentNullException.ThrowIfNull(targets);
+        return Task.Run(() => ScanTargets(targets, progress));
+    }
+
+    private static List<TempCleanupTarget> ScanTargets(
+        List<TempCleanupTarget> targets, IProgress<int>? progress)
+    {
         progress?.Report(10);
 
         for (int i = 0; i < targets.Count; i++)
@@ -53,9 +61,25 @@ public class TempCleanupService : ITempCleanupService
             // Verificar accesibilidad
             if (target.Id == "RECYCLE_BIN")
             {
-                target.IsAccessible = true;
+                // Disable until a scoped Shell operation and its explicit
+                // confirmation have passed dedicated safety review.
+                target.IsAccessible = false;
+                target.IsSelected = false;
                 target.IsScanned = true;
-                target.ScanNotes = "Opcional: solo limpiar si está seguro";
+                target.ScanNotes = "No disponible: la limpieza segura de Papelera no está implementada.";
+                target.EstimatedSizeBytes = 0;
+                target.EstimatedFileCount = 0;
+            }
+            else if (GetTargetRejectionReason(target,
+                requireCompletedScan: false) is { } rejection)
+            {
+                // The read-side scan must enforce the same known-root and
+                // reparse-point policy as the write-side cleanup preflight.
+                // Do not enumerate a forged thumbnail or unknown target.
+                target.IsAccessible = false;
+                target.IsSelected = false;
+                target.IsScanned = true;
+                target.ScanNotes = $"No disponible: {rejection}";
                 target.EstimatedSizeBytes = 0;
                 target.EstimatedFileCount = 0;
             }
@@ -72,7 +96,36 @@ public class TempCleanupService : ITempCleanupService
         }
 
         progress?.Report(100);
-        return Task.FromResult(targets);
+        return targets;
+    }
+
+    /// <summary>
+    /// Snapshot only the selected scope, copying all scalar metadata needed by
+    /// validation, execution and audit. The caller owns the original objects;
+    /// no mutable reference to one is retained after this method returns.
+    /// </summary>
+    internal static List<TempCleanupTarget> CaptureSelectedTargets(
+        IEnumerable<TempCleanupTarget> targets)
+    {
+        ArgumentNullException.ThrowIfNull(targets);
+
+        return targets.Where(target => target.IsSelected)
+            .Select(target => new TempCleanupTarget
+            {
+                Id = target.Id,
+                DisplayName = target.DisplayName,
+                Description = target.Description,
+                Path = target.Path,
+                IsSelected = true,
+                IsScanned = target.IsScanned,
+                IsAccessible = target.IsAccessible,
+                IsSystemLocation = target.IsSystemLocation,
+                IsOptional = target.IsOptional,
+                EstimatedSizeBytes = target.EstimatedSizeBytes,
+                EstimatedFileCount = target.EstimatedFileCount,
+                RiskLevel = target.RiskLevel,
+                ScanNotes = target.ScanNotes
+            }).ToList();
     }
 
     /// <inheritdoc/>
@@ -84,7 +137,53 @@ public class TempCleanupService : ITempCleanupService
             StartedAt = DateTime.Now
         };
 
-        var selectedTargets = targets.Where(t => t.IsSelected).ToList();
+        // Capture immutable-by-ownership copies before preflight or any await.
+        // WPF, plugins and callers retain mutable TempCleanupTarget references;
+        // their later edits must not redirect or broaden an approved cleanup.
+        var selectedTargets = CaptureSelectedTargets(targets);
+        var duplicateIds = selectedTargets.GroupBy(t => t.Id, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .ToHashSet(StringComparer.Ordinal);
+
+        // All-or-nothing preflight: reject duplicates and unsafe roots before
+        // starting any deletion, even when other targets appear legitimate.
+        var rejectedTargets = selectedTargets.Select(target =>
+            (Target: target, Reason: duplicateIds.Contains(target.Id)
+                ? "La ubicación de limpieza está duplicada."
+                : GetTargetRejectionReason(target)))
+            .Where(entry => entry.Reason is not null)
+            .ToArray();
+        if (rejectedTargets.Length > 0)
+        {
+            foreach (var target in selectedTargets)
+            {
+                result.TargetResults.Add(new TargetResult
+                {
+                    TargetId = target.Id,
+                    TargetName = target.DisplayName,
+                    Path = target.Path,
+                    IsSuccess = false
+                });
+            }
+
+            foreach (var rejected in rejectedTargets)
+            {
+                var unsupported = rejected.Target.Id == "RECYCLE_BIN";
+                result.Errors.Add(new CleanupError
+                {
+                    // Do not expose an untrusted absolute path in diagnostics.
+                    FilePath = unsupported ? "RecycleBin" : rejected.Target.Id,
+                    Message = rejected.Reason!,
+                    ErrorType = unsupported ? "UnsupportedOperation" : "UnsafeTarget"
+                });
+            }
+
+            result.FinishedAt = DateTime.Now;
+            result.TechnicianName = await GetTechnicianNameAsync();
+            return result;
+        }
+
         int processedCount = 0;
 
         foreach (var target in selectedTargets)
@@ -96,11 +195,20 @@ public class TempCleanupService : ITempCleanupService
                 Path = target.Path
             };
 
+            var errorsBeforeTarget = result.Errors.Count;
             try
             {
                 if (target.Id == "RECYCLE_BIN")
                 {
-                    await CleanRecycleBinAsync(targetResult, result);
+                    // Defensive server-side check: reject selected targets even
+                    // if a caller bypasses the disabled checkbox in the UI.
+                    // No commands, Shell API, or filesystem mutations.
+                    result.Errors.Add(new CleanupError
+                    {
+                        FilePath = "RecycleBin",
+                        Message = "La limpieza de la Papelera está deshabilitada por seguridad.",
+                        ErrorType = "UnsupportedOperation"
+                    });
                 }
                 else if (target.Id == "THUMBNAILS")
                 {
@@ -111,18 +219,19 @@ public class TempCleanupService : ITempCleanupService
                     await CleanFolderAsync(target, targetResult, result);
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 targetResult.IsSuccess = false;
                 result.Errors.Add(new CleanupError
                 {
-                    FilePath = target.Path,
-                    Message = ex.Message,
+                    FilePath = target.Id,
+                    Message = "La limpieza de esta ubicación no pudo completarse.",
                     ErrorType = "CleanError"
                 });
             }
 
-            targetResult.IsSuccess = targetResult.FailedFiles == 0;
+            targetResult.IsSuccess = targetResult.FailedFiles == 0
+                && result.Errors.Count == errorsBeforeTarget;
             result.TargetResults.Add(targetResult);
 
             processedCount++;
@@ -138,21 +247,56 @@ public class TempCleanupService : ITempCleanupService
     /// <inheritdoc/>
     public async Task<string> SaveResultAsync(TempCleanupResult result)
     {
+        ArgumentNullException.ThrowIfNull(result);
+        if (result.Errors is null || result.TargetResults is null
+            || result.Errors.Any(error => error is null)
+            || result.TargetResults.Any(target => target is null))
+            throw new ArgumentException(
+                "El registro técnico tiene listas de auditoría inválidas.",
+                nameof(result));
+
+        // Validate the exact JSON snapshot before creating directories or
+        // publishing any audit file. An invalid new history record must not
+        // poison the technician's record inventory.
+        var json = JsonSerializer.Serialize(result, SerializerOptions);
+        if (DeserializeVerifiedHistory(json) is null)
+            throw new ArgumentException(
+                "El registro técnico contiene datos estructurales inválidos.",
+                nameof(result));
+
         EnsureDirectoryExists(_resultsDirectory);
 
-        var fileName = $"cleanup-result-{result.StartedAt:yyyyMMdd-HHmmss}.json";
+        // A second-resolution timestamp, even combined with a model-supplied
+        // ID, is not a unique or safe audit-file identity across instances.
+        var token = Guid.NewGuid().ToString("N");
+        var fileName = $"cleanup-result-{result.StartedAt:yyyyMMdd-HHmmss}-{token}.json";
         var filePath = Path.Combine(_resultsDirectory, fileName);
+        var staging = Path.Combine(_resultsDirectory, $".cattech-cleanup-{token}.tmp");
 
-        if (File.Exists(filePath))
+        try
         {
-            fileName = $"cleanup-result-{result.StartedAt:yyyyMMdd-HHmmss}-{result.Id}.json";
-            filePath = Path.Combine(_resultsDirectory, fileName);
+            // Write first to an OS-exclusive temporary file. Never publish
+            // half-written JSON or replace an earlier technician audit.
+            await using (var stream = new FileStream(staging, FileMode.CreateNew,
+                FileAccess.Write, FileShare.None, 8192, useAsync: true))
+            await using (var writer = new StreamWriter(stream, System.Text.Encoding.UTF8))
+            {
+                await writer.WriteAsync(json).ConfigureAwait(false);
+            }
+
+            File.Move(staging, filePath); // No-overwrite on the same filesystem.
+            return fileName;
         }
-
-        var json = JsonSerializer.Serialize(result, SerializerOptions);
-        await File.WriteAllTextAsync(filePath, json);
-
-        return fileName;
+        finally
+        {
+            try
+            {
+                if (File.Exists(staging))
+                    File.Delete(staging);
+            }
+            catch (IOException) { /* Preserve the original error. */ }
+            catch (UnauthorizedAccessException) { /* Preserve the original error. */ }
+        }
     }
 
     /// <inheritdoc/>
@@ -160,163 +304,402 @@ public class TempCleanupService : ITempCleanupService
     {
         var summaries = new List<TempCleanupResultSummary>();
 
-        if (!Directory.Exists(_resultsDirectory))
+        if (maxResults <= 0 || !Directory.Exists(_resultsDirectory))
             return summaries;
 
+        // Invalid audit files must not consume the pagination window and
+        // conceal earlier valid records. The legacy list is read-only.
         var files = Directory.GetFiles(_resultsDirectory, "cleanup-result-*.json")
-            .OrderByDescending(f => File.GetLastWriteTime(f))
-            .Take(maxResults);
+            .OrderByDescending(f => File.GetLastWriteTime(f));
 
         foreach (var file in files)
         {
             try
             {
                 var json = await File.ReadAllTextAsync(file);
-                var result = JsonSerializer.Deserialize<TempCleanupResult>(json, SerializerOptions);
+                var result = DeserializeVerifiedHistory(json);
+                if (result is null)
+                    continue;
 
-                if (result != null)
+                summaries.Add(new TempCleanupResultSummary
                 {
-                    summaries.Add(new TempCleanupResultSummary
-                    {
-                        Id = result.Id,
-                        StartedAt = result.StartedAt,
-                        DeletedMB = result.DeletedMB,
-                        DeletedFiles = result.DeletedFiles,
-                        HasWarnings = result.HasWarnings,
-                        FileName = Path.GetFileName(file)
-                    });
-                }
+                    Id = result.Id,
+                    StartedAt = result.StartedAt,
+                    DeletedMB = result.DeletedMB,
+                    DeletedFiles = result.DeletedFiles,
+                    HasWarnings = result.HasWarnings,
+                    FileName = Path.GetFileName(file)
+                });
+                if (summaries.Count >= maxResults)
+                    break;
             }
-            catch { }
+            catch (IOException) { /* Invalid record is not advertised. */ }
+            catch (UnauthorizedAccessException) { /* Retain original file. */ }
+            catch (JsonException) { /* Retain malformed history for review. */ }
+        }
+        return summaries;
+    }
+
+
+    /// <summary>
+    /// Do not invent audit IDs or timestamps from default .NET initializers.
+    /// A structurally invalid history file is never presented as an actual
+    /// cleanup result. No files are repaired or deleted by this reader.
+    /// </summary>
+    private static TempCleanupResult? DeserializeVerifiedHistory(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+        if (!TryUniqueHistoryProperty(root, "id", JsonValueKind.String, out var id)
+            || string.IsNullOrWhiteSpace(id.GetString())
+            || !TryUniqueHistoryProperty(root, "startedAt", JsonValueKind.String, out _)
+            || !TryUniqueHistoryProperty(root, "finishedAt", JsonValueKind.String, out _))
+            return null;
+
+        var result = JsonSerializer.Deserialize<TempCleanupResult>(json, SerializerOptions);
+        if (result is null || !string.Equals(result.Id, id.GetString(), StringComparison.Ordinal)
+            || result.StartedAt == default || result.FinishedAt == default
+            || result.FinishedAt < result.StartedAt || result.Errors is null
+            || result.TargetResults is null
+            || result.Errors.Any(error => error is null)
+            || result.TargetResults.Any(target => target is null)
+            || result.DeletedBytes < 0
+            || result.TotalSelectedBytes < 0 || result.DeletedFiles < 0
+            || result.SkippedFiles < 0 || result.FailedFiles < 0)
+            return null;
+        return result;
+    }
+
+    private static bool TryUniqueHistoryProperty(
+        JsonElement root, string key, JsonValueKind kind, out JsonElement value)
+    {
+        value = default;
+        if (root.ValueKind != JsonValueKind.Object)
+            return false;
+        var seen = false;
+        foreach (var entry in root.EnumerateObject())
+        {
+            if (!string.Equals(entry.Name, key, StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (seen || !entry.NameEquals(key) || entry.Value.ValueKind != kind)
+                return false;
+            value = entry.Value;
+            seen = true;
+        }
+        return seen;
+    }
+
+    /// <summary>
+    /// Only exact, previously scanned default targets may be cleaned. Reject
+    /// redirected roots and every reparse-point ancestor. This is a conservative
+    /// preflight, not an atomic guarantee against concurrent link replacement.
+    /// </summary>
+    private static string? GetTargetRejectionReason(
+        TempCleanupTarget target, bool requireCompletedScan = true)
+    {
+        if (target.Id == "RECYCLE_BIN")
+            return "La limpieza de la Papelera está deshabilitada por seguridad.";
+
+        if (!OperatingSystem.IsWindows())
+            return "Esta limpieza requiere Windows.";
+
+        if (target.Id is not ("USER_TEMP" or "WINDOWS_TEMP" or "THUMBNAILS"))
+            return "Ubicación de limpieza no autorizada.";
+
+        // Defend against a forged scan and an environment redirect: these
+        // roots must match independent Windows known-folder locations.
+        if (target.Id == "USER_TEMP"
+            && !CleanupTargets.IsTrustedUserTempPath(target.Path))
+            return "La carpeta TEMP no coincide con el perfil local autorizado.";
+        if (target.Id == "WINDOWS_TEMP"
+            && !CleanupTargets.IsTrustedWindowsTempPath(target.Path))
+            return "La carpeta TEMP del sistema no coincide con Windows.";
+
+        if (requireCompletedScan && (!target.IsScanned || !target.IsAccessible))
+            return "Es necesario escanear y verificar la ubicación antes de limpiar.";
+
+        if (string.IsNullOrWhiteSpace(target.Path) ||
+            !Path.IsPathFullyQualified(target.Path))
+            return "La ruta de limpieza no es absoluta o no es válida.";
+
+        try
+        {
+            var canonical = Path.TrimEndingDirectorySeparator(
+                Path.GetFullPath(target.Path));
+            var allowedTarget = CleanupTargets.GetDefaultTargets().Single(
+                item => item.Id == target.Id);
+            var expected = Path.TrimEndingDirectorySeparator(
+                Path.GetFullPath(allowedTarget.Path));
+            if (!string.Equals(canonical, expected,
+                StringComparison.OrdinalIgnoreCase))
+                return "La ruta no coincide con la ubicación autorizada.";
+
+            var root = Path.TrimEndingDirectorySeparator(
+                Path.GetPathRoot(canonical) ?? string.Empty);
+            if (string.Equals(root, canonical, StringComparison.OrdinalIgnoreCase))
+                return "No se admite limpiar una raíz de volumen.";
+
+            var directory = new DirectoryInfo(canonical);
+            if (!directory.Exists)
+                return "La ubicación ya no existe.";
+
+            // Includes the target itself and every existing parent, so a
+            // junction or symlink cannot redirect a textual allowed path.
+            for (DirectoryInfo? current = directory; current is not null;
+                current = current.Parent)
+            {
+                if (!current.Exists)
+                    return "La ruta contiene un directorio no disponible.";
+
+                if ((current.Attributes & FileAttributes.ReparsePoint) != 0)
+                    return "La ruta contiene un enlace o punto de redirección.";
+            }
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException
+            or IOException or UnauthorizedAccessException
+            or System.Security.SecurityException)
+        {
+            return "No se pudo validar de forma segura la ubicación.";
         }
 
-        return summaries;
+        return null;
+    }
+
+    // Avoid materializing an unbounded directory listing before applying
+    // time limits. A failed preflight never returns partial candidates.
+    private const int MaxEnumeratedFilesPerTarget = 10_000;
+
+    internal static bool TryEnumerateBounded(
+        string directory, string pattern, bool recursive,
+        int maxFiles, TimeSpan maxDuration, out List<string> files)
+    {
+        files = new List<string>();
+        if (maxFiles <= 0 || maxDuration <= TimeSpan.Zero)
+            return false;
+
+        var options = new EnumerationOptions
+        {
+            RecurseSubdirectories = recursive,
+            IgnoreInaccessible = false,
+            AttributesToSkip = FileAttributes.Hidden | FileAttributes.System
+                | FileAttributes.ReparsePoint,
+            MaxRecursionDepth = 3
+        };
+        var watch = Stopwatch.StartNew();
+        try
+        {
+            foreach (var path in Directory.EnumerateFiles(directory, pattern, options))
+            {
+                // Bound memory and reject rather than operate on a partial list.
+                if (watch.Elapsed >= maxDuration || files.Count >= maxFiles)
+                {
+                    files.Clear();
+                    return false;
+                }
+                files.Add(path);
+            }
+            if (watch.Elapsed >= maxDuration)
+            {
+                files.Clear();
+                return false;
+            }
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+            or ArgumentException or NotSupportedException
+            or System.Security.SecurityException)
+        {
+            files.Clear();
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// A scan is complete only when every candidate was inspected. Even one
+    /// unreadable file invalidates the aggregate; never publish a partial
+    /// count or let a failed scan enable the cleanup checkbox.
+    /// The evaluator is injectable only to test I/O failures without touching
+    /// real protected filesystem objects.
+    /// </summary>
+    internal static bool TrySummarizeCandidates(
+        IEnumerable<string> files, Func<string, (bool Protected, long Length)> evaluate,
+        out long bytes, out int count)
+    {
+        ArgumentNullException.ThrowIfNull(files);
+        ArgumentNullException.ThrowIfNull(evaluate);
+        bytes = 0;
+        count = 0;
+        try
+        {
+            foreach (var file in files)
+            {
+                var (isProtected, length) = evaluate(file);
+                if (isProtected)
+                    continue;
+                if (length < 0)
+                {
+                    bytes = 0;
+                    count = 0;
+                    return false;
+                }
+                bytes = checked(bytes + length);
+                count = checked(count + 1);
+            }
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException
+            or UnauthorizedAccessException or System.Security.SecurityException
+            or ArgumentException or NotSupportedException or OverflowException)
+        {
+            bytes = 0;
+            count = 0;
+            return false;
+        }
     }
 
     // --- Métodos de escaneo ---
 
-    private static void ScanFolder(TempCleanupTarget target)
+    // Internal for read-only, isolated synthetic scan regressions.
+    internal static void ScanFolder(TempCleanupTarget target)
     {
-        try
+        var wasSelected = target.IsSelected;
+        target.EstimatedSizeBytes = 0;
+        target.EstimatedFileCount = 0;
+        target.IsAccessible = false;
+        target.IsSelected = false; // Fail closed until the scan succeeds.
+        target.IsScanned = true;
+        if (!Directory.Exists(target.Path))
         {
-            if (!Directory.Exists(target.Path))
-            {
-                target.IsAccessible = false;
-                target.IsScanned = true;
-                target.ScanNotes = "Ubicación no encontrada";
-                return;
-            }
-
-            var dirInfo = new DirectoryInfo(target.Path);
-            var sw = Stopwatch.StartNew();
-
-            var files = dirInfo.GetFiles("*", new EnumerationOptions
-            {
-                RecurseSubdirectories = true,
-                IgnoreInaccessible = true,
-                MaxRecursionDepth = 3
-            });
-
-            foreach (var file in files)
-            {
-                try
-                {
-                    target.EstimatedSizeBytes += file.Length;
-                    target.EstimatedFileCount++;
-                }
-                catch { }
-
-                // Timeout de 3 segundos por ubicación
-                if (sw.ElapsedMilliseconds > 3000) break;
-            }
-
-            target.IsAccessible = true;
-            target.IsScanned = true;
-
-            if (target.IsSystemLocation)
-            {
-                target.ScanNotes = "Requiere permisos de administrador";
-            }
+            target.ScanNotes = "Ubicación no encontrada";
+            return;
         }
-        catch (Exception ex)
+
+        // Refuse incomplete listings instead of calling them a successful scan.
+        // Safe deletion currently supports direct children only. The scan
+        // must estimate exactly that scope, not nested folders.
+        if (!TryEnumerateBounded(target.Path, "*", recursive: false,
+            MaxEnumeratedFilesPerTarget, TimeSpan.FromSeconds(3), out var files))
         {
-            target.IsAccessible = false;
-            target.IsScanned = true;
-            target.ScanNotes = $"Error: {ex.Message}";
+            target.ScanNotes = "No disponible: demasiados archivos, tiempo agotado o acceso denegado.";
+            return;
         }
+
+        // A partially readable inventory must not look like a successful
+        // complete scan. No deletion occurs while scanning.
+        if (!TrySummarizeCandidates(files, file =>
+            {
+                var info = new FileInfo(file);
+                return (IsProtectedFile(info), info.Length);
+            }, out var bytes, out var count))
+        {
+            target.ScanNotes = "No disponible: un archivo no se pudo verificar.";
+            return;
+        }
+
+        target.EstimatedSizeBytes = bytes;
+        target.EstimatedFileCount = count;
+        target.IsAccessible = true;
+        target.IsSelected = wasSelected; // Preserve trusted default selection only.
+        target.ScanNotes = target.IsSystemLocation
+            ? "Requiere permisos de administrador" : string.Empty;
     }
 
-    private static void ScanThumbnailsFolder(TempCleanupTarget target)
+    // Exposed internally for isolated scan-only fixture tests.
+    internal static void ScanThumbnailsFolder(TempCleanupTarget target)
     {
-        try
+        var wasSelected = target.IsSelected;
+        target.EstimatedSizeBytes = 0;
+        target.EstimatedFileCount = 0;
+        target.IsAccessible = false;
+        target.IsSelected = false; // Fail closed until the scan succeeds.
+        target.IsScanned = true;
+        if (!Directory.Exists(target.Path))
         {
-            if (!Directory.Exists(target.Path))
-            {
-                target.IsAccessible = false;
-                target.IsScanned = true;
-                target.ScanNotes = "Carpeta de miniaturas no encontrada";
-                return;
-            }
-
-            var thumbFiles = Directory.GetFiles(target.Path, "thumbcache_*.db");
-            foreach (var file in thumbFiles)
-            {
-                try
-                {
-                    var fileInfo = new FileInfo(file);
-                    target.EstimatedSizeBytes += fileInfo.Length;
-                    target.EstimatedFileCount++;
-                }
-                catch { }
-            }
-
-            target.IsAccessible = true;
-            target.IsScanned = true;
+            target.ScanNotes = "Carpeta de miniaturas no encontrada";
+            return;
         }
-        catch (Exception ex)
+
+        if (!TryEnumerateBounded(target.Path, "thumbcache_*.db",
+            recursive: false, MaxEnumeratedFilesPerTarget,
+            TimeSpan.FromSeconds(3), out var files))
         {
-            target.IsAccessible = false;
-            target.IsScanned = true;
-            target.ScanNotes = $"Error: {ex.Message}";
+            target.ScanNotes = "No disponible: no se pudo completar el escaneo.";
+            return;
         }
+
+        // A partially readable inventory must not look like a successful
+        // complete scan. No deletion occurs while scanning.
+        if (!TrySummarizeCandidates(files, file =>
+            {
+                var info = new FileInfo(file);
+                return (IsProtectedFile(info), info.Length);
+            }, out var bytes, out var count))
+        {
+            target.ScanNotes = "No disponible: un archivo no se pudo verificar.";
+            return;
+        }
+
+        target.EstimatedSizeBytes = bytes;
+        target.EstimatedFileCount = count;
+        target.IsAccessible = true;
+        target.IsSelected = wasSelected;
+        target.ScanNotes = "Solo archivos thumbcache_*.db";
     }
 
     // --- Métodos de limpieza ---
 
-    private async Task CleanFolderAsync(
-        TempCleanupTarget target, TargetResult targetResult, TempCleanupResult result)
+    // Internal only for isolated synthetic fixture regression tests.
+    internal async Task CleanFolderAsync(
+        TempCleanupTarget target, TargetResult targetResult, TempCleanupResult result,
+        int maxCandidates = MaxEnumeratedFilesPerTarget)
     {
         if (!Directory.Exists(target.Path))
         {
-            targetResult.IsSuccess = true;
+            result.Errors.Add(new CleanupError
+            {
+                FilePath = target.Id,
+                Message = "La ubicación de temporales dejó de estar disponible.",
+                ErrorType = "MissingTarget"
+            });
+            targetResult.IsSuccess = false;
             return;
         }
 
         await Task.Run(() =>
         {
-            var dirInfo = new DirectoryInfo(target.Path);
             var sw = Stopwatch.StartNew();
 
-            // Obtener todos los archivos
-            FileInfo[] files;
-            try
+            // Finish a bounded, non-destructive listing BEFORE the first delete.
+            // Do not traverse nested directories until identity-preserving
+            // handle-relative directory enumeration is reviewed.
+            if (!TryEnumerateBounded(target.Path, "*", recursive: false,
+                maxCandidates, TimeSpan.FromSeconds(8), out var files))
             {
-                files = dirInfo.GetFiles("*", new EnumerationOptions
+                result.Errors.Add(new CleanupError
                 {
-                    RecurseSubdirectories = true,
-                    IgnoreInaccessible = true,
-                    MaxRecursionDepth = 3
+                    FilePath = target.Id,
+                    Message = "Enumeración incompleta o límite de archivos excedido.",
+                    ErrorType = "EnumerationError"
                 });
-            }
-            catch
-            {
+                targetResult.IsSuccess = false;
                 return;
             }
 
-            foreach (var file in files)
+            foreach (var filePath in files)
             {
+                var file = new FileInfo(filePath);
                 // Timeout de 30 segundos por ubicación
-                if (sw.ElapsedMilliseconds > 30000) break;
+                if (sw.ElapsedMilliseconds > 30000)
+                {
+                    result.Errors.Add(new CleanupError
+                    {
+                        FilePath = target.Id,
+                        Message = "Se alcanzó el límite de tiempo; la limpieza quedó incompleta.",
+                        ErrorType = "IncompleteCleanup"
+                    });
+                    targetResult.IsSuccess = false;
+                    break;
+                }
 
                 try
                 {
@@ -328,12 +711,21 @@ public class TempCleanupService : ITempCleanupService
                         continue;
                     }
 
-                    // Intentar borrar
-                    file.Delete();
+                    // The native handle is opened and verified before marking
+                    // that SAME file for deletion. Never delete by pathname
+                    // after the safety checks (TOCTOU vulnerability).
+                    if (!WindowsScopedFileDelete.TryDelete(
+                        target.Path, file.FullName, out var size))
+                    {
+                        targetResult.SkippedFiles++;
+                        result.SkippedFiles++;
+                        continue;
+                    }
+
                     targetResult.DeletedFiles++;
-                    targetResult.DeletedBytes += file.Length;
+                    targetResult.DeletedBytes += size;
                     result.DeletedFiles++;
-                    result.DeletedBytes += file.Length;
+                    result.DeletedBytes += size;
                 }
                 catch (IOException)
                 {
@@ -347,19 +739,19 @@ public class TempCleanupService : ITempCleanupService
                     result.FailedFiles++;
                     result.Errors.Add(new CleanupError
                     {
-                        FilePath = file.FullName,
-                        Message = "Acceso denegado",
+                        FilePath = target.Id,
+                        Message = "Acceso denegado a un archivo temporal.",
                         ErrorType = "AccessDenied"
                     });
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
                     targetResult.FailedFiles++;
                     result.FailedFiles++;
                     result.Errors.Add(new CleanupError
                     {
-                        FilePath = file.FullName,
-                        Message = ex.Message,
+                        FilePath = target.Id,
+                        Message = "No se pudo limpiar un archivo temporal.",
                         ErrorType = "Error"
                     });
                 }
@@ -367,23 +759,62 @@ public class TempCleanupService : ITempCleanupService
         });
     }
 
-    private static void CleanThumbnailsFolder(
-        TempCleanupTarget target, TargetResult targetResult, TempCleanupResult result)
+    internal static void CleanThumbnailsFolder(
+        TempCleanupTarget target, TargetResult targetResult, TempCleanupResult result,
+        int maxCandidates = MaxEnumeratedFilesPerTarget)
     {
-        if (!Directory.Exists(target.Path)) return;
+        if (!Directory.Exists(target.Path))
+        {
+            result.Errors.Add(new CleanupError
+            {
+                FilePath = target.Id,
+                Message = "La carpeta de miniaturas dejó de estar disponible.",
+                ErrorType = "MissingTarget"
+            });
+            targetResult.IsSuccess = false;
+            return;
+        }
 
         try
         {
-            var thumbFiles = Directory.GetFiles(target.Path, "thumbcache_*.db");
+            // Never start deleting from a partial/unbounded cache listing.
+            if (!TryEnumerateBounded(target.Path, "thumbcache_*.db",
+                recursive: false, maxCandidates, TimeSpan.FromSeconds(5),
+                out var thumbFiles))
+            {
+                result.Errors.Add(new CleanupError
+                {
+                    FilePath = target.Id,
+                    Message = "No se pudo completar la enumeración de miniaturas.",
+                    ErrorType = "EnumerationError"
+                });
+                targetResult.IsSuccess = false;
+                return;
+            }
 
             foreach (var file in thumbFiles)
             {
                 try
                 {
-                    var fileInfo = new FileInfo(file);
-                    var size = fileInfo.Length;
+                    // Preserve the same filename, reparse-point and retention
+                    // exclusions applied by ScanThumbnailsFolder. The native
+                    // handle check is an additional, never a replacement, gate.
+                    if (IsProtectedFile(new FileInfo(file)))
+                    {
+                        targetResult.SkippedFiles++;
+                        result.SkippedFiles++;
+                        continue;
+                    }
 
-                    fileInfo.Delete();
+                    // Keep the verified-handle deletion gate; never delete
+                    // by pathname after this managed preflight.
+                    if (!WindowsScopedFileDelete.TryDelete(
+                        target.Path, file, out var size))
+                    {
+                        targetResult.SkippedFiles++;
+                        result.SkippedFiles++;
+                        continue;
+                    }
 
                     targetResult.DeletedFiles++;
                     targetResult.DeletedBytes += size;
@@ -395,77 +826,28 @@ public class TempCleanupService : ITempCleanupService
                     targetResult.SkippedFiles++;
                     result.SkippedFiles++;
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
                     targetResult.FailedFiles++;
                     result.FailedFiles++;
                     result.Errors.Add(new CleanupError
                     {
-                        FilePath = file,
-                        Message = ex.Message,
+                        FilePath = target.Id,
+                        Message = "No se pudo limpiar un archivo de miniaturas.",
                         ErrorType = "Error"
                     });
                 }
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             result.Errors.Add(new CleanupError
             {
-                FilePath = target.Path,
-                Message = ex.Message,
+                FilePath = target.Id,
+                Message = "No se pudo enumerar o limpiar la caché de miniaturas.",
                 ErrorType = "CleanError"
             });
-        }
-    }
-
-    private static async Task CleanRecycleBinAsync(TargetResult targetResult, TempCleanupResult result)
-    {
-        try
-        {
-            // Usar Shell32 para vaciar papelera de reciclaje
-            await Task.Run(() =>
-            {
-                var shellType = Type.GetTypeFromProgID("Shell.Application");
-                if (shellType != null)
-                {
-                    var shell = Activator.CreateInstance(shellType);
-                    if (shell != null)
-                    {
-                        dynamic shellApp = shell;
-                        shellApp.NameSpace(0xA); // 0x0A = Recycle Bin
-                        // No hay forma directa de vaciar con Shell32, usar comando
-                        System.Runtime.InteropServices.Marshal.ReleaseComObject(shell);
-                    }
-                }
-            });
-
-            // Alternativa: usar comando shell
-            var process = Process.Start(new ProcessStartInfo
-            {
-                FileName = "cmd.exe",
-                Arguments = "/c echo Y | rd /s C:\\$Recycle.Bin",
-                WindowStyle = ProcessWindowStyle.Hidden,
-                CreateNoWindow = true,
-                UseShellExecute = false
-            });
-
-            if (process != null)
-            {
-                await process.WaitForExitAsync();
-                targetResult.IsSuccess = true;
-                targetResult.DeletedFiles = 1; // Estimado
-            }
-        }
-        catch (Exception ex)
-        {
-            targetResult.FailedFiles++;
-            result.Errors.Add(new CleanupError
-            {
-                FilePath = "RecycleBin",
-                Message = ex.Message,
-                ErrorType = "CleanError"
-            });
+            targetResult.IsSuccess = false;
         }
     }
 
@@ -473,14 +855,26 @@ public class TempCleanupService : ITempCleanupService
 
     private static bool IsProtectedFile(FileInfo file)
     {
-        var name = file.Name.ToLowerInvariant();
-
-        // No borrar archivos de lock, PID, socket
-        if (ProtectedPatterns.Any(p => name.Contains(p.Replace("*", ""))))
+        // The native handle-level delete rejects ReadOnly, Hidden and System
+        // files too. Exclude them from the reclaim estimate, not only at
+        // deletion time; never promise bytes the safe gate will refuse.
+        const FileAttributes nativeExcluded =
+            FileAttributes.ReparsePoint | FileAttributes.ReadOnly
+            | FileAttributes.Hidden | FileAttributes.System;
+        if ((file.Attributes & nativeExcluded) != 0)
             return true;
 
-        // No borrar archivos muy recientes (últimos 60 segundos)
-        if (file.LastWriteTime > DateTime.Now.AddSeconds(-60))
+        // Use one shared filename policy in managed scan, cleanup and native
+        // disposition to avoid bypass through a future direct helper call.
+        if (CleanupTargets.IsProtectedTemporaryFileName(file.Name))
+            return true;
+
+        // A file may have old modification time but a recent NTFS creation
+        // time (e.g., extracted archive). Refuse both cases. Native handle
+        // verification repeats this decision immediately before disposition.
+        var retentionCutoff = DateTime.UtcNow.AddDays(-CleanupTargets.MinimumAgeDays);
+        if (file.LastWriteTimeUtc > retentionCutoff
+            || file.CreationTimeUtc > retentionCutoff)
             return true;
 
         return false;
