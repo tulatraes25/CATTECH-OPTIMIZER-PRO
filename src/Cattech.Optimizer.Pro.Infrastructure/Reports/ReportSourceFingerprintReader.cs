@@ -100,8 +100,9 @@ internal sealed class ReportSourceFingerprintReader
                 return new(SourceIdResolutionStatus.UnsafeScope);
 
             const int maxCandidates = 4096;
-            var files = Directory.GetFiles(folder, location.Item2,
-                SearchOption.TopDirectoryOnly);
+            var files = Directory.EnumerateFiles(folder, location.Item2,
+                    SearchOption.TopDirectoryOnly)
+                .Take(maxCandidates + 1).ToArray();
             if (files.Length > maxCandidates)
                 return new(SourceIdResolutionStatus.Unverifiable);
 

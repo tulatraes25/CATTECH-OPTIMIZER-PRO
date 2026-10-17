@@ -412,6 +412,96 @@ public sealed class SourceBindingReviewJournalTests
         finally { Directory.Delete(root, true); }
     }
 
+    [Fact]
+    public async Task ExplicitSourceIdReview_RequiresDisplayedDigestAndWritesOnce()
+    {
+        var root = NewRoot();
+        try
+        {
+            const string json = "{\"id\":\"ABCDEF12\",\"synthetic\":true}";
+            await WriteSourceAsync(root, "diagnostics/diagnostic-one.json", json);
+            var reader = new ReportSourceFingerprintReader(root);
+            var preview = await reader.ResolveUniqueAsync("Diagnostic", "ABCDEF12");
+            Assert.Equal(SourceIdResolutionStatus.FoundUnique, preview.Status);
+            var journal = new SourceBindingReviewJournal(root);
+            var result = await journal.RecordReviewedByIdAsync(CaseA,
+                "Diagnostic", "ABCDEF12", preview.Fingerprint!.Sha256,
+                "TechQA", true);
+            Assert.Equal(SourceBindingJournalStatus.Recorded, result.Status);
+            Assert.NotNull(result.BindingId);
+            Assert.Equal(SourceBindingReadStatus.CurrentSnapshot,
+                (await journal.InspectCurrentAsync(result.BindingId!.Value,
+                    CaseA, "Diagnostic", "diagnostics/diagnostic-one.json")).Status);
+            Assert.Single(Directory.GetFiles(JournalDirectory(root),
+                "binding-*.json"));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task ChangedAfterReview_DoesNotGrantNewReceiptOrRewriteEvidence()
+    {
+        var root = NewRoot();
+        try
+        {
+            var path = await WriteSourceAsync(root,
+                "diagnostics/diagnostic-one.json", "{\"id\":\"ABCDEF12\",\"v\":1}");
+            var reader = new ReportSourceFingerprintReader(root);
+            var preview = await reader.ResolveUniqueAsync("Diagnostic", "ABCDEF12");
+            var oldDigest = preview.Fingerprint!.Sha256;
+            const string modified = "{\"id\":\"ABCDEF12\",\"v\":2}";
+            await File.WriteAllTextAsync(path, modified);
+            var journal = new SourceBindingReviewJournal(root);
+            var outcome = await journal.RecordReviewedByIdAsync(CaseA,
+                "Diagnostic", "ABCDEF12", oldDigest, "TechQA", true);
+            Assert.Equal(SourceBindingJournalStatus.SourceChangedSinceReview,
+                outcome.Status);
+            Assert.Null(outcome.BindingId);
+            Assert.False(Directory.Exists(JournalDirectory(root)));
+            Assert.Equal(modified, await File.ReadAllTextAsync(path));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task AmbiguousHistoricalSourceId_NoReviewReceipt()
+    {
+        var root = NewRoot();
+        try
+        {
+            await WriteSourceAsync(root, "diagnostics/diagnostic-a.json",
+                "{\"id\":\"ABCDEF12\"}");
+            await WriteSourceAsync(root, "diagnostics/diagnostic-b.json",
+                "{\"id\":\"ABCDEF12\"}");
+            var journal = new SourceBindingReviewJournal(root);
+            var result = await journal.RecordReviewedByIdAsync(CaseA,
+                "Diagnostic", "ABCDEF12", new string('A', 64), "TechQA", true);
+            Assert.Equal(SourceBindingJournalStatus.ConflictingClaim, result.Status);
+            Assert.False(Directory.Exists(JournalDirectory(root)));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task RefusedConsentOrInvalidDigestNeverSearchesOrWrites()
+    {
+        var root = NewRoot();
+        try
+        {
+            var journal = new SourceBindingReviewJournal(root);
+            var denied = await journal.RecordReviewedByIdAsync(CaseA,
+                "Diagnostic", "ABCDEF12", new string('A', 64),
+                "TechQA", false);
+            var invalid = await journal.RecordReviewedByIdAsync(CaseA,
+                "Diagnostic", "ABCDEF12", "NOT_A_SHA",
+                "TechQA", true);
+            Assert.Equal(SourceBindingJournalStatus.ReviewRequired, denied.Status);
+            Assert.Equal(SourceBindingJournalStatus.ReviewRequired, invalid.Status);
+            Assert.False(Directory.Exists(Path.Combine(root, "data")));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
     private static string NewRoot()
     {
         var root = Path.Combine(Path.GetTempPath(),

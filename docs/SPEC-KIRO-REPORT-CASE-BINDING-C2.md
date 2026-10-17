@@ -106,3 +106,9 @@ C1/C1b established the case ID and generated-report trace. C2-A and C2-B source/
 - ResolveUniqueAsync inspecciona solamente las cuatro familias conocidas de archivos JSON locales, con identificadores reales (incluyendo los de ocho caracteres).
 - Dos archivos con el mismo ID producen Ambiguous; cualquier fuente hermana corrupta, inaccesible o redirigida produce Unverifiable. No se selecciona la mas reciente ni se infiere por serial o fecha.
 - Busqueda acotada a 4096 archivos y sin escritura. Esta resolucion es temporal y NO autoriza asociar cliente/diagnostico ni exportar; requiere confirmacion C2-C y revalidacion C2-D.
+
+## C2-B4 — confirmacion vinculada al digest mostrado
+- RecordReviewedByIdAsync acepta un ID real encontrado de manera univoca y el SHA-256 visto durante la revision del tecnico. Exige confirmacion explicita y alias local validado.
+- Si cambia el contenido entre la revision y la confirmacion, se rechaza sin escribir; un segundo barrido dentro del candado de la bitacora comprueba identidad, ruta y unicidad otra vez.
+- Las comprobaciones son conservadoras frente a archivos hostiles y no prueban identidad fisica. La interfaz y el renderer siguen sin aceptar fuentes mixtas hasta C2-C/D.
+- El catalogo ahora limita la enumeracion antes de materializar el listado de mas de 4096 rutas.

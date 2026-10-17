@@ -30,6 +30,7 @@ internal enum SourceBindingJournalStatus
     UnsafeStore,
     InvalidJournal,
     ConflictingClaim,
+    SourceChangedSinceReview,
     WriteFailed
 }
 
@@ -169,10 +170,47 @@ internal sealed class SourceBindingReviewJournal
         }
     }
 
+    /// <summary>
+    /// Future C2-C confirmation entrypoint: accepts the EXACT SHA-256 that
+    /// was displayed during source review and requires a unique real source
+    /// ID in an approved store. Confirmation cannot silently switch files.
+    /// No UI is connected to this internal API yet.
+    /// </summary>
+    internal async Task<SourceBindingJournalOutcome> RecordReviewedByIdAsync(
+        Guid serviceCaseId, string sourceKind, string sourceRecordId,
+        string reviewedSha256, string reviewerAlias, bool explicitConsent,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!explicitConsent || serviceCaseId == Guid.Empty
+            || !ServiceSourceBindingClaimPolicy.IsSafeHash(reviewedSha256)
+            || !ServiceSourceBindingClaimPolicy.IsSafeSourceRecordId(sourceRecordId)
+            || reviewerAlias is null || !ReviewerPattern.IsMatch(reviewerAlias))
+            return new(SourceBindingJournalStatus.ReviewRequired);
+
+        var resolved = await _sourceReader.ResolveUniqueAsync(sourceKind,
+            sourceRecordId, cancellationToken).ConfigureAwait(false);
+        if (resolved.Status == SourceIdResolutionStatus.Ambiguous)
+            return new(SourceBindingJournalStatus.ConflictingClaim);
+        if (resolved.Status != SourceIdResolutionStatus.FoundUnique
+            || resolved.Fingerprint is null)
+            return new(SourceBindingJournalStatus.SourceUnavailable);
+        if (!string.Equals(resolved.Fingerprint.Sha256, reviewedSha256,
+                StringComparison.OrdinalIgnoreCase))
+            return new(SourceBindingJournalStatus.SourceChangedSinceReview);
+
+        return await RecordReviewedAsync(serviceCaseId, sourceKind,
+            resolved.Fingerprint.RelativePath, reviewerAlias, true,
+            cancellationToken, reviewedSha256, requireUniqueSourceId: true)
+            .ConfigureAwait(false);
+    }
+
     internal async Task<SourceBindingJournalOutcome> RecordReviewedAsync(
         Guid serviceCaseId, string sourceKind, string relativeSourcePath,
         string reviewerAlias, bool explicitConsent,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? expectedSourceSha256 = null,
+        bool requireUniqueSourceId = false)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!explicitConsent || serviceCaseId == Guid.Empty
@@ -183,6 +221,11 @@ internal sealed class SourceBindingReviewJournal
             relativeSourcePath, cancellationToken).ConfigureAwait(false);
         if (!first.HasReadableSnapshot)
             return new(SourceBindingJournalStatus.SourceUnavailable);
+        if (expectedSourceSha256 is not null
+            && (!ServiceSourceBindingClaimPolicy.IsSafeHash(expectedSourceSha256)
+                || !string.Equals(first.Fingerprint!.Sha256,
+                    expectedSourceSha256, StringComparison.OrdinalIgnoreCase)))
+            return new(SourceBindingJournalStatus.SourceChangedSinceReview);
 
         try
         {
@@ -216,6 +259,20 @@ internal sealed class SourceBindingReviewJournal
                 return new(SourceBindingJournalStatus.SourceUnavailable);
 
             var snapshot = current.Fingerprint!;
+            if (requireUniqueSourceId)
+            {
+                // Re-scan under the cooperating-process journal lease. An
+                // unexpected new duplicate, an inaccessible sibling, a
+                // renamed file or different bytes invalidates the review.
+                var unique = await _sourceReader.ResolveUniqueAsync(
+                    sourceKind, snapshot.SourceRecordId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (unique.Status == SourceIdResolutionStatus.Ambiguous)
+                    return new(SourceBindingJournalStatus.ConflictingClaim);
+                if (unique.Status != SourceIdResolutionStatus.FoundUnique
+                    || unique.Fingerprint != snapshot)
+                    return new(SourceBindingJournalStatus.SourceChangedSinceReview);
+            }
             var claim = new ServiceSourceBindingClaim(
                 ServiceSourceBindingClaimPolicy.SchemaVersion,
                 Guid.NewGuid(), serviceCaseId, snapshot.SourceKind,
