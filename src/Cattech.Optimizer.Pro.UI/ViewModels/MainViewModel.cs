@@ -271,7 +271,8 @@ public partial class MainViewModel : ObservableObject
             _visualOptimizationService,
             _restorePointService,
             _smartDiskService,
-            _smartTestService);
+            _smartTestService,
+            new ReportSourceReviewCoordinator(_reportService));
 
         return new ReportView
         {

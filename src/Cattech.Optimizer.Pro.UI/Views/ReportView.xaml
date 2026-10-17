@@ -133,6 +133,42 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- C2-C: technician review; does NOT enable mixed exports -->
+                    <Border BorderBrush="#B8CBDC" BorderThickness="1" CornerRadius="6"
+                            Padding="15" Background="#F3F8FC" Margin="0,0,0,10">
+                        <StackPanel>
+                            <TextBlock Text="REVISIÓN DE EVIDENCIA DEL EQUIPO"
+                                       FontSize="12" FontWeight="Bold" Foreground="#175C8E"
+                                       Margin="0,0,0,6" />
+                            <TextBlock Text="Antes de asociar un diagnóstico al cliente, verificá el equipo y el origen de la medición. La coincidencia de número de serie o fecha no demuestra procedencia."
+                                       FontSize="11" TextWrapping="Wrap" Margin="0,0,0,10" />
+                            <Button Content="1. Verificar diagnóstico seleccionado"
+                                    Command="{Binding PreviewDiagnosticReviewCommand}"
+                                    Padding="12,7" HorizontalAlignment="Left"
+                                    IsEnabled="{Binding IsRunning, Converter={StaticResource InvertBool}}" />
+                            <StackPanel Margin="0,10,0,0"
+                                        Visibility="{Binding HasPendingSourceReview, Converter={StaticResource BoolToVis}}">
+                                <TextBlock Text="{Binding SourceReviewEvidence}"
+                                           FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8" />
+                                <TextBlock Text="Alias local del técnico (3 a 48 caracteres, letras/números/guion):"
+                                           FontSize="11" TextWrapping="Wrap" Margin="0,0,0,3" />
+                                <TextBox Text="{Binding ReviewerAlias, UpdateSourceTrigger=PropertyChanged}"
+                                         MaxLength="48" Padding="8,5" Margin="0,0,0,8"
+                                         AutomationProperties.Name="Alias del técnico revisor" />
+                                <CheckBox IsChecked="{Binding ReviewConsent}"
+                                          Content="He revisado el caso y esta evidencia; autorizo registrar su asociación."
+                                          FontSize="11" Margin="0,0,0,8" />
+                                <Button Content="2. Confirmar y registrar revisión"
+                                        Command="{Binding ConfirmDiagnosticReviewCommand}"
+                                        Padding="12,7" HorizontalAlignment="Left"
+                                        IsEnabled="{Binding IsRunning, Converter={StaticResource InvertBool}}" />
+                            </StackPanel>
+                            <TextBlock Text="Esta revisión no habilita todavía el uso combinado de mediciones en un informe de cliente."
+                                       FontSize="10" TextWrapping="Wrap"
+                                       Foreground="#526779" Margin="0,10,0,0" />
+                        </StackPanel>
+                    </Border>
+
                     <!-- Selección de datos -->
                     <Border BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
                             Padding="15" Background="White" Margin="0,0,0,10">

@@ -1588,9 +1588,127 @@ public class ReportViewModelTests
         return Assert.IsAssignableFrom<Task>(method.Invoke(vm, null));
     }
 
+    [Fact]
+    public async Task ExplicitDiagnosticReview_RequiresPreviewConsentAndNoPrematureExport()
+    {
+        var coordinator = new FakeSourceReviewCoordinator();
+        var (vm, generator) = CreateViewModel(
+            storedReports: new FakeServiceReportService
+            {
+                CaseId = Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+            },
+            review: coordinator);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        Assert.True(vm.IncludeClient);
+        Assert.NotNull(vm.SelectedDiagnosticReport);
+        await vm.PreviewDiagnosticReviewCommand.ExecuteAsync(null);
+        Assert.True(vm.HasPendingSourceReview);
+        Assert.False(vm.ReviewConsent);
+        Assert.Contains("SHA-256", vm.SourceReviewEvidence);
+        await vm.ConfirmDiagnosticReviewCommand.ExecuteAsync(null);
+        Assert.Equal(0, coordinator.ConfirmCalls);
+
+        vm.ReviewerAlias = "TechQA";
+        vm.ReviewConsent = true;
+        await vm.ConfirmDiagnosticReviewCommand.ExecuteAsync(null);
+        Assert.Equal(1, coordinator.PrepareCalls);
+        Assert.Equal(1, coordinator.ConfirmCalls);
+        Assert.True(vm.IsSuccess);
+        Assert.False(vm.HasPendingSourceReview);
+        Assert.False(vm.IncludeDiagnostic);
+        Assert.Equal(0, generator.GenerateCallCount);
+    }
+
+    [Fact]
+    public async Task SwitchingClientAfterPreview_ImmediatelyRevokesConsentToken()
+    {
+        var coordinator = new FakeSourceReviewCoordinator();
+        var (vm, _) = CreateViewModel(
+            storedReports: new FakeServiceReportService
+            {
+                CaseId = Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+            }, review: coordinator);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        await vm.PreviewDiagnosticReviewCommand.ExecuteAsync(null);
+        Assert.True(vm.HasPendingSourceReview);
+        vm.ReviewerAlias = "TechQA";
+        vm.ReviewConsent = true;
+        var original = vm.SelectedServiceReport;
+        vm.SelectedServiceReport = null;
+        vm.SelectedServiceReport = original; // ABA must not restore approval.
+        Assert.False(vm.HasPendingSourceReview);
+        Assert.False(vm.ReviewConsent);
+        await vm.ConfirmDiagnosticReviewCommand.ExecuteAsync(null);
+        Assert.Equal(0, coordinator.ConfirmCalls);
+    }
+
+    [Fact]
+    public async Task LatePreviewCannotReinstateChangedCustomerSelection()
+    {
+        var coordinator = new FakeSourceReviewCoordinator
+        {
+            PrepareEntered = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously),
+            ResumePrepare = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously)
+        };
+        var (vm, _) = CreateViewModel(
+            storedReports: new FakeServiceReportService
+            {
+                CaseId = Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+            }, review: coordinator);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        var oldPreview = vm.PreviewDiagnosticReviewCommand.ExecuteAsync(null);
+        await coordinator.PrepareEntered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        vm.SelectedServiceReport = null;
+        coordinator.ResumePrepare.SetResult(true);
+        await oldPreview.WaitAsync(TimeSpan.FromSeconds(15));
+        Assert.False(vm.HasPendingSourceReview);
+        Assert.False(vm.ReviewConsent);
+        Assert.False(vm.IsRunning);
+        Assert.Equal(0, coordinator.ConfirmCalls);
+    }
+
+    private sealed class FakeSourceReviewCoordinator : IReportSourceReviewCoordinator
+    {
+        public int PrepareCalls { get; private set; }
+        public int ConfirmCalls { get; private set; }
+        public TaskCompletionSource<bool>? PrepareEntered { get; init; }
+        public TaskCompletionSource<bool>? ResumePrepare { get; init; }
+
+        public async Task<SourceReviewCoordinationResult> PrepareAsync(
+            ServiceReport? selectedCase, string kind, string sourceId,
+            CancellationToken cancellationToken = default)
+        {
+            PrepareCalls++;
+            PrepareEntered?.TrySetResult(true);
+            if (ResumePrepare is not null)
+                await ResumePrepare.Task.WaitAsync(TimeSpan.FromSeconds(15));
+            var preview = new SourceReviewPreview(
+                selectedCase!.Id, selectedCase.ServiceCaseId!.Value,
+                new string('B', 64), kind, sourceId,
+                "diagnostics/diagnostic-synthetic.json",
+                new string('A', 64), DateTimeOffset.UtcNow);
+            return new(SourceReviewCoordinationStatus.Prepared, preview);
+        }
+
+        public Task<SourceReviewCoordinationResult> ConfirmAsync(
+            SourceReviewPreview? preview, string reviewerAlias, bool consent,
+            CancellationToken cancellationToken = default)
+        {
+            ConfirmCalls++;
+            return Task.FromResult(consent
+                ? new SourceReviewCoordinationResult(
+                    SourceReviewCoordinationStatus.Recorded,
+                    BindingId: Guid.Parse("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"))
+                : new SourceReviewCoordinationResult(
+                    SourceReviewCoordinationStatus.ReviewRequired));
+        }
+    }
+
     // ===== Helper =====
 
-    private static (ReportViewModel vm, FakeReportGenerationService fakeReportService) CreateViewModel(FakeServiceReportService? storedReports = null, FakePdfExportService? pdfExporter = null, FakeSettingsService? settings = null, FakeCleanupService? cleanup = null, FakeRestorePointService? restore = null, FakeSmartDiskService? smart = null)
+    private static (ReportViewModel vm, FakeReportGenerationService fakeReportService) CreateViewModel(FakeServiceReportService? storedReports = null, FakePdfExportService? pdfExporter = null, FakeSettingsService? settings = null, FakeCleanupService? cleanup = null, FakeRestorePointService? restore = null, FakeSmartDiskService? smart = null, IReportSourceReviewCoordinator? review = null)
     {
         var fakeReportService = new FakeReportGenerationService();
         var vm = new ReportViewModel(
@@ -1604,7 +1722,8 @@ public class ReportViewModelTests
             new FakeVisualOptimizationService(),
             restore ?? new FakeRestorePointService(),
             smart ?? new FakeSmartDiskService(),
-            new FakeSmartTestService());
+            new FakeSmartTestService(),
+            review);
         return (vm, fakeReportService);
     }
 

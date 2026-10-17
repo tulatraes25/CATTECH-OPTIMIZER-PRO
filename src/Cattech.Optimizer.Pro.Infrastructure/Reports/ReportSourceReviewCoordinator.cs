@@ -10,7 +10,7 @@ namespace Cattech.Optimizer.Pro.Infrastructure.Reports;
 /// for HTML/PDF export. Contains hashes and local record IDs, never customer
 /// names, serial numbers or a raw source payload.
 /// </summary>
-internal sealed record SourceReviewPreview(
+public sealed record SourceReviewPreview(
     string ServiceReportId,
     Guid ServiceCaseId,
     string ServiceReportSha256,
@@ -20,7 +20,7 @@ internal sealed record SourceReviewPreview(
     string SourceSha256,
     DateTimeOffset ReviewedAtUtc);
 
-internal enum SourceReviewCoordinationStatus
+public enum SourceReviewCoordinationStatus
 {
     Prepared,
     Recorded,
@@ -33,7 +33,7 @@ internal enum SourceReviewCoordinationStatus
     StorageFailure
 }
 
-internal sealed record SourceReviewCoordinationResult(
+public sealed record SourceReviewCoordinationResult(
     SourceReviewCoordinationStatus Status,
     SourceReviewPreview? Preview = null,
     Guid? BindingId = null);
@@ -43,7 +43,17 @@ internal sealed record SourceReviewCoordinationResult(
 /// source fingerprint BEFORE offering future explicit WPF review. C2-C UI
 /// and C2-D export are still disabled. No source or client files are edited.
 /// </summary>
-internal sealed class ReportSourceReviewCoordinator
+public interface IReportSourceReviewCoordinator
+{
+    Task<SourceReviewCoordinationResult> PrepareAsync(
+        ServiceReport? selectedCase, string sourceKind, string sourceRecordId,
+        CancellationToken cancellationToken = default);
+    Task<SourceReviewCoordinationResult> ConfirmAsync(
+        SourceReviewPreview? preview, string reviewerAlias, bool explicitConsent,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed class ReportSourceReviewCoordinator : IReportSourceReviewCoordinator
 {
     private readonly IServiceReportService _serviceReports;
     private readonly ReportSourceFingerprintReader _reader;
@@ -51,7 +61,7 @@ internal sealed class ReportSourceReviewCoordinator
     private readonly Func<DateTimeOffset> _clock;
     private static readonly TimeSpan PreviewLifetime = TimeSpan.FromMinutes(5);
 
-    internal ReportSourceReviewCoordinator(
+    public ReportSourceReviewCoordinator(
         IServiceReportService serviceReports, string? baseDirectory = null,
         Func<DateTimeOffset>? clock = null)
     {
@@ -63,7 +73,7 @@ internal sealed class ReportSourceReviewCoordinator
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
     }
 
-    internal async Task<SourceReviewCoordinationResult> PrepareAsync(
+    public async Task<SourceReviewCoordinationResult> PrepareAsync(
         ServiceReport? selectedCase, string sourceKind, string sourceRecordId,
         CancellationToken cancellationToken = default)
     {
@@ -114,7 +124,7 @@ internal sealed class ReportSourceReviewCoordinator
         }
     }
 
-    internal async Task<SourceReviewCoordinationResult> ConfirmAsync(
+    public async Task<SourceReviewCoordinationResult> ConfirmAsync(
         SourceReviewPreview? preview, string reviewerAlias, bool explicitConsent,
         CancellationToken cancellationToken = default)
     {

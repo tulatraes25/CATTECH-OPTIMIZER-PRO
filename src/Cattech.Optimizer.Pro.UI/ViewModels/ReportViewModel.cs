@@ -14,6 +14,7 @@ using Cattech.Optimizer.Pro.Core.Models.Cleanup;
 using Cattech.Optimizer.Pro.Core.Models.VisualOptimization;
 using Cattech.Optimizer.Pro.Core.Models.RestorePoint;
 using Cattech.Optimizer.Pro.Core.Models.Smart;
+using Cattech.Optimizer.Pro.Infrastructure.Reports;
 
 namespace Cattech.Optimizer.Pro.UI.ViewModels;
 
@@ -33,6 +34,7 @@ public partial class ReportViewModel : ObservableObject
     private readonly IRestorePointService _restorePointService;
     private readonly ISmartDiskService _smartDiskService;
     private readonly ISmartTestService _smartTestService;
+    private readonly IReportSourceReviewCoordinator? _sourceReviewCoordinator;
 
     // --- Estado de la UI ---
 
@@ -182,6 +184,23 @@ public partial class ReportViewModel : ObservableObject
     [ObservableProperty]
     private string _pdfStatusText = string.Empty;
 
+    // C2-C: explicit local technician review. NEVER an export permission.
+    [ObservableProperty]
+    private string _reviewerAlias = string.Empty;
+
+    [ObservableProperty]
+    private bool _reviewConsent;
+
+    [ObservableProperty]
+    private bool _hasPendingSourceReview;
+
+    [ObservableProperty]
+    private string _sourceReviewEvidence = string.Empty;
+
+    private SourceReviewPreview? _pendingSourceReview;
+    private long _activeReviewAttempt;
+    private bool _isReviewCommandRunning;
+
     public ReportViewModel(
         IReportGenerationService reportService,
         IPdfExportService pdfExportService,
@@ -193,7 +212,8 @@ public partial class ReportViewModel : ObservableObject
         IVisualOptimizationService visualOptimizationService,
         IRestorePointService restorePointService,
         ISmartDiskService smartDiskService,
-        ISmartTestService smartTestService)
+        ISmartTestService smartTestService,
+        IReportSourceReviewCoordinator? sourceReviewCoordinator = null)
     {
         _reportService = reportService;
         _pdfExportService = pdfExportService;
@@ -206,6 +226,7 @@ public partial class ReportViewModel : ObservableObject
         _restorePointService = restorePointService;
         _smartDiskService = smartDiskService;
         _smartTestService = smartTestService;
+        _sourceReviewCoordinator = sourceReviewCoordinator;
         AvailableSmartTestSessions.CollectionChanged += OnSmartTestCollectionChanged;
     }
 
@@ -316,15 +337,35 @@ public partial class ReportViewModel : ObservableObject
         Interlocked.Read(ref _activeLoadAttempt) == attempt;
     private readonly HashSet<SmartTestSessionSelectionItem> _observedSmartTestSelections = new();
 
+    /// <summary>
+    /// Revoke an in-flight review preview on every client/source change.
+    /// A delayed asynchronous callback must never reattach stale evidence.
+    /// </summary>
+    private void RevokeSourceReview()
+    {
+        Interlocked.Increment(ref _activeReviewAttempt);
+        _pendingSourceReview = null;
+        HasPendingSourceReview = false;
+        ReviewConsent = false;
+        SourceReviewEvidence = string.Empty;
+        if (_isReviewCommandRunning)
+        {
+            _isReviewCommandRunning = false;
+            IsRunning = false;
+        }
+    }
+
     partial void OnSelectedServiceReportChanged(ServiceReport? value)
     {
         _customerSelectionRevision++;
+        RevokeSourceReview();
         InvalidateGeneratedArtifacts();
     }
 
     partial void OnIncludeClientChanged(bool value)
     {
         _customerSelectionRevision++;
+        RevokeSourceReview();
         InvalidateGeneratedArtifacts();
     }
 
@@ -340,7 +381,11 @@ public partial class ReportViewModel : ObservableObject
     partial void OnIncludeSmartChanged(bool value) => InvalidateGeneratedArtifacts();
     partial void OnIncludeSmartTestsChanged(bool value) => InvalidateGeneratedArtifacts();
     partial void OnIncludeRecommendationsChanged(bool value) => InvalidateGeneratedArtifacts();
-    partial void OnSelectedDiagnosticReportChanged(DiagnosticReport? value) => InvalidateGeneratedArtifacts();
+    partial void OnSelectedDiagnosticReportChanged(DiagnosticReport? value)
+    {
+        RevokeSourceReview();
+        InvalidateGeneratedArtifacts();
+    }
     partial void OnSelectedStartupAnalysisChanged(StartupAnalysis? value) => InvalidateGeneratedArtifacts();
     partial void OnSelectedCleanupResultChanged(TempCleanupResult? value) => InvalidateGeneratedArtifacts();
     partial void OnSelectedVisualOptimizationResultChanged(VisualOptimizationResult? value) => InvalidateGeneratedArtifacts();
@@ -723,6 +768,147 @@ public partial class ReportViewModel : ObservableObject
     /// <summary>
     /// Genera el informe HTML.
     /// </summary>
+    /// <summary>
+    /// Review the selected saved client's case and the exact on-disk
+    /// diagnostic. This displays a proposal ONLY; no binding is written.
+    /// </summary>
+    [RelayCommand]
+    private async Task PreviewDiagnosticReviewAsync()
+    {
+        if (IsRunning || _isLoadingData)
+            return;
+        if (_sourceReviewCoordinator is null || !IncludeClient
+            || SelectedServiceReport is not { } selectedCase
+            || SelectedDiagnosticReport is not { } selectedDiagnostic)
+        {
+            ShowError("Seleccioná un caso de cliente y un diagnóstico para revisar.");
+            return;
+        }
+
+        RevokeSourceReview();
+        var attempt = Interlocked.Increment(ref _activeReviewAttempt);
+        var revision = _artifactRevision;
+        _isReviewCommandRunning = true;
+        IsRunning = true;
+        StatusText = "Verificando evidencia...";
+        try
+        {
+            var prepared = await _sourceReviewCoordinator.PrepareAsync(
+                selectedCase, "Diagnostic", selectedDiagnostic.Id);
+            if (attempt != Interlocked.Read(ref _activeReviewAttempt)
+                || revision != _artifactRevision
+                || !IncludeClient
+                || !ReferenceEquals(SelectedServiceReport, selectedCase)
+                || !ReferenceEquals(SelectedDiagnosticReport, selectedDiagnostic))
+                return;
+            if (prepared.Status != SourceReviewCoordinationStatus.Prepared
+                || prepared.Preview is null)
+            {
+                ShowError(prepared.Status == SourceReviewCoordinationStatus.AmbiguousSource
+                    ? "Hay diagnósticos duplicados. Revisá el historial antes de vincular."
+                    : "No se pudo comprobar un único caso y diagnóstico íntegros.");
+                StatusText = "Revisión no disponible";
+                return;
+            }
+
+            _pendingSourceReview = prepared.Preview;
+            HasPendingSourceReview = true;
+            ReviewConsent = false;
+            SourceReviewEvidence = "Cliente: " + selectedCase.Client.Name
+                + " · Equipo: " + selectedCase.Equipment.Brand
+                + " " + selectedCase.Equipment.Model
+                + " · Diagnóstico: " + selectedDiagnostic.OsName
+                + " · Huella SHA-256: " + prepared.Preview.SourceSha256[..12] + "…";
+            StatusText = "Revisión pendiente de confirmación";
+            ClearMessages();
+        }
+        catch (Exception)
+        {
+            if (attempt == Interlocked.Read(ref _activeReviewAttempt))
+                ShowError("La revisión no pudo completarse. Revisá el almacenamiento.");
+        }
+        finally
+        {
+            if (attempt == Interlocked.Read(ref _activeReviewAttempt)
+                && _isReviewCommandRunning)
+            {
+                _isReviewCommandRunning = false;
+                IsRunning = false;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Persist a reviewed claim only with explicit consent and the SAME
+    /// selected UI source/case. The report export guard stays unchanged.
+    /// </summary>
+    [RelayCommand]
+    private async Task ConfirmDiagnosticReviewAsync()
+    {
+        if (IsRunning || _isLoadingData)
+            return;
+        if (_sourceReviewCoordinator is null || _pendingSourceReview is null
+            || !HasPendingSourceReview)
+        {
+            ShowError("Primero verificá el diagnóstico seleccionado.");
+            return;
+        }
+        if (!ReviewConsent || string.IsNullOrWhiteSpace(ReviewerAlias))
+        {
+            ShowError("Indicá tu alias técnico y confirmá expresamente la revisión.");
+            return;
+        }
+
+        var preview = _pendingSourceReview;
+        var originalCase = SelectedServiceReport;
+        var originalDiagnostic = SelectedDiagnosticReport;
+        var attempt = Interlocked.Increment(ref _activeReviewAttempt);
+        var revision = _artifactRevision;
+        _isReviewCommandRunning = true;
+        IsRunning = true;
+        StatusText = "Registrando revisión...";
+        try
+        {
+            var result = await _sourceReviewCoordinator.ConfirmAsync(
+                preview, ReviewerAlias, true);
+            if (attempt != Interlocked.Read(ref _activeReviewAttempt)
+                || revision != _artifactRevision
+                || !IncludeClient
+                || !ReferenceEquals(SelectedServiceReport, originalCase)
+                || !ReferenceEquals(SelectedDiagnosticReport, originalDiagnostic)
+                || !ReferenceEquals(_pendingSourceReview, preview))
+                return;
+            _pendingSourceReview = null;
+            HasPendingSourceReview = false;
+            ReviewConsent = false;
+            SourceReviewEvidence = string.Empty;
+            if (result.Status == SourceReviewCoordinationStatus.Recorded)
+            {
+                StatusText = "Revisión registrada";
+                ShowSuccess("Asociación auditada. Su inclusión en informes requiere la certificación final.");
+            }
+            else
+            {
+                StatusText = "Revisión rechazada";
+                ShowError("La evidencia cambió, venció o no pudo validarse. Volvé a revisar.");
+            }
+        }
+        catch (Exception)
+        {
+            if (attempt == Interlocked.Read(ref _activeReviewAttempt))
+                ShowError("No se pudo completar el registro de revisión.");
+        }
+        finally
+        {
+            if (attempt == Interlocked.Read(ref _activeReviewAttempt)
+                && _isReviewCommandRunning)
+            {
+                _isReviewCommandRunning = false;
+                IsRunning = false;
+            }
+        }
+    }
+
     [RelayCommand]
     private async Task GenerateReportAsync()
     {

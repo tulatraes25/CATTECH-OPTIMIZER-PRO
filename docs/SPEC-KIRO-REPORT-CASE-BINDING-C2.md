@@ -117,3 +117,8 @@ C1/C1b established the case ID and generated-report trace. C2-A and C2-B source/
 - ReportSourceReviewCoordinator comprueba un caso de cliente guardado y unico, su hash serializado y una fuente del catalogo estrictamente unica. Prepara un token de revision local y efimero (5 minutos) sin datos personales visibles.
 - Al confirmar, exige consentimiento expreso, revisa nuevamente el caso y la fuente, y delega la escritura a la bitacora C2-B4 ligada a la huella examinada. Cambio de caso, duplicidad, expiracion o alteracion del origen bloquean la escritura.
 - Se mantiene privado de Infrastructure y desconectado de WPF/exportador hasta implementar C2-C UI y C2-D con validacion de bytes durante la generacion. Las pruebas son sinteticas.
+
+## C2-C1 — interfaz WPF para revisión expresa de diagnostico
+- La vista de informes ofrece verificar el caso y diagnóstico seleccionados, muestra un resumen legible y un prefijo de SHA-256, pide alias técnico local y casilla de confirmación desmarcada por defecto.
+- El ViewModel invalida instantáneamente el token en cambios de cliente, diagnóstico, carga nueva o selección A-B-A. Respuestas asincrónicas tardías no reviven el consentimiento.
+- La escritura revalida nuevamente el caso y la fuente mediante el coordinador. Se confirma solamente el registro auditado; el bloqueo de informes combinados sigue activo hasta C2-D y QA físico de WPF.
