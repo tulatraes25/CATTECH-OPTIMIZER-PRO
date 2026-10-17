@@ -1,0 +1,67 @@
+# SPEC Kiro #92 — C2: vínculo auditable de fuentes con caso de servicio
+
+**Estado:** DISEÑO VERIFICABLE / BLOQUEO P0 ABIERTO. No es autorización para publicar.
+**Base exacta:** `359d983e257980ea0e382861925b90b8ea9e4bef`. Se inspeccionó el CI Windows #253 (1725/1725), paquete candidato #31 y las implementaciones actuales de `ReportSourceCasePolicy` y `ReportViewModel`.
+
+## GOAL
+El técnico debe poder asociar un diagnóstico, inicio, SMART o self-test con un caso concreto **sin falsificar origen ni mezclar computadoras diferentes**. Una coincidencia de GUID es NECESARIA pero nunca suficiente.
+
+## THREAT MODEL
+- Dos clientes distintos con discos de igual modelo, serial vacío/duplicado y mismo horario.
+- Fuentes `legacy` con `ServiceCaseId=null`, origen desconocido y archivos históricos inmutables.
+- Un JSON editado manualmente para copiar un `ServiceCaseId` ajeno.
+- Cambios A→B→A en la selección mientras se genera HTML o PDF.
+- Archivo renombrado o modificado después de asociarlo.
+- Un diagnóstico de disco físico distinto del volumen lógico del cliente.
+- Un evento SMART de otra sesión cuya hora o dispositivo coincide por casualidad.
+- Una fuente legítima de un equipo compartido que no corresponde a la intervención actual.
+
+## REQUIRED DATA CONTRACT (new versioned sidecar; DO NOT ALTER legacy source payloads)
+- `schemaVersion` entero explícito; `bindingId` GUID independiente y no vacío.
+- `serviceCaseId`, `sourceKind`, `sourceRecordId`, `sourceContentSha256`, `sourceFileIdentity` (relative canonical path under approved store).
+- `confirmedAtUtc`, `confirmedBy` local technician identity, `confirmationMethod` enum `ExplicitTechnicianReview`.
+- `sourceObservations`: capture limited factual equipment cues with privacy classification, not an attestation (e.g. disk serial may be N/D); never export raw paths or identifiers by default.
+- `rejectedReason`/revocation event in append-only local audit, without arbitrary raw exception text.
+- Compatibility: old source and reports remain readable without a binding. Sidecar is opt-in, local and reversible, not written into original historical evidence.
+
+## BOUNDARY RULES
+1. `ServiceCaseId` equality ALONE cannot create a binding. An included source requires a currently valid sidecar confirming exact source record/digest, case identity and local technician action.
+2. Inspect the unmodified stored source **at export time**; verify digest, canonical path and no reparse/redirected storage traversal before using its data. Refuse stale/missing/tampered source. No save in report-generation path.
+3. Bindings from different cases or source kinds are rejected even when serial/model/timestamp match. Never auto-match by heuristics.
+4. If source digest changes or file is replaced, previously accepted binding becomes invalid and must be explicitly reviewed again; no automatic repair.
+5. The UI displays both associated and unassociated history, but permits inclusion in a named-client report **only** when binding passes. Warning text: `Sin asociar al equipo` / `Fuente modificada: requiere nueva revisión` without private paths.
+6. All HTML, PDF, recommendation generation and generated report history receive a **detached validated snapshot**; do not use mutable `Selected*` after an await.
+7. The binding grants attribution only to a **service case** and source snapshot, never asserts sensor truth, device ownership or confirmed repair cause.
+8. Duplicate/ambiguous sidecars for the same source and case fail closed rather than choose the newest arbitrarily.
+9. No binding in generic client-free exports unless an explicitly titled standalone diagnostic scope is used; never inherit stale client context.
+10. An association must be revocable without deleting its source. Revocation immediately invalidates generated preview buttons; historical exported PDFs remain immutable and retain provenance explanation.
+
+## DESIGN PHASES
+- **C2-A:** pure validator and immutable sidecar DTO + canonical serialization/hash fixtures, null and duplicate rejection, zero filesystem writes (Core).
+- **C2-B:** isolated Infrastructure reader/writer in approved local report store, atomic create-no-overwrite, append-only audit; prove redirected/symlink and concurrent write rejection.
+- **C2-C:** explicit WPF confirmation surface with readable evidence, source/case selection and consent expiration. No silent default selection.
+- **C2-D:** adopt validated detached bindings at ReportViewModel + HtmlReportService boundaries, PDF and recommendations; retest after every await, no private metadata leaks.
+- **C2-E:** targeted legacy migration UX (read-only, no guessing), 2-client/2-disk adversarial matrix, Windows hardware/Edge PDF smoke via OpenCode on exact signed-off commit.
+Each phase is a small GitHub PR/commit and needs a fresh exact-SHA Windows CI plus candidate package verification. Do not merge a partially trusted C2 chain to main.
+
+## ACCEPTANCE MATRIX (synthetic)
+| Case | Expected |
+|---|---|
+| Case A source A with valid verified binding | include, clearly labeled reviewed association |
+| Case A source B with same timestamp/serial | reject |
+| Case A source B with forged `ServiceCaseId=A` | reject |
+| Case A old source without sidecar | visible as unassociated, not included |
+| Source changed after binding / same ID different bytes | reject |
+| Duplicate binding files / concurrent acceptance | reject |
+| Reparse point path to outside approved store | reject |
+| Case A→B→A while reading source | reject old export |
+| Access denied/unavailable source | reject attribution; preserve older source |
+| PDF, HTML, recommendations and index | exactly same accepted provenance, no private path/PII |
+| Binding revoked during export | abort old export, preserve current UI |
+| Broken binding audit write | no success claim/no source mutation |
+
+## CURRENT NON-GOALS
+No deletion of old records; no network/cloud account, no fake hardware attestation, no automatic binding by serial/hostname, no real cleanup/SFC/DISM/Defender changes; no public release or main merge.
+
+## CURRENT DISPOSITION
+C1/C1b established the case ID and generated-report trace. C2-A through C2-E remain **NOT IMPLEMENTED**. Current `ReportSourceCasePolicy.HasMatchingExplicitCase` is a necessary **not sufficient** condition; its existing passing test proves only equal GUIDs, not provenance. Maintain issue #92 P0 until real binding, negative tests and Windows physical QA pass.
