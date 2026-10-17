@@ -996,9 +996,87 @@ public class ReportViewModelTests
         Assert.DoesNotContain("máximo los 10", vm.ReportInventoryMessage);
     }
 
+    [Fact]
+    public async Task SummaryOnlyHistory_DoesNotOfferPhantomCleanupOrRestoreSections()
+    {
+        var (vm, writer) = CreateViewModel(
+            cleanup: new FakeCleanupService { SummaryCount = 2 },
+            restore: new FakeRestorePointService { SummaryCount = 1 });
+        await vm.LoadDataCommand.ExecuteAsync(null);
+
+        Assert.Empty(vm.AvailableCleanupResults);
+        Assert.Empty(vm.AvailableRestorePointResults);
+        Assert.Null(vm.SelectedCleanupResult);
+        Assert.Null(vm.SelectedRestorePointResult);
+        Assert.False(vm.HasCleanupData);
+        Assert.False(vm.HasRestorePointData);
+        Assert.False(vm.IncludeCleanup);
+        Assert.False(vm.IncludeRestorePoint);
+        Assert.Contains("no exportables", vm.StatusText);
+
+        await vm.GenerateReportCommand.ExecuteAsync(null);
+        var options = Assert.IsType<ReportGenerationOptions>(writer.LastCapturedOptions);
+        Assert.False(options.IncludeCleanup);
+        Assert.False(options.IncludeRestorePoint);
+        Assert.Null(options.CleanupResult);
+        Assert.Null(options.RestorePointResult);
+        Assert.NotNull(writer.LastSavedInfo);
+        Assert.DoesNotContain("Limpieza", writer.LastSavedInfo.IncludedSections);
+        Assert.DoesNotContain("Restauración", writer.LastSavedInfo.IncludedSections);
+    }
+
+    [Fact]
+    public async Task ForgedFullHistoryObjectsAndCheckboxes_CannotReachExport()
+    {
+        var (vm, writer) = CreateViewModel(
+            cleanup: new FakeCleanupService { SummaryCount = 1 },
+            restore: new FakeRestorePointService { SummaryCount = 1 });
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        vm.HasCleanupData = true;
+        vm.HasRestorePointData = true;
+        vm.SelectedCleanupResult = new TempCleanupResult();
+        vm.SelectedRestorePointResult = new RestorePointResult();
+        vm.IncludeCleanup = true;
+        vm.IncludeRestorePoint = true;
+
+        await vm.GenerateReportCommand.ExecuteAsync(null);
+        var options = Assert.IsType<ReportGenerationOptions>(writer.LastCapturedOptions);
+        Assert.False(options.IncludeCleanup);
+        Assert.False(options.IncludeRestorePoint);
+        Assert.Null(options.CleanupResult);
+        Assert.Null(options.RestorePointResult);
+        Assert.NotNull(writer.LastSavedInfo);
+        Assert.DoesNotContain("Limpieza", writer.LastSavedInfo.IncludedSections);
+        Assert.DoesNotContain("Restauración", writer.LastSavedInfo.IncludedSections);
+    }
+
+    [Fact]
+    public async Task RefreshWithSummaryOnlyHistory_RevokesPriorSelections()
+    {
+        var (vm, _) = CreateViewModel(
+            cleanup: new FakeCleanupService { SummaryCount = 1 },
+            restore: new FakeRestorePointService { SummaryCount = 2 });
+        vm.SelectedCleanupResult = new TempCleanupResult();
+        vm.SelectedRestorePointResult = new RestorePointResult();
+        vm.HasCleanupData = true;
+        vm.HasRestorePointData = true;
+        vm.IncludeCleanup = true;
+        vm.IncludeRestorePoint = true;
+
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        Assert.Null(vm.SelectedCleanupResult);
+        Assert.Null(vm.SelectedRestorePointResult);
+        Assert.False(vm.HasCleanupData);
+        Assert.False(vm.HasRestorePointData);
+        Assert.False(vm.IncludeCleanup);
+        Assert.False(vm.IncludeRestorePoint);
+        Assert.Empty(vm.AvailableCleanupResults);
+        Assert.Empty(vm.AvailableRestorePointResults);
+    }
+
     // ===== Helper =====
 
-    private static (ReportViewModel vm, FakeReportGenerationService fakeReportService) CreateViewModel(FakeServiceReportService? storedReports = null, FakePdfExportService? pdfExporter = null, FakeSettingsService? settings = null)
+    private static (ReportViewModel vm, FakeReportGenerationService fakeReportService) CreateViewModel(FakeServiceReportService? storedReports = null, FakePdfExportService? pdfExporter = null, FakeSettingsService? settings = null, FakeCleanupService? cleanup = null, FakeRestorePointService? restore = null)
     {
         var fakeReportService = new FakeReportGenerationService();
         var vm = new ReportViewModel(
@@ -1008,9 +1086,9 @@ public class ReportViewModelTests
             storedReports ?? new FakeServiceReportService(),
             new FakeDiagnosticService(),
             new FakeStartupService(),
-            new FakeCleanupService(),
+            cleanup ?? new FakeCleanupService(),
             new FakeVisualOptimizationService(),
-            new FakeRestorePointService(),
+            restore ?? new FakeRestorePointService(),
             new FakeSmartDiskService(),
             new FakeSmartTestService());
         return (vm, fakeReportService);
@@ -1250,10 +1328,13 @@ public class ReportViewModelTests
 
     private class FakeCleanupService : ITempCleanupService
     {
+        public int SummaryCount { get; set; }
         public Task<List<TempCleanupTarget>> ScanAsync(IProgress<int>? progress = null) => Task.FromResult(new List<TempCleanupTarget>());
         public Task<TempCleanupResult> CleanupAsync(IEnumerable<TempCleanupTarget> targets, IProgress<int>? progress = null) => Task.FromResult(new TempCleanupResult());
         public Task<string> SaveResultAsync(TempCleanupResult result) => Task.FromResult("1");
-        public Task<List<TempCleanupResultSummary>> ListResultsAsync(int maxResults = 20) => Task.FromResult(new List<TempCleanupResultSummary>());
+        public Task<List<TempCleanupResultSummary>> ListResultsAsync(int maxResults = 20) =>
+            Task.FromResult(Enumerable.Range(0, Math.Min(SummaryCount, maxResults))
+                .Select(i => new TempCleanupResultSummary { Id = $"synthetic-cleanup-{i}" }).ToList());
     }
 
     private class FakeVisualOptimizationService : IVisualOptimizationService
@@ -1267,11 +1348,14 @@ public class ReportViewModelTests
 
     private class FakeRestorePointService : IRestorePointService
     {
+        public int SummaryCount { get; set; }
         public Task<RestorePointStatus> CheckStatusAsync() => Task.FromResult(new RestorePointStatus());
         public Task<RestorePointResult> CreateRestorePointAsync(string name) => Task.FromResult(new RestorePointResult());
         public string GenerateRestorePointName() => "Test Restore Point";
         public Task<string> SaveResultAsync(RestorePointResult result) => Task.FromResult("1");
-        public Task<List<RestorePointResultSummary>> ListResultsAsync(int maxResults = 20) => Task.FromResult(new List<RestorePointResultSummary>());
+        public Task<List<RestorePointResultSummary>> ListResultsAsync(int maxResults = 20) =>
+            Task.FromResult(Enumerable.Range(0, Math.Min(SummaryCount, maxResults))
+                .Select(i => new RestorePointResultSummary { Id = $"synthetic-restore-{i}" }).ToList());
     }
 
     private class FakeSmartDiskService : ISmartDiskService

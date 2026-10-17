@@ -449,6 +449,15 @@ public partial class ReportViewModel : ObservableObject
         SelectedServiceReport = null;
         HasClientData = false;
         IncludeClient = false;
+        // Revoke stale history selections BEFORE any awaited storage I/O.
+        AvailableCleanupResults.Clear();
+        SelectedCleanupResult = null;
+        HasCleanupData = false;
+        IncludeCleanup = false;
+        AvailableRestorePointResults.Clear();
+        SelectedRestorePointResult = null;
+        HasRestorePointData = false;
+        IncludeRestorePoint = false;
         InvalidateGeneratedArtifacts();
 
         try
@@ -516,32 +525,25 @@ public partial class ReportViewModel : ObservableObject
             if (HasStartupData) SelectedStartupAnalysis = AvailableStartupAnalyses.First();
             IncludeStartup = HasStartupData;
 
-            // Limpieza
+            // History entries are SUMMARIES, not selectable full results.
+            // No audited LoadResultAsync exists; never invent missing details.
             var cleanupSummaries = await _cleanupService.ListResultsAsync(5);
             AvailableCleanupResults.Clear();
-            HasCleanupData = cleanupSummaries.Count > 0;
-            if (HasCleanupData)
-            {
-                // Los resultados de limpieza ya vienen completos en el listado
-                // Usamos los summaries como placeholders - en producción se cargarían completos
-                SelectedCleanupResult = null;
-            }
-            IncludeCleanup = HasCleanupData;
+            SelectedCleanupResult = null;
+            HasCleanupData = false;
+            IncludeCleanup = false;
 
             // Optimización visual
             HasVisualOptimizationData = false;
             IncludeVisualOptimization = false;
 
-            // Punto de restauración
+            // Restore history is likewise summary-only. A future full
+            // loader needs stable IDs, schema validation and permission gates.
             var restoreSummaries = await _restorePointService.ListResultsAsync(5);
             AvailableRestorePointResults.Clear();
-            HasRestorePointData = restoreSummaries.Count > 0;
-            if (HasRestorePointData)
-            {
-                // Los resultados de restauración ya vienen completos en el listado
-                SelectedRestorePointResult = null;
-            }
-            IncludeRestorePoint = HasRestorePointData;
+            SelectedRestorePointResult = null;
+            HasRestorePointData = false;
+            IncludeRestorePoint = false;
 
             // SMART (solo datos persistidos, NO se ejecuta smartctl)
             var smartAnalyses = await _smartDiskService.ListResultsAsync(10);
@@ -575,7 +577,10 @@ public partial class ReportViewModel : ObservableObject
             IncludeSmartTests = false; // Selección manual intencional
 
             StatusText = HasReportInventoryWarning
-                ? "Informes requieren revisión" : "Datos cargados";
+                ? "Informes requieren revisión"
+                : cleanupSummaries.Count > 0 || restoreSummaries.Count > 0
+                    ? "Datos cargados; historiales de limpieza/restauración no exportables"
+                    : "Datos cargados";
 
             // Invalidar artifacts generados previamente para forzar regeneración
             // con los datos actualmente cargados (fix SMOKE-B1R-006)
@@ -881,6 +886,15 @@ public partial class ReportViewModel : ObservableObject
             .Select(x => x.Session)
             .ToList();
 
+        // Checkbox state alone cannot certify a report section. Require
+        // that a selected FULL result belongs to the available inventory.
+        var selectedCleanup = IncludeCleanup && HasCleanupData
+            && SelectedCleanupResult is { } cleanup
+            && AvailableCleanupResults.Contains(cleanup) ? cleanup : null;
+        var selectedRestore = IncludeRestorePoint && HasRestorePointData
+            && SelectedRestorePointResult is { } restore
+            && AvailableRestorePointResults.Contains(restore) ? restore : null;
+
         return new ReportGenerationOptions
         {
             Settings = await _settingsService.LoadSettingsAsync(),
@@ -888,9 +902,9 @@ public partial class ReportViewModel : ObservableObject
             ServiceReport = IncludeClient ? SelectedServiceReport : null,
             DiagnosticReport = SelectedDiagnosticReport,
             StartupAnalysis = SelectedStartupAnalysis,
-            CleanupResult = SelectedCleanupResult,
+            CleanupResult = selectedCleanup,
             VisualOptimizationResult = SelectedVisualOptimizationResult,
-            RestorePointResult = SelectedRestorePointResult,
+            RestorePointResult = selectedRestore,
             SmartAnalysis = SelectedSmartAnalysis,
             SmartTestSessions = selectedTests,
             FinalObservations = FinalObservations,
@@ -898,9 +912,9 @@ public partial class ReportViewModel : ObservableObject
             IncludeClient = IncludeClient,
             IncludeDiagnostic = IncludeDiagnostic,
             IncludeStartup = IncludeStartup,
-            IncludeCleanup = IncludeCleanup,
+            IncludeCleanup = selectedCleanup is not null,
             IncludeVisualOptimization = IncludeVisualOptimization,
-            IncludeRestorePoint = IncludeRestorePoint,
+            IncludeRestorePoint = selectedRestore is not null,
             IncludeSmart = IncludeSmart,
             IncludeSmartTests = IncludeSmartTests && selectedTests.Count > 0,
             IncludeRecommendations = IncludeRecommendations
