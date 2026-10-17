@@ -39,9 +39,23 @@ public class HtmlReportService : IReportGenerationService
     }
 
     /// <inheritdoc/>
-    public async Task<string> GenerateHtmlReportAsync(ReportGenerationOptions options)
+    public Task<string> GenerateHtmlReportAsync(ReportGenerationOptions options) =>
+        GenerateHtmlWithPublicationCheckAsync(options, _ => Task.FromResult(true));
+
+    /// <summary>
+    /// C2-D3a: optional LAST-MOMENT check after the private staging write and
+    /// before final publication. Never bypasses the existing mixed-customer
+    /// source restriction. A future audit-scoped caller must hold its trusted
+    /// journal transaction THROUGH publication; this alone is not proof.
+    /// </summary>
+    internal async Task<string> GenerateHtmlWithPublicationCheckAsync(
+        ReportGenerationOptions options,
+        Func<CancellationToken, Task<bool>> confirmBeforePublish,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(confirmBeforePublish);
+        cancellationToken.ThrowIfCancellationRequested();
         // Enforce case attribution at the generator boundary too: callers
         // outside WPF must not bypass selected-client/source linkage.
         // Check BEFORE any report-directory or output-file side effect.
@@ -80,6 +94,12 @@ public class HtmlReportService : IReportGenerationService
                 await writer.WriteAsync(html);
             }
 
+            // A rejected, canceled or failed final verification must never
+            // publish a temporary report under its final .html filename.
+            if (!await confirmBeforePublish(cancellationToken).ConfigureAwait(false))
+                throw new InvalidOperationException(
+                    "No se pudo verificar el estado actual del informe.");
+            cancellationToken.ThrowIfCancellationRequested();
             File.Move(stagedPath, filePath); // No overwrite; same directory/filesystem.
             return filePath;
         }

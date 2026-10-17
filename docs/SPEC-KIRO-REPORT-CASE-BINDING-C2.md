@@ -165,3 +165,9 @@ C1/C1b established the case ID and generated-report trace. C2-A and C2-B source/
 - DiagnosticAttributionCandidate deja de exponer referencias directas a ServiceReport y DiagnosticReport mutables: guarda serializaciones privadas obtenidas del caso persistido y del diagnóstico capturado mediante C2-D1. ReadDetachedModels genera instancias nuevas y separadas para un eventual consumidor interno.
 - Se publican internamente solo BindingId, ServiceCaseId, ID de fuente y huellas SHA-256; no se expone la ruta privada de archivo ni un campo IsAuthorized. Las pruebas mutan tanto la selección original como la primera copia y comprueban que ninguna altere una captura posterior.
 - La serialización privada puede contener datos personales y no debe registrarse, enviarse, guardarse en reportes o considerarse evidencia de identidad física. C2-D3 todavía debe crear la transacción de salida y revalidar asociación y revocación al publicar; HTML/PDF mixtos permanecen bloqueados.
+
+
+## C2-D3a — prepublicación HTML con rechazo limpio
+- HtmlReportService incorpora una comprobación interna opcional al final de la escritura privada en staging y antes de mover el archivo HTML al nombre definitivo. Cancelación, validación negativa o excepción dejan sin publicación y limpian el archivo temporal. El servicio público mantiene la misma funcionalidad por defecto.
+- La protección P0 de cliente más diagnóstico independiente se evalúa ANTES de crear directorios o invocar la comprobación; ni siquiera un callback true puede saltarla. Pruebas sintéticas cubren aceptación, rechazo, cancelación y bypass intentado.
+- Este punto de control no bloquea por sí solo una revocación que ocurra después de validar y antes del Move: la siguiente etapa debe mantener un candado de bitácora de origen y snapshots completos durante la transacción, y coordinar HTML/PDF/recomendaciones/índice. No se habilitó todavía ningún reporte mixto.
