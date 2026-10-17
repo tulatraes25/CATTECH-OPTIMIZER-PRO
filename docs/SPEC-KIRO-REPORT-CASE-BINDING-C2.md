@@ -82,3 +82,10 @@ C1/C1b established the case ID and generated-report trace. C2-A through C2-E rem
 - Input is bounded at 4 MiB, duplicate/invalid top-level IDs fail closed, and private payload buffers are cleared. No source files, sidecars, reports or customer indexes are modified by this reader.
 - The returned in-memory fingerprint is **NOT** technician consent, customer linkage, source custody over time, nor device attestation. Later C2-B2 must implement an append-only audited review journal and C2-D must re-open/revalidate at report export time; no named-client mixed sections are enabled by C2-B1.
 - Path checks reduce risk but do not claim universal resistance to hostile kernel/file-system substitution, hardlink tricks or post-read file replacement. Windows symlink/junction and real-machine tests remain part of C2-E.
+
+## C2-B2-A — local append-only review receipts (pending consumer integration)
+- An internal SourceBindingReviewJournal accepts only an explicitly acknowledged synthetic review request, safe local reviewer alias, nonempty service-case GUID, and a source that has independently passed the C2-B1 fingerprint reader twice.
+- Within a cooperating-process exclusive lock, the journal enumerates every prior claim. An unreadable/duplicated/tampered entry fails closed; a source already linked to another case or reused path is rejected.
+- A new review claim is staged in an isolated temporary file and moved without overwriting as a standalone immutable-by-CATTECH JSON receipt. Existing diagnosis, SMART and service records are untouched. No success status is returned before readback succeeds.
+- This journal is only append-only under normal CATTECH writes; an administrator controlling the local filesystem can tamper with files. There is no signed hardware attestation or authenticated reviewer UI yet.
+- C2-B2-B must implement explicit revocation events and verify current provenance/review state, C2-C must implement technician confirmation UX and C2-D must revalidate the exact source file and active review at every export boundary. Until then HTML/PDF/automatic recommendations remain blocked for mixed named-client sources.
