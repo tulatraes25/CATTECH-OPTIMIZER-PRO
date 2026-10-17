@@ -435,6 +435,61 @@ public partial class ReportViewModel : ObservableObject
     /// <summary>
     /// Carga todos los datos disponibles.
     /// </summary>
+    /// <summary>
+    /// Immediately revoke ALL prior report-view case bindings on refresh.
+    /// Data sources can fail after any awaited I/O; partially reloaded
+    /// diagnostics or SMART sessions never inherit an earlier case's data.
+    /// Explicit refresh also discards unsaved report-only observations.
+    /// This never deletes stored reports or actual diagnostic evidence.
+    /// </summary>
+    private void RevokeAllReportSelections()
+    {
+        HasCompanyData = false;
+        IncludeCompany = false;
+
+        AvailableServiceReports.Clear();
+        SelectedServiceReport = null;
+        HasClientData = false;
+        IncludeClient = false;
+
+        AvailableDiagnosticReports.Clear();
+        SelectedDiagnosticReport = null;
+        HasDiagnosticData = false;
+        IncludeDiagnostic = false;
+
+        AvailableStartupAnalyses.Clear();
+        SelectedStartupAnalysis = null;
+        HasStartupData = false;
+        IncludeStartup = false;
+
+        AvailableCleanupResults.Clear();
+        SelectedCleanupResult = null;
+        HasCleanupData = false;
+        IncludeCleanup = false;
+
+        AvailableVisualOptResults.Clear();
+        SelectedVisualOptimizationResult = null;
+        HasVisualOptimizationData = false;
+        IncludeVisualOptimization = false;
+
+        AvailableRestorePointResults.Clear();
+        SelectedRestorePointResult = null;
+        HasRestorePointData = false;
+        IncludeRestorePoint = false;
+
+        AvailableSmartAnalyses.Clear();
+        SelectedSmartAnalysis = null;
+        HasSmartData = false;
+        IncludeSmart = false;
+
+        AvailableSmartTestSessions.Clear();
+        HasSmartTestData = false;
+        IncludeSmartTests = false;
+
+        FinalObservations = string.Empty;
+        InvalidateGeneratedArtifacts();
+    }
+
     [RelayCommand]
     private async Task LoadDataAsync()
     {
@@ -445,20 +500,7 @@ public partial class ReportViewModel : ObservableObject
         // an unsuccessful refresh or a newly corrupted report store.
         HasReportInventoryWarning = true;
         ReportInventoryMessage = "Comprobando integridad de informes...";
-        AvailableServiceReports.Clear();
-        SelectedServiceReport = null;
-        HasClientData = false;
-        IncludeClient = false;
-        // Revoke stale history selections BEFORE any awaited storage I/O.
-        AvailableCleanupResults.Clear();
-        SelectedCleanupResult = null;
-        HasCleanupData = false;
-        IncludeCleanup = false;
-        AvailableRestorePointResults.Clear();
-        SelectedRestorePointResult = null;
-        HasRestorePointData = false;
-        IncludeRestorePoint = false;
-        InvalidateGeneratedArtifacts();
+        RevokeAllReportSelections();
 
         try
         {
@@ -593,11 +635,7 @@ public partial class ReportViewModel : ObservableObject
             StatusText = "Error al cargar";
             HasReportInventoryWarning = true;
             ReportInventoryMessage = "La carga quedó incompleta. Volvé a revisar el almacenamiento de informes.";
-            AvailableServiceReports.Clear();
-            SelectedServiceReport = null;
-            HasClientData = false;
-            IncludeClient = false;
-            InvalidateGeneratedArtifacts();
+            RevokeAllReportSelections();
             ShowError("No se pudieron cargar todos los datos. Revisá el almacenamiento y volvé a intentar.");
         }
         finally

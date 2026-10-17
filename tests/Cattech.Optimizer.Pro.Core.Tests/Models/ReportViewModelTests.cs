@@ -1090,9 +1090,96 @@ public class ReportViewModelTests
         Assert.Null(options.DiagnosticReport);
     }
 
+    [Fact]
+    public async Task FailedSettingsRefresh_RevokesPriorDiagnosticAndReportNotes()
+    {
+        var settings = new FakeSettingsService();
+        var (vm, _) = CreateViewModel(settings: settings);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        Assert.True(vm.HasClientData);
+        Assert.True(vm.HasDiagnosticData);
+        Assert.NotNull(vm.SelectedDiagnosticReport);
+
+        vm.FinalObservations = "SYNTHETIC-OLD-CLIENT-PRIVATE";
+        vm.IncludeStartup = true;
+        vm.SelectedStartupAnalysis = new StartupAnalysis();
+        settings.LoadFailure = new IOException(@"C:\SYNTHETIC-OLD-CLIENT\settings.json");
+
+        await vm.LoadDataCommand.ExecuteAsync(null);
+
+        Assert.True(vm.HasError);
+        Assert.True(vm.HasReportInventoryWarning);
+        Assert.Null(vm.SelectedServiceReport);
+        Assert.Null(vm.SelectedDiagnosticReport);
+        Assert.Null(vm.SelectedStartupAnalysis);
+        Assert.False(vm.HasClientData);
+        Assert.False(vm.HasDiagnosticData);
+        Assert.False(vm.HasStartupData);
+        Assert.False(vm.IncludeClient);
+        Assert.False(vm.IncludeDiagnostic);
+        Assert.False(vm.IncludeStartup);
+        Assert.False(vm.IncludeCompany);
+        Assert.False(vm.HasCompanyData);
+        Assert.Empty(vm.AvailableServiceReports);
+        Assert.Empty(vm.AvailableDiagnosticReports);
+        Assert.Empty(vm.AvailableStartupAnalyses);
+        Assert.Empty(vm.FinalObservations);
+        Assert.DoesNotContain("SYNTHETIC-OLD-CLIENT", vm.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task LateSmartRefreshFailure_DoesNotRetainAnyPriorSelectionAndCanRecover()
+    {
+        var smart = new FakeSmartDiskService { ReturnOne = true };
+        var (vm, _) = CreateViewModel(smart: smart);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        Assert.True(vm.HasSmartData);
+        Assert.True(vm.HasDiagnosticData);
+        Assert.NotNull(vm.SelectedSmartAnalysis);
+        Assert.NotNull(vm.SelectedDiagnosticReport);
+        vm.FinalObservations = "SYNTHETIC-CASE-SECRET";
+
+        smart.FailList = true;
+        await vm.LoadDataCommand.ExecuteAsync(null);
+
+        Assert.True(vm.HasError);
+        Assert.True(vm.HasReportInventoryWarning);
+        Assert.Null(vm.SelectedServiceReport);
+        Assert.Null(vm.SelectedDiagnosticReport);
+        Assert.Null(vm.SelectedSmartAnalysis);
+        Assert.Null(vm.SelectedStartupAnalysis);
+        Assert.Null(vm.SelectedCleanupResult);
+        Assert.Null(vm.SelectedRestorePointResult);
+        Assert.False(vm.IncludeClient);
+        Assert.False(vm.IncludeDiagnostic);
+        Assert.False(vm.IncludeStartup);
+        Assert.False(vm.IncludeSmart);
+        Assert.False(vm.IncludeSmartTests);
+        Assert.False(vm.IncludeCleanup);
+        Assert.False(vm.IncludeRestorePoint);
+        Assert.False(vm.HasCompanyData);
+        Assert.False(vm.HasSmartData);
+        Assert.False(vm.HasDiagnosticData);
+        Assert.Empty(vm.AvailableSmartAnalyses);
+        Assert.Empty(vm.AvailableSmartTestSessions);
+        Assert.Empty(vm.AvailableDiagnosticReports);
+        Assert.Empty(vm.FinalObservations);
+        Assert.DoesNotContain("SYNTHETIC-CASE-SECRET", vm.ErrorMessage);
+
+        smart.FailList = false;
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        Assert.False(vm.HasError);
+        Assert.False(vm.HasReportInventoryWarning);
+        Assert.True(vm.HasSmartData);
+        Assert.True(vm.HasDiagnosticData);
+        Assert.NotNull(vm.SelectedSmartAnalysis);
+        Assert.NotNull(vm.SelectedDiagnosticReport);
+        Assert.Empty(vm.FinalObservations);
+    }
+
     // ===== Helper =====
 
-    private static (ReportViewModel vm, FakeReportGenerationService fakeReportService) CreateViewModel(FakeServiceReportService? storedReports = null, FakePdfExportService? pdfExporter = null, FakeSettingsService? settings = null, FakeCleanupService? cleanup = null, FakeRestorePointService? restore = null)
+    private static (ReportViewModel vm, FakeReportGenerationService fakeReportService) CreateViewModel(FakeServiceReportService? storedReports = null, FakePdfExportService? pdfExporter = null, FakeSettingsService? settings = null, FakeCleanupService? cleanup = null, FakeRestorePointService? restore = null, FakeSmartDiskService? smart = null)
     {
         var fakeReportService = new FakeReportGenerationService();
         var vm = new ReportViewModel(
@@ -1105,7 +1192,7 @@ public class ReportViewModelTests
             cleanup ?? new FakeCleanupService(),
             new FakeVisualOptimizationService(),
             restore ?? new FakeRestorePointService(),
-            new FakeSmartDiskService(),
+            smart ?? new FakeSmartDiskService(),
             new FakeSmartTestService());
         return (vm, fakeReportService);
     }
@@ -1376,10 +1463,20 @@ public class ReportViewModelTests
 
     private class FakeSmartDiskService : ISmartDiskService
     {
+        public bool ReturnOne { get; set; }
+        public bool FailList { get; set; }
         public Task<SmartAnalysisResult> AnalyzeAllDisksAsync() => Task.FromResult(new SmartAnalysisResult());
         public Task<SmartDiskReport> AnalyzeDiskAsync(SmartDiskDevice device) => Task.FromResult(new SmartDiskReport());
         public Task<string> SaveResultAsync(SmartAnalysisResult result) => Task.FromResult("1");
-        public Task<IReadOnlyList<SmartAnalysisResult>> ListResultsAsync(int maxResults = 20) => Task.FromResult<IReadOnlyList<SmartAnalysisResult>>(new List<SmartAnalysisResult>());
+        public Task<IReadOnlyList<SmartAnalysisResult>> ListResultsAsync(int maxResults = 20)
+        {
+            if (FailList)
+                throw new IOException(@"C:\SYNTHETIC-PRIVATE\smart-results.json");
+            IReadOnlyList<SmartAnalysisResult> data = ReturnOne
+                ? new[] { new SmartAnalysisResult() }
+                : Array.Empty<SmartAnalysisResult>();
+            return Task.FromResult(data);
+        }
     }
 
     private class FakeSmartTestService : ISmartTestService
