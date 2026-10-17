@@ -138,6 +138,83 @@ public class ServiceReportStrictReadTests
         }
     }
 
+    [Theory]
+    [InlineData("DEADBEEF")]
+    [InlineData("11111111111141118111111111111111")]
+    public async Task DuplicateLegacyOrModernLogicalId_NeverChoosesFirstFileForLoadOrDelete(
+        string repeatedId)
+    {
+        var root = Path.Combine(Path.GetTempPath(),
+            "cattech-ambiguous-scope-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new JsonServiceReportService(root);
+            var first = new ServiceReport
+            {
+                Id = repeatedId,
+                Client = new ClientInfo { Name = "Synthetic Client A" }
+            };
+            var second = new ServiceReport
+            {
+                Id = repeatedId,
+                Client = new ClientInfo { Name = "Synthetic Client B" }
+            };
+            var firstName = await store.SaveReportAsync(first);
+            var secondName = await store.SaveReportAsync(second);
+            Assert.NotEqual(firstName, secondName);
+
+            var dir = Path.Combine(root, "data", "service-reports");
+            var firstPath = Path.Combine(dir, firstName);
+            var secondPath = Path.Combine(dir, secondName);
+            var beforeA = await File.ReadAllTextAsync(firstPath);
+            var beforeB = await File.ReadAllTextAsync(secondPath);
+            var health = await store.InspectReportInventoryAsync();
+
+            Assert.Equal(2, health.TotalFiles);
+            Assert.Equal(2, health.AmbiguousEntries);
+            Assert.Equal(0, health.UniqueEntries);
+            Assert.True(health.RequiresReview);
+            Assert.Null(await store.LoadReportAsync(repeatedId));
+            Assert.False(await store.DeleteReportAsync(repeatedId));
+            Assert.Equal(beforeA, await File.ReadAllTextAsync(firstPath));
+            Assert.Equal(beforeB, await File.ReadAllTextAsync(secondPath));
+            Assert.Equal(2, Directory.GetFiles(dir, "service-report-*.json").Length);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task UniqueLegacyEightHexId_RemainsLoadableAndDeletable_WhenStoreIsHealthy()
+    {
+        var root = Path.Combine(Path.GetTempPath(),
+            "cattech-legacy-id-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new JsonServiceReportService(root);
+            var record = new ServiceReport
+            {
+                Id = "ABCDEF12",
+                Client = new ClientInfo { Name = "Synthetic Legacy QA" }
+            };
+            var name = await store.SaveReportAsync(record);
+            var path = Path.Combine(root, "data", "service-reports", name);
+            Assert.True(File.Exists(path));
+            Assert.Equal("ABCDEF12", (await store.LoadReportAsync(record.Id))?.Id);
+            Assert.False((await store.InspectReportInventoryAsync()).RequiresReview);
+            Assert.True(await store.DeleteReportAsync(record.Id));
+            Assert.False(File.Exists(path));
+            Assert.Null(await store.LoadReportAsync(record.Id));
+            Assert.Equal(0, (await store.InspectReportInventoryAsync()).TotalFiles);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static async Task AssertBadRecordPreservedAsync(
         JsonServiceReportService store, string id, string path, string corruptedJson)
     {
