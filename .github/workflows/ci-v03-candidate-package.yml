@@ -1,0 +1,25 @@
+name: CATTECH v0.3 Candidate Package QA (PR Only)
+
+"on":
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+# Packaging is read-only: Actions artifact only; no tags, merges or Releases.
+# Do not run for arbitrary forks or old stacked PRs.
+concurrency:
+  group: candidate-v03-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: true
+
+jobs:
+  candidate-package:
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'integration/v0.3-certification-20261016' }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/release-package.yml
+    with:
+      version: "0.3.0"
+      source_ref: ${{ github.event.pull_request.head.sha }}

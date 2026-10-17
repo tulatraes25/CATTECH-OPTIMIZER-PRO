@@ -2,9 +2,13 @@
 
 [![CATTECH CI](https://github.com/tulatraes25/CATTECH-OPTIMIZER-PRO/actions/workflows/ci.yml/badge.svg)](https://github.com/tulatraes25/CATTECH-OPTIMIZER-PRO/actions/workflows/ci.yml)
 
-**Versión**: v0.2.2  
+**Versión**: v0.3.0 (candidata no publicada)  
 **Licencia**: MIT  
-**Plataforma**: Windows 10 (1809+) / Windows 11
+**Plataforma del candidato**: Windows 11 y ediciones Windows 10 LTSC admitidas por .NET 10; otras ediciones deben verificarse y no cuentan con garantía de soporte del fabricante.
+
+> **Última release pública estable**: [v0.2.2](https://github.com/tulatraes25/CATTECH-OPTIMIZER-PRO/releases/tag/v0.2.2). La v0.3.0 de esta rama es un candidato sujeto a certificación del ejecutable y pruebas físicas; no descargar como versión final.
+>
+> Soporte oficial de plataforma .NET 10: https://github.com/dotnet/core/blob/main/release-notes/10.0/supported-os.md .
 
 > Historial publicado: [v0.1.1 MVP estabilizado](CHANGELOG.md#011---2026).
 
