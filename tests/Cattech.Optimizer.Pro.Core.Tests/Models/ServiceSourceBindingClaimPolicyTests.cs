@@ -6,7 +6,7 @@ public sealed class ServiceSourceBindingClaimPolicyTests
 {
     private static readonly Guid CaseA = Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
     private static readonly Guid CaseB = Guid.Parse("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
-    private static readonly Guid Record = Guid.Parse("cccccccc-cccc-4ccc-8ccc-cccccccccccc");
+    private const string Record = "ABCDEF12";
     private static readonly Guid Binding = Guid.Parse("dddddddd-dddd-4ddd-8ddd-dddddddddddd");
     private const string Hash = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
     private const string Relative = "diagnostics/record-1.json";
@@ -33,7 +33,7 @@ public sealed class ServiceSourceBindingClaimPolicyTests
         Assert.Equal(ServiceSourceBindingFailure.CaseMismatch,
             Check(Good() with { ServiceCaseId = CaseB }));
         Assert.Equal(ServiceSourceBindingFailure.RecordMismatch,
-            Check(Good() with { SourceRecordId = Binding }));
+            Check(Good() with { SourceRecordId = Binding.ToString("N") }));
         Assert.Equal(ServiceSourceBindingFailure.KindMismatch,
             Check(Good() with { SourceKind = "SMART" }));
     }
@@ -45,6 +45,8 @@ public sealed class ServiceSourceBindingClaimPolicyTests
             Check(Good() with { SourceSha256 = new string('f', 64) }));
         Assert.Equal(ServiceSourceBindingFailure.InvalidSourceDigest,
             Check(Good() with { SourceSha256 = "not a hash" }));
+        Assert.Equal(ServiceSourceBindingFailure.InvalidSourceDigest,
+            Check(Good() with { SourceSha256 = Hash + "\n" }));
     }
 
     [Theory]
@@ -55,6 +57,12 @@ public sealed class ServiceSourceBindingClaimPolicyTests
     [InlineData("diagnostics//file.json")]
     [InlineData("diagnostics/./file.json")]
     [InlineData("diagnostics/file.json\nGITHUB_OUTPUT=x")]
+    [InlineData("diagnostics/file.json\n")]
+    [InlineData("diagnostics/CON.json")]
+    [InlineData("diagnostics/nul.json")]
+    [InlineData("diagnostics/COM1.json")]
+    [InlineData("diagnostics/.hidden.json")]
+    [InlineData("diagnostics/file.")]
     public void UnsafeSourceRelativePathsNeverPassPreflight(string path)
     {
         Assert.Equal(ServiceSourceBindingFailure.PathMismatch,
@@ -73,6 +81,48 @@ public sealed class ServiceSourceBindingClaimPolicyTests
         Assert.Equal(ServiceSourceBindingFailure.InvalidClaim,
             ServiceSourceBindingClaimPolicy.Validate(c, CaseA, "Diagnostic",
                 Record, Hash, Relative, null));
+    }
+
+    [Fact]
+    public void MissingExactClaimOrReusedSourceAcrossCustomersFailsClosed()
+    {
+        var good = Good();
+        var foreignCase = good with
+        {
+            BindingId = Guid.NewGuid(),
+            ServiceCaseId = CaseB
+        };
+        Assert.Equal(ServiceSourceBindingFailure.DuplicateClaim,
+            Check(good, new[] { good, foreignCase }));
+        // One foreign claim is NOT equivalent to the missing exact claim.
+        Assert.Equal(ServiceSourceBindingFailure.DuplicateClaim,
+            Check(good, new[] { foreignCase }));
+
+        var sameSourcePath = good with
+        {
+            BindingId = Guid.NewGuid(),
+            SourceRecordId = "DEADBEEF",
+            ServiceCaseId = CaseB
+        };
+        Assert.Equal(ServiceSourceBindingFailure.DuplicateClaim,
+            Check(good, new[] { good, sameSourcePath }));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("bad/id")]
+    [InlineData("diagnostic\n")]
+    [InlineData("ABCD.1234")]
+    public void InvalidHistoricalSourceIdCannotBeTrusted(string id)
+    {
+        Assert.Equal(ServiceSourceBindingFailure.InvalidClaim,
+            Check(Good() with { SourceRecordId = id }));
+    }
+
+    [Fact]
+    public void ValidLegacyEightCharacterSourceIdIsNotTreatedAsMissingGuid()
+    {
+        Assert.Equal(ServiceSourceBindingFailure.None, Check(Good()));
     }
 
     [Fact]

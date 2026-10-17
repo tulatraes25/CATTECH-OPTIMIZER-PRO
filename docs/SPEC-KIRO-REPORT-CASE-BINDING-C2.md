@@ -70,3 +70,8 @@ C1/C1b established the case ID and generated-report trace. C2-A through C2-E rem
 - A matching mutable GUID no longer grants permission to attribute independent diagnostic, startup, SMART or self-test measurements to a named customer's equipment. HTML, PDF and direct recommendation generation enforce this before attributed output.
 - WPF defaults those source sections off when a named client is selected; manual forcing is rejected with a readable, non-private error. Existing local histories remain intact and can be exported as independent client-free reports.
 - This is a temporary fail-closed release gate, not C2 completion. C2-B through C2-E must restore safely reviewed, on-disk provenance-verified combinations, with revocation, race tests and physical Windows QA. Never re-enable attribution by comparing GUIDs alone.
+
+## C2-A identity and uniqueness hardening
+- The source record ID is the ACTUAL validated string ID from the independent source JSON (including historical 8-character IDs), not an invented GUID. The BindingId and ServiceCaseId remain GUIDs. Comparing a source ID is not attestation.
+- Pure preflight rejects terminal control characters in hashes and relative paths, Windows special device names, ambiguous path segments, and duplicate claim identities/records/files across cases. The exact audited claim must be present once, not merely an arbitrary colliding claim.
+- All validations operate on untrusted DTOs only. A caller-provided inventory cannot certify complete journal custody. Infrastructure C2-B must independently verify on-disk stored bytes and source identity before granting a reviewed association.
