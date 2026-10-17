@@ -174,6 +174,11 @@ public static class TechnicalPassportBuilder
             item.PrivacyClass == EvidencePrivacyClass.Sensitive)
             .Select(item => item.Id).ToHashSet();
 
+        // Index the finite exported inventory once; keep comparisons bounded
+        // even when many diagnostic rules inspect the same subject/fact.
+        var recordsByFact = records.GroupBy(item => (item.SubjectId, item.FactKey))
+            .ToDictionary(group => group.Key, group => group.ToArray());
+
         foreach (var assessment in assessments)
         {
             if (!Enum.IsDefined(assessment.Status))
@@ -197,20 +202,58 @@ public static class TechnicalPassportBuilder
                     "Diagnostic evaluated a different evidence snapshot.",
                     nameof(diagnostics));
 
-            // Equality of old IDs alone is insufficient: another observation
-            // for a rule-required disk/fact can appear later in the passport
-            // and overturn the old conclusion. Require set completeness
-            // across every rule-required subject/fact pair, not across
-            // unrelated measurements or other disks.
-            var requiredFacts = assessment.EvaluatedFactReferences
-                .Select(item => (item.SubjectId, item.FactKey))
-                .ToHashSet();
-            if (records.Any(record =>
-                    requiredFacts.Contains((record.SubjectId, record.FactKey))
-                    && !assessment.EvaluatedObservations.ContainsKey(record.Id)))
-                throw new ArgumentException(
-                    "Diagnostic omitted new observations for an evaluated fact.",
-                    nameof(diagnostics));
+            // Historical inventory can legitimately contain older readings
+            // of the same fact: a postcheck may diagnose from the latest
+            // observation while retaining a prior (unhealthy) baseline.
+            // Reject newer readings, simultaneous competing observations,
+            // and newly populated gaps. Do not reject historical records
+            // strictly older than the earliest reading actually evaluated.
+            //
+            // The privacy filter below never exports assessments linked to
+            // sensitive evidence. They still require exact bound identities,
+            // but must not block a safe report just because other readings
+            // of the same fact were deliberately omitted from that private
+            // assessment's input subset.
+            var isPrivateAssessment = assessment.SupportingEvidenceIds
+                .Concat(assessment.ContradictingEvidenceIds)
+                .Any(sensitiveIds.Contains);
+            if (!isPrivateAssessment)
+            {
+                var evaluatedByFact = assessment.EvaluatedObservations.Values
+                    .GroupBy(item => (item.SubjectId, item.FactKey))
+                    .ToDictionary(group => group.Key, group => group.ToArray());
+
+                foreach (var required in assessment.EvaluatedFactReferences)
+                {
+                    var key = (required.SubjectId, required.FactKey);
+                    if (!recordsByFact.TryGetValue(key, out var inventory))
+                        continue;
+
+                    evaluatedByFact.TryGetValue(key, out var evaluated);
+                    if (evaluated is null || evaluated.Length == 0)
+                    {
+                        // No reading had been seen for this required fact.
+                        // Even the first later observation makes that old
+                        // assessment's missing-fact basis stale.
+                        throw new ArgumentException(
+                            "Diagnostic omitted newly available evidence.",
+                            nameof(diagnostics));
+                    }
+
+                    var earliest = evaluated.Min(item => item.ObservedAtUtc);
+                    var hasObserved = evaluated.Any(item =>
+                        item.Availability == EvidenceAvailability.Observed);
+                    if (inventory.Any(item =>
+                        !assessment.EvaluatedObservations.ContainsKey(item.Id)
+                        && (item.ObservedAtUtc > earliest
+                            || (item.ObservedAtUtc == earliest
+                                && (item.Availability == EvidenceAvailability.Observed
+                                    || !hasObserved)))))
+                        throw new ArgumentException(
+                            "Diagnostic omitted competing or newer scoped evidence.",
+                            nameof(diagnostics));
+                }
+            }
         }
 
         foreach (var outcome in postchecks)

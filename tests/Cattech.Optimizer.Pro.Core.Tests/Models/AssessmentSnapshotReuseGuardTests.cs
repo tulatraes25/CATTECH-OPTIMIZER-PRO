@@ -214,4 +214,53 @@ public sealed class AssessmentSnapshotReuseGuardTests
         Assert.Equal(1, status.GetProperty("count").GetInt32());
     }
 
+    [Fact]
+    public void HistoricalUnhealthyReading_DoesNotInvalidateLatestHealthyDiagnostic()
+    {
+        var older = Read(OldId, "unhealthy", 40);
+        var latest = Read(NewId, "healthy", 5);
+        var assessment = Assess(latest);
+        var report = TechnicalPassportBuilder.Build(
+            Case, ExportId, At, new[] { older, latest },
+            new[] { assessment }, Array.Empty<RepairOutcomeAssessment>());
+
+        using var doc = JsonDocument.Parse(report.PayloadJson);
+        var status = Assert.Single(doc.RootElement
+            .GetProperty("diagnosticAssessments").EnumerateArray());
+        Assert.Equal("Corroborated", status.GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public void SameTimestampContradictoryReading_NeverPassesFreshnessGate()
+    {
+        var healthy = Read(OldId, "healthy", 5);
+        var conflicting = Read(NewId, "unhealthy", 5);
+        var assessment = Assess(healthy);
+
+        Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(
+            Case, ExportId, At, new[] { healthy, conflicting },
+            new[] { assessment }, Array.Empty<RepairOutcomeAssessment>()));
+    }
+
+    [Fact]
+    public void SameTimestampUnavailableReading_DoesNotEraseVerifiedObservation()
+    {
+        var healthy = Read(OldId, "healthy", 5);
+        var unavailable = EvidenceRecord.Missing(NewId, Case, Disk,
+            "synthetic-source", "disk.health", healthy.ObservedAtUtc,
+            EvidenceAvailability.AccessDenied, "fictional QA",
+            EvidencePrivacyClass.Equipment, "synthetic no access");
+        var assessment = Assess(healthy);
+        var report = TechnicalPassportBuilder.Build(
+            Case, ExportId, At, new[] { unavailable, healthy },
+            new[] { assessment }, Array.Empty<RepairOutcomeAssessment>());
+
+        using var doc = JsonDocument.Parse(report.PayloadJson);
+        Assert.Equal(1, Assert.Single(doc.RootElement
+            .GetProperty("diagnosticAssessments").EnumerateArray())
+            .GetProperty("count").GetInt32());
+        Assert.Equal(1, doc.RootElement.GetProperty("evidence")
+            .GetProperty("accessDenied").GetInt32());
+    }
+
 }
