@@ -140,3 +140,9 @@ C1/C1b established the case ID and generated-report trace. C2-A and C2-B source/
 - The coordinator issues a fresh ephemeral ReviewTicket only after a saved-case and unique-source proof. Confirmation must supply the exact in-memory preview instance issued by that coordinator, with explicit consent; a field-identical copy, fabricated preview, stale generation, or replay is rejected.
 - Each new PrepareAsync invalidates the prior issued ticket, even when the new preparation fails. A true confirmation consumes the ticket atomically before storage awaits; failed/stale confirmations require another preparation.
 - Synthetic tests cover forged/copied/replayed previews, newer preview replacing older, and competing simultaneous confirmations. This prevents inadvertent replays; it is not external user authentication, physical hardware attestation, or an export authorization.
+
+
+## C2-C4 — prompt cancellation of cross-process journal waits
+- Source-binding creation and revocation now pass the user-review CancellationToken through the shared cross-process file-lease helper. A canceled review interrupts its retry delay instead of waiting up to 15 seconds for another process; existing report-store callers continue using the optional uncancelled default.
+- The journal also checks cancellation immediately before publishing a staged claim/revocation file without overwrite. Synthetic tests hold the marker in an independent FileStream and cancel both creation/revocation attempts: no delayed receipt, no private raw evidence mutation, no orphan temp file.
+- Cancellation remains cooperative; an event already atomically published before a later user change cannot be undone by canceling a token. Revocations and fresh source verification at C2-D export-time remain mandatory.

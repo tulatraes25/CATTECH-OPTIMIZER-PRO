@@ -502,6 +502,60 @@ public sealed class SourceBindingReviewJournalTests
         finally { Directory.Delete(root, true); }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CancelWhileAnotherProcessHoldsJournalLease_NeverPublishesLateEvent(
+        bool revocation)
+    {
+        var root = NewRoot();
+        try
+        {
+            const string original = "{\"id\":\"ABCDEF12\",\"qa\":true}";
+            var source = await WriteSourceAsync(root,
+                "diagnostics/source.json", original);
+            var journal = new SourceBindingReviewJournal(root);
+            Guid bindingId = Guid.Empty;
+            if (revocation)
+            {
+                var initial = await journal.RecordReviewedAsync(CaseA,
+                    "Diagnostic", "diagnostics/source.json", "TechQA", true);
+                Assert.Equal(SourceBindingJournalStatus.Recorded, initial.Status);
+                bindingId = initial.BindingId!.Value;
+            }
+
+            // Simulated independent CATTECH process owns the permanent
+            // marker. The requested operation must honor user cancellation
+            // while waiting, not resume after that process lets go.
+            var directory = JournalDirectory(root);
+            Directory.CreateDirectory(directory);
+            var marker = Path.Combine(directory,
+                ".cattech-source-binding.lock");
+            await using (var foreignLease = new FileStream(marker,
+                FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None))
+            {
+                using var cts = new CancellationTokenSource();
+                Task<SourceBindingJournalOutcome> pending = revocation
+                    ? journal.RevokeAsync(bindingId, "TechQA", true, cts.Token)
+                    : journal.RecordReviewedAsync(CaseA,
+                        "Diagnostic", "diagnostics/source.json",
+                        "TechQA", true, cts.Token);
+                cts.CancelAfter(TimeSpan.FromMilliseconds(120));
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                    async () => await pending.WaitAsync(TimeSpan.FromSeconds(10)));
+                Assert.Empty(Directory.GetFiles(directory, "revoked-*.json"));
+                Assert.Equal(revocation ? 1 : 0,
+                    Directory.GetFiles(directory, "binding-*.json").Length);
+                Assert.Empty(Directory.GetFiles(directory,
+                    ".cattech-binding-*.tmp"));
+                Assert.Empty(Directory.GetFiles(directory,
+                    ".cattech-revocation-*.tmp"));
+                Assert.Equal(original, await File.ReadAllTextAsync(source));
+            }
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
     private static string NewRoot()
     {
         var root = Path.Combine(Path.GetTempPath(),

@@ -383,14 +383,16 @@ public class JsonServiceReportService : IServiceReportService, IServiceReportInv
     /// This does not pin each report file handle against uncooperative writes.
     /// </summary>
     internal static async Task<FileStream> AcquireStoreLeaseAsync(
-        string leasePath, TimeSpan timeout)
+        string leasePath, TimeSpan timeout, CancellationToken cancellationToken = default)
     {
         if (timeout <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(timeout));
+        cancellationToken.ThrowIfCancellationRequested();
 
         var watch = Stopwatch.StartNew();
         while (true)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             try
             {
                 return new FileStream(leasePath, FileMode.OpenOrCreate,
@@ -402,7 +404,9 @@ public class JsonServiceReportService : IServiceReportService, IServiceReportInv
                     throw new TimeoutException(
                         "Otro proceso está usando el almacenamiento de informes. No se modificó.", ex);
 
-                await Task.Delay(TimeSpan.FromMilliseconds(35))
+                // A changed case/withdrawn consent must stop waiting for
+                // another process rather than retry for the full 15 seconds.
+                await Task.Delay(TimeSpan.FromMilliseconds(35), cancellationToken)
                     .ConfigureAwait(false);
             }
         }

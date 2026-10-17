@@ -229,8 +229,10 @@ internal sealed class SourceBindingReviewJournal
 
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (!JournalAncestryIsSafe())
                 return new(SourceBindingJournalStatus.UnsafeStore);
+            cancellationToken.ThrowIfCancellationRequested();
             Directory.CreateDirectory(_journalDirectory);
             if (!JournalAncestryIsSafe() || MarkerIsReparsePoint())
                 return new(SourceBindingJournalStatus.UnsafeStore);
@@ -238,7 +240,7 @@ internal sealed class SourceBindingReviewJournal
             // Permanent marker + OS sharing lock: concurrent cooperating
             // CATTECH processes cannot publish conflicting claims.
             await using var lease = await JsonServiceReportService
-                .AcquireStoreLeaseAsync(_marker, TimeSpan.FromSeconds(15))
+                .AcquireStoreLeaseAsync(_marker, TimeSpan.FromSeconds(15), cancellationToken)
                 .ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -312,6 +314,9 @@ internal sealed class SourceBindingReviewJournal
                     await stream.FlushAsync(cancellationToken)
                         .ConfigureAwait(false);
                 }
+                // Last cooperative cancellation checkpoint BEFORE the
+                // no-overwrite atomic publication of this audit receipt.
+                cancellationToken.ThrowIfCancellationRequested();
                 File.Move(pending, destination); // Must not overwrite existing data.
 
                 // No success claim until the exact published record can be
@@ -370,7 +375,7 @@ internal sealed class SourceBindingReviewJournal
             if (!JournalAncestryIsSafe() || MarkerIsReparsePoint())
                 return new(SourceBindingJournalStatus.UnsafeStore);
             await using var lease = await JsonServiceReportService
-                .AcquireStoreLeaseAsync(_marker, TimeSpan.FromSeconds(15))
+                .AcquireStoreLeaseAsync(_marker, TimeSpan.FromSeconds(15), cancellationToken)
                 .ConfigureAwait(false);
             var claims = await ReadAllEntriesAsync(cancellationToken)
                 .ConfigureAwait(false);
@@ -408,6 +413,7 @@ internal sealed class SourceBindingReviewJournal
                     await stream.FlushAsync(cancellationToken)
                         .ConfigureAwait(false);
                 }
+                cancellationToken.ThrowIfCancellationRequested();
                 File.Move(staged, published);
                 var readback = await ReadAllRevocationsAsync(cancellationToken)
                     .ConfigureAwait(false);
