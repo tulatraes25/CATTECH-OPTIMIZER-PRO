@@ -278,7 +278,13 @@ public partial class ReportViewModel : ObservableObject
             }
 
             HasReportInventoryWarning = false;
-            ReportInventoryMessage = $"Inventario revisado: {health.UniqueEntries} informes sin conflictos detectados.";
+            // The store inventory is the total; the customer selector is a
+            // 10-entry preview, NOT the full archive. Never imply that reports
+            // beyond the visible list were lost or deleted.
+            ReportInventoryMessage = health.UniqueEntries > 10
+                ? $"Inventario revisado: {health.UniqueEntries} informes sin conflictos detectados. " +
+                  "La pantalla muestra como máximo los 10 más recientes; los demás siguen guardados."
+                : $"Inventario revisado: {health.UniqueEntries} informes sin conflictos detectados.";
             return true;
         }
         catch (Exception)

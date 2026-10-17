@@ -957,6 +957,45 @@ public class ReportViewModelTests
         Assert.Null(vm.SelectedServiceReport);
     }
 
+    [Fact]
+    public async Task ReportInventory_WhenMoreThanTenReports_ExplainsVisibleLimitWithoutDataLoss()
+    {
+        var store = new FakeServiceReportService
+        {
+            SyntheticReportCount = 14,
+            Inventory = new ServiceReportInventory(14, 14, 0, 0, false)
+        };
+        var (vm, _) = CreateViewModel(store);
+
+        await vm.LoadDataCommand.ExecuteAsync(null);
+
+        Assert.False(vm.HasReportInventoryWarning);
+        Assert.True(vm.HasClientData);
+        Assert.Equal(10, vm.AvailableServiceReports.Count);
+        Assert.Contains("14 informes", vm.ReportInventoryMessage);
+        Assert.Contains("máximo los 10", vm.ReportInventoryMessage);
+        Assert.Contains("siguen guardados", vm.ReportInventoryMessage);
+        Assert.NotNull(vm.SelectedServiceReport);
+    }
+
+    [Fact]
+    public async Task ReportInventory_WhenWithinLimit_DoesNotClaimHiddenReports()
+    {
+        var store = new FakeServiceReportService
+        {
+            SyntheticReportCount = 3,
+            Inventory = new ServiceReportInventory(3, 3, 0, 0, false)
+        };
+        var (vm, _) = CreateViewModel(store);
+
+        await vm.LoadDataCommand.ExecuteAsync(null);
+
+        Assert.False(vm.HasReportInventoryWarning);
+        Assert.Equal(3, vm.AvailableServiceReports.Count);
+        Assert.Contains("3 informes", vm.ReportInventoryMessage);
+        Assert.DoesNotContain("máximo los 10", vm.ReportInventoryMessage);
+    }
+
     // ===== Helper =====
 
     private static (ReportViewModel vm, FakeReportGenerationService fakeReportService) CreateViewModel(FakeServiceReportService? storedReports = null, FakePdfExportService? pdfExporter = null, FakeSettingsService? settings = null)
@@ -1106,6 +1145,7 @@ public class ReportViewModelTests
     {
         public ServiceReportInventory Inventory { get; set; } =
             new(1, 1, 0, 0, false);
+        public int SyntheticReportCount { get; set; } = 1;
         public bool ReturnNullOnLoad { get; set; }
         public string ClientNameOverride { get; set; } = "Cliente QA";
         public string ClientPhoneOverride { get; set; } = string.Empty;
@@ -1119,10 +1159,15 @@ public class ReportViewModelTests
 
         public Task<List<ServiceReportSummary>> ListReportsAsync(int maxResults = 50)
         {
-            return Task.FromResult(new List<ServiceReportSummary>
-            {
-                new() { Id = "1", ClientName = "Cliente QA", EquipmentBrand = "CATTECH", EquipmentModel = "Notebook QA" }
-            });
+            var count = Math.Max(0, Math.Min(SyntheticReportCount, maxResults));
+            return Task.FromResult(Enumerable.Range(1, count).Select(index =>
+                new ServiceReportSummary
+                {
+                    Id = index.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ClientName = "Cliente QA",
+                    EquipmentBrand = "CATTECH",
+                    EquipmentModel = "Notebook QA"
+                }).ToList());
         }
 
         public TaskCompletionSource<bool>? LoadEntered { get; set; }
