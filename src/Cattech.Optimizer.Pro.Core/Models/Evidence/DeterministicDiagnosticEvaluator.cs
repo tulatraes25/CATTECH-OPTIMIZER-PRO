@@ -144,10 +144,19 @@ public sealed class DiagnosticAssessment
         // These are never sent to public JSON and are not an attestation.
         EvaluatedObservations = new ReadOnlyDictionary<Guid, EvidenceRecord>(
             evaluatedObservations.ToDictionary(item => item.Id));
+        EvaluatedFactReferences = Array.AsReadOnly(rule.RequiredFacts
+            .Select(item => new DiagnosticFactReference(item.SubjectId, item.FactKey))
+            .ToArray());
     }
 
     [JsonIgnore]
     internal IReadOnlyDictionary<Guid, EvidenceRecord> EvaluatedObservations { get; }
+
+    // All subject/fact pairs that the rule evaluated, including pairs with
+    // zero observations. Adding a later contradictory or previously missing
+    // reading must invalidate an older public diagnostic conclusion.
+    [JsonIgnore]
+    internal ReadOnlyCollection<DiagnosticFactReference> EvaluatedFactReferences { get; }
 
     public DiagnosticContextId ContextId { get; }
     public string RuleId { get; }

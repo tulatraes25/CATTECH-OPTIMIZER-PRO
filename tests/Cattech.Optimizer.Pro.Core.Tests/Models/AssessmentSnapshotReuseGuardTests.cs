@@ -144,4 +144,74 @@ public sealed class AssessmentSnapshotReuseGuardTests
         Assert.DoesNotContain(sensitiveValue, JsonSerializer.Serialize(diagnostic));
         Assert.DoesNotContain(sensitiveValue, JsonSerializer.Serialize(postcheck));
     }
+    [Fact]
+    public void PreviouslyCorroboratedDiagnostic_RejectsAddedContradictoryReading()
+    {
+        var original = Read(OldId, "healthy", 20);
+        var assessment = Assess(original);
+        var later = Read(NewId, "unhealthy", 5);
+        Assert.Equal(DiagnosticAssessmentStatus.Corroborated, assessment.Status);
+
+        Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(
+            Case, ExportId, At, new[] { original, later },
+            new[] { assessment }, Array.Empty<RepairOutcomeAssessment>()));
+    }
+
+    [Fact]
+    public void PreviouslyCorroboratedDiagnostic_RejectsAddedUnavailableReading()
+    {
+        var original = Read(OldId, "healthy", 20);
+        var assessment = Assess(original);
+        var later = EvidenceRecord.Missing(NewId, Case, Disk,
+            "synthetic-source", "disk.health", At.AddMinutes(-5),
+            EvidenceAvailability.AccessDenied, "fictional QA",
+            EvidencePrivacyClass.Equipment, "synthetic access denied");
+
+        Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(
+            Case, ExportId, At, new[] { original, later },
+            new[] { assessment }, Array.Empty<RepairOutcomeAssessment>()));
+    }
+
+    [Fact]
+    public void PreviouslyMissingDiagnostic_RejectsLaterFirstObservation()
+    {
+        var unrelated = EvidenceRecord.Observed(OldId, Case, Disk,
+            "synthetic-source", "disk.temperature", At.AddMinutes(-20),
+            EvidenceValue.FromNumber(35), "fictional QA",
+            EvidencePrivacyClass.Equipment);
+        var assessment = DeterministicDiagnosticEvaluator.Evaluate(Case,
+            new DiagnosticRule("disk-health", "1", "Synthetic expectation",
+                "Synthetic contrary evidence", new[] {
+                    new EvidenceExpectation(Disk, "disk.health",
+                        EvidenceValue.FromText("healthy"))
+                }), new[] { unrelated }, At);
+        Assert.Equal(DiagnosticAssessmentStatus.InsufficientEvidence, assessment.Status);
+
+        Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(
+            Case, ExportId, At, new[] { unrelated, Read(NewId, "healthy", 5) },
+            new[] { assessment }, Array.Empty<RepairOutcomeAssessment>()));
+    }
+
+    [Fact]
+    public void IndependentFactAndOtherDisk_DoNotInvalidateScopedDiagnostic()
+    {
+        var original = Read(OldId, "healthy", 20);
+        var assessment = Assess(original);
+        var otherDisk = new DiagnosticSubjectId(
+            Guid.Parse("cccccccc-cccc-4ccc-8ccc-cccccccccccc"));
+        var unrelated = EvidenceRecord.Observed(NewId, Case, otherDisk,
+            "synthetic-source", "disk.health", At.AddMinutes(-5),
+            EvidenceValue.FromText("unhealthy"), "fictional QA",
+            EvidencePrivacyClass.Equipment);
+
+        var passport = TechnicalPassportBuilder.Build(
+            Case, ExportId, At, new[] { unrelated, original },
+            new[] { assessment }, Array.Empty<RepairOutcomeAssessment>());
+        using var doc = JsonDocument.Parse(passport.PayloadJson);
+        var status = Assert.Single(doc.RootElement
+            .GetProperty("diagnosticAssessments").EnumerateArray());
+        Assert.Equal("Corroborated", status.GetProperty("status").GetString());
+        Assert.Equal(1, status.GetProperty("count").GetInt32());
+    }
+
 }

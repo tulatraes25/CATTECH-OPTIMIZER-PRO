@@ -196,6 +196,21 @@ public static class TechnicalPassportBuilder
                 throw new ArgumentException(
                     "Diagnostic evaluated a different evidence snapshot.",
                     nameof(diagnostics));
+
+            // Equality of old IDs alone is insufficient: another observation
+            // for a rule-required disk/fact can appear later in the passport
+            // and overturn the old conclusion. Require set completeness
+            // across every rule-required subject/fact pair, not across
+            // unrelated measurements or other disks.
+            var requiredFacts = assessment.EvaluatedFactReferences
+                .Select(item => (item.SubjectId, item.FactKey))
+                .ToHashSet();
+            if (records.Any(record =>
+                    requiredFacts.Contains((record.SubjectId, record.FactKey))
+                    && !assessment.EvaluatedObservations.ContainsKey(record.Id)))
+                throw new ArgumentException(
+                    "Diagnostic omitted new observations for an evaluated fact.",
+                    nameof(diagnostics));
         }
 
         foreach (var outcome in postchecks)
