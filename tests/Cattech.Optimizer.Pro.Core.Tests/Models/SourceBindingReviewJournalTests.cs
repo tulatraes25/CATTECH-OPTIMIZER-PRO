@@ -163,6 +163,112 @@ public sealed class SourceBindingReviewJournalTests
         finally { Directory.Delete(root, true); }
     }
 
+    [Fact]
+    public async Task RevocationIsAppendOnlyAndPreservesOriginalEvidence()
+    {
+        var root = NewRoot();
+        try
+        {
+            const string raw = "{\"id\":\"ABCDEF12\",\"synthetic\":true}";
+            var file = await WriteSourceAsync(root, "diagnostics/source.json", raw);
+            var store = new SourceBindingReviewJournal(root);
+            var accepted = await store.RecordReviewedAsync(CaseA, "Diagnostic",
+                "diagnostics/source.json", "TechQA", true);
+            Assert.Equal(SourceBindingJournalStatus.Recorded, accepted.Status);
+            var revoked = await store.RevokeAsync(accepted.BindingId!.Value,
+                "TechQB", true);
+            Assert.Equal(SourceBindingJournalStatus.Revoked, revoked.Status);
+            Assert.Equal(accepted.BindingId, revoked.BindingId);
+            Assert.Single(Directory.GetFiles(JournalDirectory(root), "binding-*.json"));
+            Assert.Single(Directory.GetFiles(JournalDirectory(root), "revoked-*.json"));
+            Assert.Equal(raw, await File.ReadAllTextAsync(file));
+
+            var repeated = await store.RevokeAsync(accepted.BindingId.Value,
+                "TechQB", true);
+            Assert.Equal(SourceBindingJournalStatus.AlreadyRevoked, repeated.Status);
+            Assert.Single(Directory.GetFiles(JournalDirectory(root), "revoked-*.json"));
+
+            // Deliberate fail-closed interim: re-association after revocation
+            // needs the future explicit C2-C workflow; no silent reuse.
+            var differentCase = await store.RecordReviewedAsync(CaseB, "Diagnostic",
+                "diagnostics/source.json", "TechQB", true);
+            Assert.Equal(SourceBindingJournalStatus.ConflictingClaim,
+                differentCase.Status);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task UnknownOrUnconfirmedRevocationCannotPublishRecord()
+    {
+        var root = NewRoot();
+        try
+        {
+            var store = new SourceBindingReviewJournal(root);
+            var absent = await store.RevokeAsync(Guid.NewGuid(), "TechQA", true);
+            Assert.Equal(SourceBindingJournalStatus.UnknownBinding, absent.Status);
+            Assert.False(Directory.Exists(JournalDirectory(root)));
+
+            var denied = await store.RevokeAsync(Guid.NewGuid(), "TechQA", false);
+            Assert.Equal(SourceBindingJournalStatus.ReviewRequired, denied.Status);
+            Assert.False(Directory.Exists(JournalDirectory(root)));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task TamperedRevocationPreventsAdditionalSourceReview()
+    {
+        var root = NewRoot();
+        try
+        {
+            await WriteSourceAsync(root, "diagnostics/one.json", "{\"id\":\"ABCDEF12\"}");
+            await WriteSourceAsync(root, "diagnostics/two.json", "{\"id\":\"DEADBEEF\"}");
+            var store = new SourceBindingReviewJournal(root);
+            var first = await store.RecordReviewedAsync(CaseA, "Diagnostic",
+                "diagnostics/one.json", "TechQA", true);
+            Assert.Equal(SourceBindingJournalStatus.Recorded, first.Status);
+            Assert.Equal(SourceBindingJournalStatus.Revoked,
+                (await store.RevokeAsync(first.BindingId!.Value,
+                    "TechQA", true)).Status);
+
+            var revocation = Assert.Single(Directory.GetFiles(
+                JournalDirectory(root), "revoked-*.json"));
+            await File.WriteAllTextAsync(revocation,
+                "{\"schemaVersion\":1,\"schemaVersion\":1}");
+            var next = await store.RecordReviewedAsync(CaseB, "Diagnostic",
+                "diagnostics/two.json", "TechQA", true);
+            Assert.Equal(SourceBindingJournalStatus.InvalidJournal, next.Status);
+            Assert.Single(Directory.GetFiles(JournalDirectory(root), "binding-*.json"));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task ConcurrentRevocationsProduceOnlyOneAcceptedEvent()
+    {
+        var root = NewRoot();
+        try
+        {
+            await WriteSourceAsync(root, "smart-reports/disk.json",
+                "{\"id\":\"DEADBEEF\"}");
+            var first = new SourceBindingReviewJournal(root);
+            var accepted = await first.RecordReviewedAsync(CaseA, "SmartAnalysis",
+                "smart-reports/disk.json", "TechQA", true);
+            Assert.Equal(SourceBindingJournalStatus.Recorded, accepted.Status);
+            var second = new SourceBindingReviewJournal(root);
+            var results = await Task.WhenAll(
+                first.RevokeAsync(accepted.BindingId!.Value, "TechQA", true),
+                second.RevokeAsync(accepted.BindingId.Value, "TechQB", true));
+            Assert.Single(results.Where(x =>
+                x.Status == SourceBindingJournalStatus.Revoked));
+            Assert.Single(results.Where(x =>
+                x.Status == SourceBindingJournalStatus.AlreadyRevoked));
+            Assert.Single(Directory.GetFiles(JournalDirectory(root), "revoked-*.json"));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
     private static string NewRoot()
     {
         var root = Path.Combine(Path.GetTempPath(),

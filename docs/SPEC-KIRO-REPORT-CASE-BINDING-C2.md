@@ -89,3 +89,9 @@ C1/C1b established the case ID and generated-report trace. C2-A through C2-E rem
 - A new review claim is staged in an isolated temporary file and moved without overwriting as a standalone immutable-by-CATTECH JSON receipt. Existing diagnosis, SMART and service records are untouched. No success status is returned before readback succeeds.
 - This journal is only append-only under normal CATTECH writes; an administrator controlling the local filesystem can tamper with files. There is no signed hardware attestation or authenticated reviewer UI yet.
 - C2-B2-B must implement explicit revocation events and verify current provenance/review state, C2-C must implement technician confirmation UX and C2-D must revalidate the exact source file and active review at every export boundary. Until then HTML/PDF/automatic recommendations remain blocked for mixed named-client sources.
+
+## C2-B2-B — append-only revocation receipts
+- Revocations write a new dedicated JSON event keyed to the accepted binding ID. CATTECH never edits/deletes the previous claim or raw diagnostic. A second revocation does not create duplicate records.
+- The same per-store OS process lease protects review and revocation publication; malformed, duplicated or orphaned revocation files invalidate new source-review writes rather than being ignored.
+- This initial stage deliberately does not silently rebind a revoked source to a new case. Future C2-C requires a fresh explicit review/reassignment workflow; C2-D must inspect the CURRENT revocation journal on every export, not merely an old stored GUID.
+- Local record files remain under workstation administrator control, so these are auditable-by-application receipts, not tamper-proof external attestations. No named-client mixed output is enabled.

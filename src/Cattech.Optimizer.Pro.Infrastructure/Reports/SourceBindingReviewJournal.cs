@@ -14,9 +14,17 @@ internal sealed record SourceBindingJournalEntry(
     int SchemaVersion, Guid EventId, string ReviewerAlias,
     ServiceSourceBindingClaim Claim);
 
+/// <summary>A separate immutable-by-CATTECH event; the claim stays on disk.</summary>
+internal sealed record SourceBindingRevocationEntry(
+    int SchemaVersion, Guid EventId, Guid BindingId,
+    DateTimeOffset RevokedAtUtc, string ReviewerAlias);
+
 internal enum SourceBindingJournalStatus
 {
     Recorded,
+    Revoked,
+    AlreadyRevoked,
+    UnknownBinding,
     ReviewRequired,
     SourceUnavailable,
     UnsafeStore,
@@ -93,7 +101,9 @@ internal sealed class SourceBindingReviewJournal
 
             var previous = await ReadAllEntriesAsync(cancellationToken)
                 .ConfigureAwait(false);
-            if (previous is null)
+            if (previous is null
+                || await ReadAllRevocationsAsync(cancellationToken)
+                    .ConfigureAwait(false) is null)
                 return new(SourceBindingJournalStatus.InvalidJournal);
 
             // Capture again under the lease. Changes between captures,
@@ -159,6 +169,99 @@ internal sealed class SourceBindingReviewJournal
             finally
             {
                 try { if (File.Exists(pending)) File.Delete(pending); }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (TimeoutException)
+        {
+            return new(SourceBindingJournalStatus.WriteFailed);
+        }
+        catch (IOException)
+        {
+            return new(SourceBindingJournalStatus.WriteFailed);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return new(SourceBindingJournalStatus.WriteFailed);
+        }
+    }
+
+    /// <summary>
+    /// Append a revocation event without deleting/overwriting the reviewed
+    /// source or earlier claim. No export consumer is yet wired to this API;
+    /// C2-D must independently check the active journal at use time.
+    /// </summary>
+    internal async Task<SourceBindingJournalOutcome> RevokeAsync(
+        Guid bindingId, string reviewerAlias, bool explicitConsent,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!explicitConsent || bindingId == Guid.Empty
+            || reviewerAlias is null || !ReviewerPattern.IsMatch(reviewerAlias))
+            return new(SourceBindingJournalStatus.ReviewRequired);
+        if (!Directory.Exists(_journalDirectory))
+            return new(SourceBindingJournalStatus.UnknownBinding);
+        try
+        {
+            if (!JournalAncestryIsSafe() || MarkerIsReparsePoint())
+                return new(SourceBindingJournalStatus.UnsafeStore);
+            await using var lease = await JsonServiceReportService
+                .AcquireStoreLeaseAsync(_marker, TimeSpan.FromSeconds(15))
+                .ConfigureAwait(false);
+            var claims = await ReadAllEntriesAsync(cancellationToken)
+                .ConfigureAwait(false);
+            var revoked = await ReadAllRevocationsAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (claims is null || revoked is null
+                || revoked.Any(e => !claims.Any(c => c.Claim.BindingId == e.BindingId)))
+                return new(SourceBindingJournalStatus.InvalidJournal);
+            if (claims.Count(e => e.Claim.BindingId == bindingId) != 1)
+                return new(SourceBindingJournalStatus.UnknownBinding);
+            if (revoked.Any(e => e.BindingId == bindingId))
+                return new(SourceBindingJournalStatus.AlreadyRevoked);
+
+            var entry = new SourceBindingRevocationEntry(1, Guid.NewGuid(),
+                bindingId, DateTimeOffset.UtcNow, reviewerAlias);
+            var json = JsonSerializer.Serialize(entry, JsonOptions);
+            if (System.Text.Encoding.UTF8.GetByteCount(json) > MaxJournalEntryBytes)
+                return new(SourceBindingJournalStatus.WriteFailed);
+
+            var staged = Path.Combine(_journalDirectory,
+                ".cattech-revocation-" + Guid.NewGuid().ToString("N") + ".tmp");
+            var published = Path.Combine(_journalDirectory,
+                "revoked-" + bindingId.ToString("N") + ".json");
+            try
+            {
+                await using (var stream = new FileStream(staged, FileMode.CreateNew,
+                    FileAccess.Write, FileShare.None, 8192, FileOptions.Asynchronous))
+                await using (var writer = new StreamWriter(stream,
+                    new System.Text.UTF8Encoding(false)))
+                {
+                    await writer.WriteAsync(json.AsMemory(), cancellationToken)
+                        .ConfigureAwait(false);
+                    await writer.FlushAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                    await stream.FlushAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                File.Move(staged, published);
+                var readback = await ReadAllRevocationsAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                if (readback is null || readback.Count != revoked.Count + 1
+                    || readback.Count(e => e.EventId == entry.EventId
+                        && e.BindingId == bindingId) != 1)
+                    return new(SourceBindingJournalStatus.WriteFailed);
+
+                return new(SourceBindingJournalStatus.Revoked, bindingId);
+            }
+            finally
+            {
+                try { if (File.Exists(staged)) File.Delete(staged); }
                 catch (IOException) { }
                 catch (UnauthorizedAccessException) { }
             }
@@ -266,6 +369,54 @@ internal sealed class SourceBindingReviewJournal
             return null;
         if (records.GroupBy(e => e.Claim.RelativeSourcePath,
                 StringComparer.OrdinalIgnoreCase).Any(g => g.Count() > 1))
+            return null;
+        return records;
+    }
+
+    private async Task<List<SourceBindingRevocationEntry>?> ReadAllRevocationsAsync(
+        CancellationToken cancellationToken)
+    {
+        var records = new List<SourceBindingRevocationEntry>();
+        foreach (var path in Directory.EnumerateFiles(
+            _journalDirectory, "revoked-*.json"))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+                return null;
+            await using var stream = new FileStream(path, FileMode.Open,
+                FileAccess.Read, FileShare.Read, 8192, FileOptions.Asynchronous);
+            if (stream.Length <= 0 || stream.Length > MaxJournalEntryBytes)
+                return null;
+            var buffer = new byte[(int)stream.Length];
+            try
+            {
+                await stream.ReadExactlyAsync(buffer.AsMemory(), cancellationToken)
+                    .ConfigureAwait(false);
+                using var document = JsonDocument.Parse(buffer.AsMemory());
+                if (!HasUniqueJsonProperties(document.RootElement))
+                    return null;
+                var entry = document.RootElement.Deserialize<SourceBindingRevocationEntry>(
+                    JsonOptions);
+                if (entry is null || entry.SchemaVersion != 1
+                    || entry.EventId == Guid.Empty || entry.BindingId == Guid.Empty
+                    || entry.RevokedAtUtc == default
+                    || !ReviewerPattern.IsMatch(entry.ReviewerAlias ?? "")
+                    || Path.GetFileName(path) !=
+                        "revoked-" + entry.BindingId.ToString("N") + ".json")
+                    return null;
+                records.Add(entry);
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
+            finally
+            {
+                Array.Clear(buffer, 0, buffer.Length);
+            }
+        }
+        if (records.Select(e => e.BindingId).Distinct().Count() != records.Count
+            || records.Select(e => e.EventId).Distinct().Count() != records.Count)
             return null;
         return records;
     }
