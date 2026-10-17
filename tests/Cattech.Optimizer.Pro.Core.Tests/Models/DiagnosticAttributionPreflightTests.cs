@@ -37,7 +37,22 @@ public sealed class DiagnosticAttributionPreflightTests
             Assert.NotNull(result.Candidate);
             Assert.Equal(binding, result.Candidate.BindingId);
             Assert.Equal(CaseA, result.Candidate.ServiceCaseId);
-            Assert.Equal("Windows QA A", result.Candidate.Diagnostic.Report.OsName);
+            Assert.Equal("ABCDEF12", result.Candidate.SourceRecordId);
+            var first = result.Candidate.ReadDetachedModels();
+            var second = result.Candidate.ReadDetachedModels();
+            Assert.Equal("Windows QA A", first.Diagnostic.OsName);
+            Assert.Equal(CaseA, first.SavedCase.ServiceCaseId);
+            // A caller cannot mutate the frozen candidate by editing its
+            // own detached DTO or even the WPF-selected report object.
+            first.Diagnostic.OsName = "TAMPERED COPY";
+            first.SavedCase.Client.Name = "TAMPERED CLIENT";
+            client.Client.Name = "MUTATED SELECTION";
+            Assert.Equal("Windows QA A", second.Diagnostic.OsName);
+            var third = result.Candidate.ReadDetachedModels();
+            Assert.Equal("Windows QA A", third.Diagnostic.OsName);
+            Assert.Equal("SYNTHETIC CUSTOMER", third.SavedCase.Client.Name);
+            Assert.NotSame(first.Diagnostic, second.Diagnostic);
+            Assert.NotSame(first.SavedCase, second.SavedCase);
             Assert.Equal(Original, await File.ReadAllTextAsync(path));
             Assert.False(Directory.Exists(Path.Combine(root, "reports")));
         }

@@ -23,9 +23,46 @@ internal enum DiagnosticAttributionPreflightStatus
     AuditUnavailable
 }
 
-internal sealed record DiagnosticAttributionCandidate(
-    Guid BindingId, Guid ServiceCaseId, string SavedCaseSha256,
-    ServiceReport SavedCase, DiagnosticSourceSnapshot Diagnostic);
+/// <summary>
+/// Stable private model serialization, never a retained reference to WPF
+/// selectedCase or to the mutable DiagnosticReport returned by a file reader.
+/// Callers obtain a NEW detached clone each time. Not an export permit.
+/// </summary>
+internal sealed class DiagnosticAttributionCandidate
+{
+    private readonly string _caseJson;
+    private readonly string _diagnosticJson;
+
+    internal Guid BindingId { get; }
+    internal Guid ServiceCaseId { get; }
+    internal string SavedCaseSha256 { get; }
+    internal string SourceRecordId { get; }
+    internal string SourceSha256 { get; }
+
+    internal DiagnosticAttributionCandidate(
+        Guid bindingId, Guid serviceCaseId, string savedCaseSha256,
+        ServiceReport savedCase, DiagnosticSourceSnapshot diagnostic)
+    {
+        BindingId = bindingId;
+        ServiceCaseId = serviceCaseId;
+        SavedCaseSha256 = savedCaseSha256;
+        SourceRecordId = diagnostic.Fingerprint.SourceRecordId;
+        SourceSha256 = diagnostic.Fingerprint.Sha256;
+        _caseJson = JsonSerializer.Serialize(savedCase);
+        _diagnosticJson = JsonSerializer.Serialize(diagnostic.Report);
+    }
+
+    internal (ServiceReport SavedCase, Cattech.Optimizer.Pro.Core.Models.Diagnostics.DiagnosticReport Diagnostic)
+        ReadDetachedModels()
+    {
+        var saved = JsonSerializer.Deserialize<ServiceReport>(_caseJson)
+            ?? throw new InvalidOperationException("Invalid captured service report.");
+        var source = JsonSerializer.Deserialize<Cattech.Optimizer.Pro.Core.Models.Diagnostics.DiagnosticReport>(
+            _diagnosticJson)
+            ?? throw new InvalidOperationException("Invalid captured diagnostic.");
+        return (saved, source);
+    }
+}
 
 internal sealed record DiagnosticAttributionPreflightResult(
     DiagnosticAttributionPreflightStatus Status,

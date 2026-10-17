@@ -159,3 +159,9 @@ C1/C1b established the case ID and generated-report trace. C2-A and C2-B source/
 - Fallan sin permiso las selecciones de otro cliente, IDs ambiguos, diagnóstico reemplazado, recibo inexistente o revocado, bitácora inaccesible y ServiceCaseId explícito ajeno dentro del diagnóstico.
 - El resultado SnapshotForFurtherValidation es interno y efímero, y NO constituye autorización para generar HTML, PDF, recomendaciones ni entrada del índice. Las capturas deserializadas todavía pueden modificarse en memoria. No se cambió la prohibición actual de mezclar cliente + fuente independiente.
 - C2-D3 deberá crear un snapshot inmutable de salida y conservar una transacción de auditoría/validación hasta publicar los archivos; exigir pruebas de carreras con revocación y selección A-B-A, coherencia de todos los formatos e integración con WPF. QA física Windows sigue pendiente.
+
+
+## C2-D2b — snapshot privado frente a mutaciones de DTO
+- DiagnosticAttributionCandidate deja de exponer referencias directas a ServiceReport y DiagnosticReport mutables: guarda serializaciones privadas obtenidas del caso persistido y del diagnóstico capturado mediante C2-D1. ReadDetachedModels genera instancias nuevas y separadas para un eventual consumidor interno.
+- Se publican internamente solo BindingId, ServiceCaseId, ID de fuente y huellas SHA-256; no se expone la ruta privada de archivo ni un campo IsAuthorized. Las pruebas mutan tanto la selección original como la primera copia y comprueban que ninguna altere una captura posterior.
+- La serialización privada puede contener datos personales y no debe registrarse, enviarse, guardarse en reportes o considerarse evidencia de identidad física. C2-D3 todavía debe crear la transacción de salida y revalidar asociación y revocación al publicar; HTML/PDF mixtos permanecen bloqueados.
