@@ -602,8 +602,9 @@ public sealed class ClientEquipmentRecordIsolationTests
         var saved = Assert.Single(storage.Saved);
         Assert.NotNull(saved.ServiceCaseId);
         Assert.NotEqual(Guid.Empty, saved.ServiceCaseId.Value);
-        Assert.NotEqual(saved.Id, saved.ServiceCaseId.Value.ToString("N"),
-            ignoreCase: true);
+        Assert.False(string.Equals(saved.Id,
+            saved.ServiceCaseId.Value.ToString("N"),
+            StringComparison.OrdinalIgnoreCase));
         var json = System.Text.Json.JsonSerializer.Serialize(saved);
         Assert.Contains("ServiceCaseId", json);
         Assert.Equal(saved.ServiceCaseId,
