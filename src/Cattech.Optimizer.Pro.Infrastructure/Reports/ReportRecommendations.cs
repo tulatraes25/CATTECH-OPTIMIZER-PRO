@@ -14,28 +14,33 @@ public static class ReportRecommendationEngine
 {
     public static List<ReportRecommendation> GenerateRecommendations(ReportGenerationOptions options)
     {
+        ArgumentNullException.ThrowIfNull(options);
         var recommendations = new List<ReportRecommendation>();
+        if (!options.IncludeRecommendations)
+            return recommendations;
 
+        // A hidden section cannot leak its readings through recommendations.
+        // The same explicit consent contract applies to HTML and PDF.
         // Recomendaciones basadas en diagnóstico
-        if (options.DiagnosticReport != null)
+        if (options.IncludeDiagnostic && options.DiagnosticReport != null)
         {
             recommendations.AddRange(GetDiagnosticRecommendations(options.DiagnosticReport));
         }
 
         // Recomendaciones basadas en programas de inicio
-        if (options.StartupAnalysis != null)
+        if (options.IncludeStartup && options.StartupAnalysis != null)
         {
             recommendations.AddRange(GetStartupRecommendations(options.StartupAnalysis));
         }
 
         // Recomendaciones basadas en limpieza
-        if (options.CleanupResult != null)
+        if (options.IncludeCleanup && options.CleanupResult != null)
         {
             recommendations.AddRange(GetCleanupRecommendations(options.CleanupResult));
         }
 
         // Recomendaciones basadas en punto de restauración
-        if (options.RestorePointResult != null && !options.RestorePointResult.Success)
+        if (options.IncludeRestorePoint && options.RestorePointResult != null && !options.RestorePointResult.Success)
         {
             recommendations.Add(new ReportRecommendation
             {

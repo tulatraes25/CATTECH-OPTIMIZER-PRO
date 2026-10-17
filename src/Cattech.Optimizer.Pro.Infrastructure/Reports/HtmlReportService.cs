@@ -312,7 +312,9 @@ public class HtmlReportService : IReportGenerationService
 
     private string BuildHeader(ReportGenerationOptions options)
     {
-        var company = options.Settings?.Company;
+        // The company checkbox is a privacy opt-out, including the logo,
+        // technician signature, contact details and footer legend.
+        var company = options.IncludeCompany ? options.Settings?.Company : null;
         // Settings are editable JSON; never interpolate arbitrary text into
         // quoted style attributes in customer-facing HTML/PDF.
         var color = SafeBrandColor(company?.PrimaryColor);
@@ -890,7 +892,9 @@ public class HtmlReportService : IReportGenerationService
 
     private string BuildSignatureSection(ReportGenerationOptions options)
     {
-        var company = options.Settings?.Company;
+        // The company checkbox is a privacy opt-out, including the logo,
+        // technician signature, contact details and footer legend.
+        var company = options.IncludeCompany ? options.Settings?.Company : null;
         return $@"
 <div class='section signature'>
     <div class='sig-block'>

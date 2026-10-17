@@ -1074,6 +1074,22 @@ public class ReportViewModelTests
         Assert.Empty(vm.AvailableRestorePointResults);
     }
 
+    [Fact]
+    public async Task ExcludedDiagnostic_RemovesItsRecordFromGeneratorOptions()
+    {
+        var (vm, generator) = CreateViewModel();
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        Assert.NotNull(vm.SelectedDiagnosticReport);
+
+        vm.IncludeClient = false;
+        vm.IncludeDiagnostic = false;
+        await vm.GenerateReportCommand.ExecuteAsync(null);
+
+        var options = Assert.IsType<ReportGenerationOptions>(generator.LastCapturedOptions);
+        Assert.False(options.IncludeDiagnostic);
+        Assert.Null(options.DiagnosticReport);
+    }
+
     // ===== Helper =====
 
     private static (ReportViewModel vm, FakeReportGenerationService fakeReportService) CreateViewModel(FakeServiceReportService? storedReports = null, FakePdfExportService? pdfExporter = null, FakeSettingsService? settings = null, FakeCleanupService? cleanup = null, FakeRestorePointService? restore = null)

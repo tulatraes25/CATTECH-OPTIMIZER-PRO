@@ -897,16 +897,19 @@ public partial class ReportViewModel : ObservableObject
 
         return new ReportGenerationOptions
         {
-            Settings = await _settingsService.LoadSettingsAsync(),
+            Settings = IncludeCompany
+                ? await _settingsService.LoadSettingsAsync()
+                : new AppSettings(),
             // Unchecked customer sections must not carry data into exports.
             ServiceReport = IncludeClient ? SelectedServiceReport : null,
-            DiagnosticReport = SelectedDiagnosticReport,
-            StartupAnalysis = SelectedStartupAnalysis,
+            DiagnosticReport = IncludeDiagnostic ? SelectedDiagnosticReport : null,
+            StartupAnalysis = IncludeStartup ? SelectedStartupAnalysis : null,
             CleanupResult = selectedCleanup,
-            VisualOptimizationResult = SelectedVisualOptimizationResult,
+            VisualOptimizationResult = IncludeVisualOptimization
+                ? SelectedVisualOptimizationResult : null,
             RestorePointResult = selectedRestore,
-            SmartAnalysis = SelectedSmartAnalysis,
-            SmartTestSessions = selectedTests,
+            SmartAnalysis = IncludeSmart ? SelectedSmartAnalysis : null,
+            SmartTestSessions = IncludeSmartTests ? selectedTests : new(),
             FinalObservations = FinalObservations,
             IncludeCompany = IncludeCompany,
             IncludeClient = IncludeClient,
