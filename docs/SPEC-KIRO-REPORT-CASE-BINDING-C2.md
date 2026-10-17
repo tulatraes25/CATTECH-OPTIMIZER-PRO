@@ -101,3 +101,8 @@ C1/C1b established the case ID and generated-report trace. C2-A and C2-B source/
 - Inspection opens the existing OS coordination marker with FileMode.Open: it creates no directory, marker, record or source file. Concurrent journal writing yields an explicit unsafe/invalid state, never an optimistic match.
 - Matching status is ephemeral ONLY. Export is still prohibited from using it directly: C2-C/D must provide explicit UI consent and re-open the source under its own validated output boundary, including revocations checked again at the point of use.
 - New negative tests include synthetic two-customer mismatch, same ID and serial but different source bytes, revocation, corrupted/orphan journal and locked store.
+
+## C2-B3 — catalogo estricto de ID historicos
+- ResolveUniqueAsync inspecciona solamente las cuatro familias conocidas de archivos JSON locales, con identificadores reales (incluyendo los de ocho caracteres).
+- Dos archivos con el mismo ID producen Ambiguous; cualquier fuente hermana corrupta, inaccesible o redirigida produce Unverifiable. No se selecciona la mas reciente ni se infiere por serial o fecha.
+- Busqueda acotada a 4096 archivos y sin escritura. Esta resolucion es temporal y NO autoriza asociar cliente/diagnostico ni exportar; requiere confirmacion C2-C y revalidacion C2-D.

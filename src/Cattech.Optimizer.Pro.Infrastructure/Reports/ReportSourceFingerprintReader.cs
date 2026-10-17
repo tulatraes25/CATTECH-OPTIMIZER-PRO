@@ -32,6 +32,22 @@ internal sealed record SourceFingerprintInspection(
 }
 
 /// <summary>
+/// Unique local source ID resolution ONLY. A match never proves technician
+/// consent, machine identity or permission to associate a named client.
+/// </summary>
+internal enum SourceIdResolutionStatus
+{
+    FoundUnique,
+    NotFound,
+    Ambiguous,
+    Unverifiable,
+    UnsafeScope
+}
+
+internal sealed record SourceIdResolution(
+    SourceIdResolutionStatus Status, SourceFileFingerprint? Fingerprint = null);
+
+/// <summary>
 /// SPEC #92 C2-B1: read ONLY the known CATTECH local source stores, on the SAME
 /// exclusive-content Windows file handle for ID extraction and SHA-256.
 /// No writes, sidecar approval, export authorization, or physical attestation.
@@ -46,6 +62,87 @@ internal sealed class ReportSourceFingerprintReader
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(baseDirectory);
         _dataRoot = Path.GetFullPath(Path.Combine(baseDirectory, "data"));
+    }
+
+    /// <summary>
+    /// Resolve a source ID to one approved local JSON file, refusing every
+    /// ambiguous or unreadable history. Never choose by timestamp, serial,
+    /// enumeration order or first matching short ID.
+    /// A returned fingerprint is ephemeral and requires revalidation.
+    /// </summary>
+    internal async Task<SourceIdResolution> ResolveUniqueAsync(
+        string sourceKind, string sourceRecordId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!OperatingSystem.IsWindows())
+            return new(SourceIdResolutionStatus.Unverifiable);
+
+        var location = sourceKind switch
+        {
+            "Diagnostic" => ("diagnostics", "diagnostic-*.json"),
+            "Startup" => ("startup-analysis", "startup-analysis-*.json"),
+            "SmartAnalysis" => ("smart-reports", "smart-analysis-*.json"),
+            "SmartSelfTest" => ("smart-tests", "smart-test-*.json"),
+            _ => default
+        };
+        if (location.Item1 is null
+            || !ServiceSourceBindingClaimPolicy.IsSafeSourceRecordId(sourceRecordId)
+            || _dataRoot.StartsWith(@"\\", StringComparison.Ordinal))
+            return new(SourceIdResolutionStatus.UnsafeScope);
+
+        try
+        {
+            var folder = Path.Combine(_dataRoot, location.Item1);
+            if (!Directory.Exists(folder))
+                return new(SourceIdResolutionStatus.NotFound);
+            if (!HasNoReparsePoints(folder))
+                return new(SourceIdResolutionStatus.UnsafeScope);
+
+            const int maxCandidates = 4096;
+            var files = Directory.GetFiles(folder, location.Item2,
+                SearchOption.TopDirectoryOnly);
+            if (files.Length > maxCandidates)
+                return new(SourceIdResolutionStatus.Unverifiable);
+
+            SourceFileFingerprint? selected = null;
+            foreach (var file in files.OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var relative = location.Item1 + "/" + Path.GetFileName(file);
+                var found = await InspectAsync(sourceKind, relative,
+                    cancellationToken).ConfigureAwait(false);
+                // A corrupt, inaccessible or redirected sibling may hide a
+                // matching ID. Never silently skip it.
+                if (!found.HasReadableSnapshot)
+                    return new(SourceIdResolutionStatus.Unverifiable);
+                if (!string.Equals(found.Fingerprint!.SourceRecordId,
+                        sourceRecordId, StringComparison.Ordinal))
+                    continue;
+                if (selected is not null)
+                    return new(SourceIdResolutionStatus.Ambiguous);
+                selected = found.Fingerprint;
+            }
+            return selected is null
+                ? new(SourceIdResolutionStatus.NotFound)
+                : new(SourceIdResolutionStatus.FoundUnique, selected);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (IOException)
+        {
+            return new(SourceIdResolutionStatus.Unverifiable);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return new(SourceIdResolutionStatus.Unverifiable);
+        }
+        catch (ArgumentException)
+        {
+            return new(SourceIdResolutionStatus.UnsafeScope);
+        }
     }
 
     internal async Task<SourceFingerprintInspection> InspectAsync(

@@ -157,6 +157,110 @@ public sealed class ReportSourceFingerprintReaderTests
         finally { Directory.Delete(root, true); }
     }
 
+    [Theory]
+    [InlineData("Diagnostic", "diagnostics", "diagnostic-")]
+    [InlineData("Startup", "startup-analysis", "startup-analysis-")]
+    [InlineData("SmartAnalysis", "smart-reports", "smart-analysis-")]
+    [InlineData("SmartSelfTest", "smart-tests", "smart-test-short-")]
+    public async Task OfficialHistoryPattern_ResolvesOneExactSourceId(
+        string kind, string directory, string prefix)
+    {
+        var root = NewRoot();
+        try
+        {
+            const string json = "{\"id\":\"ABCDEF12\",\"synthetic\":true}";
+            var path = directory + "/" + prefix + "one.json";
+            await WriteSourceAsync(root, path, json);
+            var result = await new ReportSourceFingerprintReader(root)
+                .ResolveUniqueAsync(kind, "ABCDEF12");
+            Assert.Equal(SourceIdResolutionStatus.FoundUnique, result.Status);
+            Assert.Equal(path, result.Fingerprint!.RelativePath);
+            Assert.Equal("ABCDEF12", result.Fingerprint.SourceRecordId);
+            Assert.Equal(Convert.ToHexString(SHA256.HashData(
+                Encoding.UTF8.GetBytes(json))), result.Fingerprint.Sha256);
+            Assert.False(Directory.Exists(Path.Combine(root, "data",
+                "source-binding-journal")));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task DuplicateHistoricalId_NeverChoosesFirstOrLatestFile()
+    {
+        var root = NewRoot();
+        try
+        {
+            await WriteSourceAsync(root, "diagnostics/diagnostic-older.json",
+                "{\"id\":\"ABCDEF12\",\"serial\":\"SYNTHETIC_A\"}");
+            await WriteSourceAsync(root, "diagnostics/diagnostic-newer.json",
+                "{\"id\":\"ABCDEF12\",\"serial\":\"SYNTHETIC_B\"}");
+            var resolution = await new ReportSourceFingerprintReader(root)
+                .ResolveUniqueAsync("Diagnostic", "ABCDEF12");
+            Assert.Equal(SourceIdResolutionStatus.Ambiguous, resolution.Status);
+            Assert.Null(resolution.Fingerprint);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Theory]
+    [InlineData("{\"id\":\"ABCDEF12\",\"id\":\"DEADBEEF\"}")]
+    [InlineData("{\"id\":null}")]
+    [InlineData("{\"id\":\"invalid/path\"}")]
+    [InlineData("not json")]
+    public async Task MalformedSiblingCannotHideAnAmbiguousSource(string sibling)
+    {
+        var root = NewRoot();
+        try
+        {
+            await WriteSourceAsync(root, "diagnostics/diagnostic-valid.json",
+                "{\"id\":\"ABCDEF12\"}");
+            await WriteSourceAsync(root, "diagnostics/diagnostic-damaged.json",
+                sibling);
+            var result = await new ReportSourceFingerprintReader(root)
+                .ResolveUniqueAsync("Diagnostic", "ABCDEF12");
+            Assert.Equal(SourceIdResolutionStatus.Unverifiable, result.Status);
+            Assert.Null(result.Fingerprint);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task UnknownIdOrStore_DoesNotCreateFilesOrPickOtherId()
+    {
+        var root = NewRoot();
+        try
+        {
+            var reader = new ReportSourceFingerprintReader(root);
+            Assert.Equal(SourceIdResolutionStatus.NotFound,
+                (await reader.ResolveUniqueAsync("Diagnostic", "ABCDEF12")).Status);
+            Assert.False(Directory.Exists(Path.Combine(root, "data")));
+            await WriteSourceAsync(root, "diagnostics/diagnostic-found.json",
+                "{\"id\":\"DEADBEEF\"}");
+            var outcome = await reader.ResolveUniqueAsync("Diagnostic", "ABCDEF12");
+            Assert.Equal(SourceIdResolutionStatus.NotFound, outcome.Status);
+            Assert.Null(outcome.Fingerprint);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Theory]
+    [InlineData("SMART", "ABCDEF12")]
+    [InlineData("Diagnostic", "BAD/ID")]
+    [InlineData("Diagnostic", "ABCDEF12\n")]
+    public async Task UnknownKindOrUnsafeId_RejectsBeforeDiskSearch(
+        string kind, string recordId)
+    {
+        var root = NewRoot();
+        try
+        {
+            var result = await new ReportSourceFingerprintReader(root)
+                .ResolveUniqueAsync(kind, recordId);
+            Assert.Equal(SourceIdResolutionStatus.UnsafeScope, result.Status);
+            Assert.False(Directory.Exists(Path.Combine(root, "data")));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
     private static string NewRoot()
     {
         var root = Path.Combine(Path.GetTempPath(),
