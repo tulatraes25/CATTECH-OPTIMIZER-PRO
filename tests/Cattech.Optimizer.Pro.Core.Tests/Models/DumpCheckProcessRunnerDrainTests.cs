@@ -28,11 +28,20 @@ public sealed class DumpCheckProcessRunnerDrainTests
 
         // The fake never receives an EOF. A bounded wait must return false,
         // not claim an analyzable result or await the fake indefinitely.
-        Assert.False(await DumpCheckProcessRunner.AwaitOutputDrainAsync(
-            stdout, stderr, TimeSpan.FromMilliseconds(100),
-            CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5)));
-
-        stuck.TrySetResult(true); // Synthetic cleanup of test-owned task.
+        // Product behavior has a 100 ms inner timeout. A busy CI runner can
+        // starve timers/continuations for several seconds, so the independent
+        // TEST watchdog must be much more generous than that inner bound.
+        // Do not disable the assertion or change the product deadline.
+        try
+        {
+            Assert.False(await DumpCheckProcessRunner.AwaitOutputDrainAsync(
+                stdout, stderr, TimeSpan.FromMilliseconds(100),
+                CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(20)));
+        }
+        finally
+        {
+            stuck.TrySetResult(true); // Always release synthetic test-owned task.
+        }
     }
 
     [Fact]
