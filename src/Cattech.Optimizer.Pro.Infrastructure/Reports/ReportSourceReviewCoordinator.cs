@@ -18,7 +18,12 @@ public sealed record SourceReviewPreview(
     string SourceRecordId,
     string SourceRelativePath,
     string SourceSha256,
-    DateTimeOffset ReviewedAtUtc);
+    DateTimeOffset ReviewedAtUtc)
+{
+    // Ephemeral coordinator-issued capability, never persisted to case files.
+    // Not a user identity credential or a hardware-origin attestation.
+    public Guid ReviewTicket { get; init; }
+}
 
 public enum SourceReviewCoordinationStatus
 {
@@ -60,6 +65,9 @@ public sealed class ReportSourceReviewCoordinator : IReportSourceReviewCoordinat
     private readonly SourceBindingReviewJournal _journal;
     private readonly Func<DateTimeOffset> _clock;
     private static readonly TimeSpan PreviewLifetime = TimeSpan.FromMinutes(5);
+    private readonly object _previewGate = new();
+    private SourceReviewPreview? _issuedPreview;
+    private long _previewGeneration;
 
     public ReportSourceReviewCoordinator(
         IServiceReportService serviceReports, string? baseDirectory = null,
@@ -78,6 +86,10 @@ public sealed class ReportSourceReviewCoordinator : IReportSourceReviewCoordinat
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        // Starting a fresh proposal invalidates the previous one, even if
+        // the new proposal later fails or older async reads complete late.
+        var generation = Interlocked.Increment(ref _previewGeneration);
+        lock (_previewGate) _issuedPreview = null;
         if (selectedCase?.ServiceCaseId is not { } caseId || caseId == Guid.Empty
             || string.IsNullOrWhiteSpace(selectedCase.Id))
             return new(SourceReviewCoordinationStatus.CaseUnavailable);
@@ -105,10 +117,19 @@ public sealed class ReportSourceReviewCoordinator : IReportSourceReviewCoordinat
                 return new(SourceReviewCoordinationStatus.SourceUnavailable);
 
             var source = resolved.Fingerprint;
-            return new(SourceReviewCoordinationStatus.Prepared,
-                new SourceReviewPreview(selectedCase.Id, caseId, original,
-                    sourceKind, sourceRecordId, source.RelativePath,
-                    source.Sha256, _clock()));
+            var issued = new SourceReviewPreview(selectedCase.Id, caseId, original,
+                sourceKind, sourceRecordId, source.RelativePath,
+                source.Sha256, _clock())
+            {
+                ReviewTicket = Guid.NewGuid()
+            };
+            lock (_previewGate)
+            {
+                if (generation != Interlocked.Read(ref _previewGeneration))
+                    return new(SourceReviewCoordinationStatus.ReviewRequired);
+                _issuedPreview = issued;
+            }
+            return new(SourceReviewCoordinationStatus.Prepared, issued);
         }
         catch (IOException)
         {
@@ -131,6 +152,18 @@ public sealed class ReportSourceReviewCoordinator : IReportSourceReviewCoordinat
         cancellationToken.ThrowIfCancellationRequested();
         if (!explicitConsent || preview is null)
             return new(SourceReviewCoordinationStatus.ReviewRequired);
+        // A caller cannot construct/copy a plausible preview from GUIDs,
+        // SHA hashes and timestamps. It must be the exact instance issued
+        // by THIS coordinator. Consume once BEFORE any storage await, so
+        // parallel/replayed confirmation requests cannot both publish.
+        lock (_previewGate)
+        {
+            if (preview.ReviewTicket == Guid.Empty
+                || !ReferenceEquals(_issuedPreview, preview))
+                return new(SourceReviewCoordinationStatus.ReviewRequired);
+            _issuedPreview = null;
+        }
+        cancellationToken.ThrowIfCancellationRequested();
         var age = _clock() - preview.ReviewedAtUtc;
         if (age < TimeSpan.Zero || age > PreviewLifetime)
             return new(SourceReviewCoordinationStatus.ExpiredPreview);

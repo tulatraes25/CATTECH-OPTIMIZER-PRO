@@ -134,3 +134,9 @@ C1/C1b established the case ID and generated-report trace. C2-A and C2-B source/
 - WPF passes a per-operation CancellationToken into both PrepareAsync and ConfirmAsync; switching case, diagnostic, inclusion scope, reviewer alias during confirmation, or withdrawing consent cancels pending storage work and invalidates the UI attempt epoch. Abandoned callbacks cannot display success.
 - A cooperative fake verifies cancellation before commit for four adversarial mid-await changes. No report export permission is granted.
 - Residual risk: cancellation is cooperative, and a user event arriving after atomic File.Move may not undo an already published journal receipt. The eventual C2-D must always inspect current binding/revocation at use time; real WPF QA remains mandatory.
+
+
+## C2-C3 — coordinator-issued single-use review ticket
+- The coordinator issues a fresh ephemeral ReviewTicket only after a saved-case and unique-source proof. Confirmation must supply the exact in-memory preview instance issued by that coordinator, with explicit consent; a field-identical copy, fabricated preview, stale generation, or replay is rejected.
+- Each new PrepareAsync invalidates the prior issued ticket, even when the new preparation fails. A true confirmation consumes the ticket atomically before storage awaits; failed/stale confirmations require another preparation.
+- Synthetic tests cover forged/copied/replayed previews, newer preview replacing older, and competing simultaneous confirmations. This prevents inadvertent replays; it is not external user authentication, physical hardware attestation, or an export authorization.

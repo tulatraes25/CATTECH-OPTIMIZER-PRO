@@ -68,9 +68,14 @@ public sealed class ReportSourceReviewCoordinatorTests
             var modifiedCase = NewClient();
             modifiedCase.Client.Name = "DIFFERENT_SYNTHETIC";
             await reports.SaveReportAsync(modifiedCase);
-            Assert.Equal(SourceReviewCoordinationStatus.CaseUnavailable,
+            // The failed attempt consumed the original ticket; cannot
+            // replay it later even if source bytes are restored.
+            Assert.Equal(SourceReviewCoordinationStatus.ReviewRequired,
                 (await coordinator.ConfirmAsync(prepared.Preview,
                     "TechQA", true)).Status);
+            Assert.Equal(SourceReviewCoordinationStatus.CaseUnavailable,
+                (await coordinator.PrepareAsync(modifiedCase,
+                    "Diagnostic", "ABCDEF12")).Status);
             Assert.False(Directory.Exists(JournalDir(root)));
         }
         finally { Directory.Delete(root, true); }
@@ -126,6 +131,94 @@ public sealed class ReportSourceReviewCoordinatorTests
             Assert.False(Directory.Exists(JournalDir(root)));
         }
         finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task ForgedCopiedOrReplayedPreview_NeverWritesBinding()
+    {
+        var root = NewRoot();
+        try
+        {
+            var client = NewClient();
+            var reports = new JsonServiceReportService(root);
+            await reports.SaveReportAsync(client);
+            await WriteDiagnosticAsync(root, "{\"id\":\"ABCDEF12\"}");
+            var coordinator = new ReportSourceReviewCoordinator(reports, root);
+            var prepared = await coordinator.PrepareAsync(
+                client, "Diagnostic", "ABCDEF12");
+            var preview = Assert.IsType<SourceReviewPreview>(prepared.Preview);
+            Assert.NotEqual(Guid.Empty, preview.ReviewTicket);
+
+            // Even a field-identical copy is not a minted in-memory ticket.
+            var copy = preview with { };
+            Assert.NotSame(preview, copy);
+            Assert.Equal(SourceReviewCoordinationStatus.ReviewRequired,
+                (await coordinator.ConfirmAsync(copy, "TechQA", true)).Status);
+            Assert.Equal(SourceReviewCoordinationStatus.ReviewRequired,
+                (await coordinator.ConfirmAsync(
+                    preview with { ReviewTicket = Guid.NewGuid() },
+                    "TechQA", true)).Status);
+            Assert.False(Directory.Exists(JournalDir(root)));
+
+            var accepted = await coordinator.ConfirmAsync(preview, "TechQA", true);
+            Assert.Equal(SourceReviewCoordinationStatus.Recorded, accepted.Status);
+            Assert.Equal(SourceReviewCoordinationStatus.ReviewRequired,
+                (await coordinator.ConfirmAsync(preview, "TechQA", true)).Status);
+            Assert.Single(Directory.GetFiles(JournalDir(root), "binding-*.json"));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task NewPreviewRevokesPreviousProposalBeforeConfirmation()
+    {
+        var root = NewRoot();
+        try
+        {
+            var client = NewClient();
+            var reports = new JsonServiceReportService(root);
+            await reports.SaveReportAsync(client);
+            await WriteDiagnosticAsync(root, "{\"id\":\"ABCDEF12\"}");
+            var coordinator = new ReportSourceReviewCoordinator(reports, root);
+            var old = await coordinator.PrepareAsync(client,
+                "Diagnostic", "ABCDEF12");
+            var fresh = await coordinator.PrepareAsync(client,
+                "Diagnostic", "ABCDEF12");
+            Assert.NotSame(old.Preview, fresh.Preview);
+            Assert.Equal(SourceReviewCoordinationStatus.ReviewRequired,
+                (await coordinator.ConfirmAsync(old.Preview,
+                    "TechQA", true)).Status);
+            Assert.Equal(SourceReviewCoordinationStatus.Recorded,
+                (await coordinator.ConfirmAsync(fresh.Preview,
+                    "TechQA", true)).Status);
+            Assert.Single(Directory.GetFiles(JournalDir(root), "binding-*.json"));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task TwoConcurrentConfirmsOfOnePreview_CanPublishOnlyOnce()
+    {
+        var root = NewRoot();
+        try
+        {
+            var client = NewClient();
+            var reports = new JsonServiceReportService(root);
+            await reports.SaveReportAsync(client);
+            await WriteDiagnosticAsync(root, "{\"id\":\"ABCDEF12\"}");
+            var coordinator = new ReportSourceReviewCoordinator(reports, root);
+            var preview = (await coordinator.PrepareAsync(client,
+                "Diagnostic", "ABCDEF12")).Preview;
+            var results = await Task.WhenAll(
+                coordinator.ConfirmAsync(preview, "TechQA", true),
+                coordinator.ConfirmAsync(preview, "TechQB", true));
+            Assert.Single(results.Where(x =>
+                x.Status == SourceReviewCoordinationStatus.Recorded));
+            Assert.Single(results.Where(x =>
+                x.Status == SourceReviewCoordinationStatus.ReviewRequired));
+            Assert.Single(Directory.GetFiles(JournalDir(root), "binding-*.json"));
+        }
+        finally { Directory.Delete(root, recursive: true); }
     }
 
     private static ServiceReport NewClient() => new()
