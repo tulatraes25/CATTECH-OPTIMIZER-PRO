@@ -443,9 +443,6 @@ public partial class ReportViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Carga todos los datos disponibles.
-    /// </summary>
-    /// <summary>
     /// Immediately revoke ALL prior report-view case bindings on refresh.
     /// Data sources can fail after any awaited I/O; partially reloaded
     /// diagnostics or SMART sessions never inherit an earlier case's data.
@@ -500,6 +497,10 @@ public partial class ReportViewModel : ObservableObject
         InvalidateGeneratedArtifacts();
     }
 
+    /// <summary>
+    /// Carga todos los datos disponibles; la última invocación es propietaria
+    /// de cada selección, advertencia y estado de trabajo de esta vista.
+    /// </summary>
     [RelayCommand]
     private async Task LoadDataAsync()
     {
@@ -551,6 +552,10 @@ public partial class ReportViewModel : ObservableObject
                 }
                 catch (Exception)
                 {
+                    // A slow failed list/load belongs to an OLD refresh;
+                    // it must never erase the newest verified client selection.
+                    if (!IsCurrentLoad(loadAttempt))
+                        return;
                     HasReportInventoryWarning = true;
                     ReportInventoryMessage = "No se pudo completar la carga de informes. " +
                         "Se suspendió la selección de clientes sin modificar archivos.";

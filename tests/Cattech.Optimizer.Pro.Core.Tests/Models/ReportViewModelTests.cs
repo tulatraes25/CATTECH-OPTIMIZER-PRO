@@ -1286,6 +1286,47 @@ public class ReportViewModelTests
         Assert.False(vm.IsRunning);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SupersededClientHistoryList_DoesNotClearNewerLoadedReport(bool failOld)
+    {
+        var store = new FakeServiceReportService
+        {
+            FirstListGate = new TaskCompletionSource<List<ServiceReportSummary>>(
+                TaskCreationOptions.RunContinuationsAsynchronously),
+            FirstListEntered = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously)
+        };
+        var (vm, _) = CreateViewModel(storedReports: store);
+        var oldLoad = InvokeDirectReloadForRaceTest(vm);
+        await store.FirstListEntered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+
+        await InvokeDirectReloadForRaceTest(vm).WaitAsync(TimeSpan.FromSeconds(15));
+        Assert.False(vm.HasReportInventoryWarning);
+        Assert.True(vm.HasClientData);
+        Assert.NotNull(vm.SelectedServiceReport);
+        Assert.True(vm.HasDiagnosticData);
+
+        if (failOld)
+            store.FirstListGate.SetException(new IOException(
+                @"C:\QA-OLDER-REPORT\history.json"));
+        else
+            store.FirstListGate.SetResult(new List<ServiceReportSummary>());
+
+        await oldLoad.WaitAsync(TimeSpan.FromSeconds(15));
+
+        Assert.False(vm.HasReportInventoryWarning);
+        Assert.False(vm.HasError);
+        Assert.True(vm.HasClientData);
+        Assert.NotNull(vm.SelectedServiceReport);
+        Assert.Equal("Cliente QA", vm.SelectedServiceReport.Client.Name);
+        Assert.True(vm.HasDiagnosticData);
+        Assert.NotNull(vm.SelectedDiagnosticReport);
+        Assert.False(vm.IsRunning);
+        Assert.DoesNotContain("QA-OLDER-REPORT", vm.ReportInventoryMessage);
+    }
+
     private static Task InvokeDirectReloadForRaceTest(ReportViewModel vm)
     {
         // Exercise out-of-order invocations even if the current WPF command
@@ -1478,8 +1519,17 @@ public class ReportViewModelTests
             return Task.FromResult(Inventory);
         }
 
+        public TaskCompletionSource<List<ServiceReportSummary>>? FirstListGate { get; set; }
+        public TaskCompletionSource<bool>? FirstListEntered { get; set; }
+        private int _listCallCount;
         public Task<List<ServiceReportSummary>> ListReportsAsync(int maxResults = 50)
         {
+            if (Interlocked.Increment(ref _listCallCount) == 1
+                && FirstListGate is not null)
+            {
+                FirstListEntered?.TrySetResult(true);
+                return FirstListGate.Task;
+            }
             var count = Math.Max(0, Math.Min(SyntheticReportCount, maxResults));
             return Task.FromResult(Enumerable.Range(1, count).Select(index =>
                 new ServiceReportSummary
