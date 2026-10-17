@@ -1395,7 +1395,11 @@ public class ReportViewModelTests
         Assert.NotNull(vm.SelectedSmartAnalysis);
         Assert.True(vm.HasDiagnosticData);
         Assert.NotNull(vm.SelectedDiagnosticReport);
-        Assert.True(vm.IncludeSmart);
+        // Both snapshots remain visible after the old load returns, but
+        // matching mutable GUIDs are insufficient to attribute SMART data
+        // to a named customer until the C2 audited binding is verified.
+        Assert.False(vm.IncludeSmart);
+        Assert.True(vm.IncludeClient);
         Assert.False(vm.IsRunning);
     }
 
