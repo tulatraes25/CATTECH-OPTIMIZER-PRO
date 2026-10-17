@@ -141,9 +141,11 @@ jobs:
         run: dotnet build src/Cattech.Optimizer.Pro.sln --configuration Release --no-restore
 
       - name: Test Release #1
+        id: test-one
         run: dotnet test src/Cattech.Optimizer.Pro.sln --configuration Release --no-build --logger "trx;LogFileName=release-candidate-1.trx" --results-directory "${{ github.workspace }}\TestResults\Run1"
 
       - name: Test Release #2
+        id: test-two
         run: dotnet test src/Cattech.Optimizer.Pro.sln --configuration Release --no-build --logger "trx;LogFileName=release-candidate-2.trx" --results-directory "${{ github.workspace }}\TestResults\Run2"
 
       - name: Restore RID
@@ -291,6 +293,7 @@ jobs:
           Write-Output "checksum_name=$checksumName" >> $env:GITHUB_OUTPUT
 
       - name: Upload release candidate
+        id: release-artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cattech-release-v${{ inputs.version }}-win-x64
@@ -317,23 +320,38 @@ jobs:
           $sourceRef = "$env:CATTECH_INPUT_SOURCE_REF"
           $sourceSha = "${{ steps.source-sha.outputs.source_sha }}"
           $sha = "${{ steps.checksum.outputs.sha256 }}"
+          # The summary must show actual outcomes, even when a gate failed.
+          $jobState = "${{ job.status }}"
+          $testOne = "${{ steps.test-one.outcome }}"
+          $testTwo = "${{ steps.test-two.outcome }}"
+          $exeVersionOutcome = "${{ steps.exe-version.outcome }}"
+          $uploadOutcome = "${{ steps.release-artifact.outcome }}"
+          $verified = ($jobState -eq "success" -and $testOne -eq "success" -and
+            $testTwo -eq "success" -and $exeVersionOutcome -eq "success" -and
+            $uploadOutcome -eq "success" -and -not [string]::IsNullOrWhiteSpace($sha))
+          $gate = if ($verified) { "PASS" } else { "FAILED / INCOMPLETE" }
+          $provenance = if ($exeVersionOutcome -eq "success") { "PASS" } else { "NOT VERIFIED" }
+          $upload = if ($uploadOutcome -eq "success") { "UPLOADED" } else { "NOT UPLOADED" }
+          $zipName = if ($verified) { "CATTECH-Optimizer-Pro-v$version-win-x64.zip" } else { "NOT CERTIFIED" }
           $lines = @(
             "## CATTECH Release Package",
             "",
             "| Field | Value |",
+            "| Gate | $gate |",
             "|-------|-------|",
             "| Version | v$version |",
             "| Source ref | $sourceRef |",
             "| Source SHA | $sourceSha |",
             "| ProductVersion | ${{ steps.exe-version.outputs.product_version }} |",
-            "| Source provenance | PASS |",
+            "| Source provenance | $provenance |",
             "| Configuration | Release |",
             "| Runtime | win-x64 |",
-            "| Self-contained | Si |",
-            "| Tests run #1 | PASS |",
-            "| Tests run #2 | PASS |",
-            "| ZIP | CATTECH-Optimizer-Pro-v$version-win-x64.zip |",
+            "| Self-contained requested | Si |",
+            "| Tests run #1 | $testOne |",
+            "| Tests run #2 | $testTwo |",
+            "| ZIP | $zipName |",
             "| SHA-256 | $sha |",
+            "| Candidate upload | $upload |",
             "| smartctl included | No |",
             "| GitHub Release | NO - package candidate only |"
           )
