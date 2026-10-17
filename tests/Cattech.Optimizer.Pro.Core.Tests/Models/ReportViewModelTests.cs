@@ -21,10 +21,12 @@ public class ReportViewModelTests
     {
         using var tempDir = new TempDirectory();
 
-        var service = new HtmlReportService();
+        var service = new HtmlReportService(tempDir.Path);
+        var syntheticCase = Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
 
         var serviceReport = new ServiceReport
         {
+            ServiceCaseId = syntheticCase,
             Client = new ClientInfo { Name = "Cliente QA" },
             Equipment = new EquipmentInfo { Brand = "CATTECH", Model = "Notebook QA" },
             Service = new ServiceInfo { Reason = "Smoke Report Test" }
@@ -32,6 +34,7 @@ public class ReportViewModelTests
 
         var diagnosticReport = new DiagnosticReport
         {
+            ServiceCaseId = syntheticCase,
             OsName = "Microsoft Windows 11 Pro"
         };
 
@@ -81,17 +84,65 @@ public class ReportViewModelTests
         Assert.True(vm.HasDiagnosticData);
         Assert.NotNull(vm.SelectedDiagnosticReport);
         Assert.Equal("Microsoft Windows 11 Pro", vm.SelectedDiagnosticReport.OsName);
-        Assert.True(vm.IncludeDiagnostic);
+        // Legacy diagnostic has no case link: visible history but OFF by default.
+        Assert.False(vm.IncludeDiagnostic);
+        Assert.Contains("sin asociar", vm.StatusText);
 
         await vm.GenerateReportCommand.ExecuteAsync(null);
 
         Assert.NotNull(fakeReportService.LastCapturedOptions);
         Assert.NotNull(fakeReportService.LastCapturedOptions.ServiceReport);
         Assert.Equal("Cliente QA", fakeReportService.LastCapturedOptions.ServiceReport.Client.Name);
-        Assert.NotNull(fakeReportService.LastCapturedOptions.DiagnosticReport);
-        Assert.Equal("Microsoft Windows 11 Pro", fakeReportService.LastCapturedOptions.DiagnosticReport.OsName);
+        Assert.Null(fakeReportService.LastCapturedOptions.DiagnosticReport);
         Assert.True(fakeReportService.LastCapturedOptions.IncludeClient);
-        Assert.True(fakeReportService.LastCapturedOptions.IncludeDiagnostic);
+        Assert.False(fakeReportService.LastCapturedOptions.IncludeDiagnostic);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ForcedUnboundClientDiagnostic_NeverStartsHtmlOrPdf(bool pdf)
+    {
+        var (vm, writer) = CreateViewModel();
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        Assert.True(vm.HasClientData);
+        Assert.NotNull(vm.SelectedDiagnosticReport);
+        vm.IncludeDiagnostic = true; // hostile/stale UI switch despite no link
+
+        if (pdf)
+            await vm.ExportPdfCommand.ExecuteAsync(null);
+        else
+            await vm.GenerateReportCommand.ExecuteAsync(null);
+
+        Assert.True(vm.HasError);
+        Assert.Contains("no está asociada", vm.ErrorMessage);
+        Assert.Equal(0, writer.GenerateCallCount);
+        Assert.False(vm.HasGeneratedReport);
+        Assert.False(vm.HasGeneratedPdf);
+    }
+
+    [Fact]
+    public async Task ExplicitlyLinkedSyntheticClientAndDiagnostic_AllowCheckedSection()
+    {
+        var stored = new FakeServiceReportService
+        {
+            CaseId = Guid.Parse("cccccccc-cccc-4ccc-8ccc-cccccccccccc")
+        };
+        var (vm, writer) = CreateViewModel(storedReports: stored);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        Assert.NotNull(vm.SelectedDiagnosticReport);
+        vm.SelectedDiagnosticReport.ServiceCaseId = stored.CaseId;
+        vm.IncludeDiagnostic = true;
+
+        await vm.GenerateReportCommand.ExecuteAsync(null);
+        Assert.False(vm.HasError);
+        Assert.True(vm.HasGeneratedReport);
+        Assert.NotNull(writer.LastCapturedOptions);
+        Assert.Equal(stored.CaseId, writer.LastCapturedOptions.ServiceReport?.ServiceCaseId);
+        Assert.Equal(stored.CaseId, writer.LastCapturedOptions.DiagnosticReport?.ServiceCaseId);
+        if (!string.IsNullOrWhiteSpace(vm.LastReportPath)
+            && File.Exists(vm.LastReportPath))
+            File.Delete(vm.LastReportPath); // Synthetic unique fixture only.
     }
 
     // ===== TEST C: Stale invalidation =====
@@ -1632,6 +1683,7 @@ public class ReportViewModelTests
             new(1, 1, 0, 0, false);
         public int SyntheticReportCount { get; set; } = 1;
         public bool ReturnNullOnLoad { get; set; }
+        public Guid? CaseId { get; set; }
         public string ClientNameOverride { get; set; } = "Cliente QA";
         public string ClientPhoneOverride { get; set; } = string.Empty;
         public string ServiceReasonOverride { get; set; } = "Smoke Report Test";
@@ -1692,6 +1744,7 @@ public class ReportViewModelTests
             return new ServiceReport
             {
                 Id = reportId,
+                ServiceCaseId = CaseId,
                 CreatedAt = StableDate,
                 TechnicianName = TechnicianOverride,
                 Client = new ClientInfo

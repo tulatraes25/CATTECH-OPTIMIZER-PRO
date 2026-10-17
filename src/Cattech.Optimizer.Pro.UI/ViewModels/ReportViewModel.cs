@@ -607,7 +607,12 @@ public partial class ReportViewModel : ObservableObject
             }
             HasDiagnosticData = AvailableDiagnosticReports.Count > 0;
             if (HasDiagnosticData) SelectedDiagnosticReport = AvailableDiagnosticReports.First();
-            IncludeDiagnostic = HasDiagnosticData;
+            // Legacy independent sources have no trusted case link.
+            // Do not auto-attribute them to the currently selected client.
+            IncludeDiagnostic = HasDiagnosticData &&
+                (!IncludeClient || ReportSourceCasePolicy.HasMatchingExplicitCase(
+                    SelectedServiceReport?.ServiceCaseId,
+                    SelectedDiagnosticReport?.ServiceCaseId));
 
             // Inicio
             var startupAnalyses = await _startupService.ListAnalysesAsync(5);
@@ -621,7 +626,10 @@ public partial class ReportViewModel : ObservableObject
             }
             HasStartupData = AvailableStartupAnalyses.Count > 0;
             if (HasStartupData) SelectedStartupAnalysis = AvailableStartupAnalyses.First();
-            IncludeStartup = HasStartupData;
+            IncludeStartup = HasStartupData &&
+                (!IncludeClient || ReportSourceCasePolicy.HasMatchingExplicitCase(
+                    SelectedServiceReport?.ServiceCaseId,
+                    SelectedStartupAnalysis?.ServiceCaseId));
 
             // History entries are SUMMARIES, not selectable full results.
             // No audited LoadResultAsync exists; never invent missing details.
@@ -655,7 +663,10 @@ public partial class ReportViewModel : ObservableObject
             if (HasSmartData)
             {
                 SelectedSmartAnalysis = AvailableSmartAnalyses.First();
-                IncludeSmart = true;
+                IncludeSmart = !IncludeClient ||
+                    ReportSourceCasePolicy.HasMatchingExplicitCase(
+                        SelectedServiceReport?.ServiceCaseId,
+                        SelectedSmartAnalysis.ServiceCaseId);
             }
             else
             {
@@ -678,11 +689,17 @@ public partial class ReportViewModel : ObservableObject
             HasSmartTestData = AvailableSmartTestSessions.Count > 0;
             IncludeSmartTests = false; // Selección manual intencional
 
+            var hasUnboundHistory = HasClientData
+                && ((HasDiagnosticData && !IncludeDiagnostic)
+                    || (HasStartupData && !IncludeStartup)
+                    || (HasSmartData && !IncludeSmart));
             StatusText = HasReportInventoryWarning
                 ? "Informes requieren revisión"
-                : cleanupSummaries.Count > 0 || restoreSummaries.Count > 0
-                    ? "Datos cargados; historiales de limpieza/restauración no exportables"
-                    : "Datos cargados";
+                : hasUnboundHistory
+                    ? "Datos cargados; fuentes históricas sin asociar al equipo"
+                    : cleanupSummaries.Count > 0 || restoreSummaries.Count > 0
+                        ? "Datos cargados; historiales de limpieza/restauración no exportables"
+                        : "Datos cargados";
 
             // Invalidar artifacts generados previamente para forzar regeneración
             // con los datos actualmente cargados (fix SMOKE-B1R-006)
@@ -743,6 +760,16 @@ public partial class ReportViewModel : ObservableObject
             if (options.IncludeDiagnostic && options.DiagnosticReport == null)
             {
                 ShowError("Seleccioná un diagnóstico antes de generar el informe.");
+                return;
+            }
+            // No customer/diagnostic/SMART mixture without an exact case
+            // binding. Do not merely omit an explicitly checked source:
+            // explain why it cannot be attributed to this customer's device.
+            if (ReportSourceCasePolicy.FindUnassociatedClientSource(options)
+                is { } unboundSection)
+            {
+                ShowError($"La sección {unboundSection} no está asociada al caso del equipo. " +
+                    "Revisá la vinculación antes de generar el informe.");
                 return;
             }
             if (options.IncludeClient && !await VerifySelectedClientBeforeOutputAsync(options, attempt))
@@ -840,6 +867,16 @@ public partial class ReportViewModel : ObservableObject
             if (options.IncludeDiagnostic && options.DiagnosticReport == null)
             {
                 ShowError("Seleccioná un diagnóstico antes de generar el informe.");
+                return;
+            }
+            // No customer/diagnostic/SMART mixture without an exact case
+            // binding. Do not merely omit an explicitly checked source:
+            // explain why it cannot be attributed to this customer's device.
+            if (ReportSourceCasePolicy.FindUnassociatedClientSource(options)
+                is { } unboundSection)
+            {
+                ShowError($"La sección {unboundSection} no está asociada al caso del equipo. " +
+                    "Revisá la vinculación antes de generar el informe.");
                 return;
             }
             if (options.IncludeClient && !await VerifySelectedClientBeforeOutputAsync(options, attempt))

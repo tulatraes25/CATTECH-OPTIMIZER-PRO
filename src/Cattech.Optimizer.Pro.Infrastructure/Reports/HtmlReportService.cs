@@ -41,6 +41,14 @@ public class HtmlReportService : IReportGenerationService
     /// <inheritdoc/>
     public async Task<string> GenerateHtmlReportAsync(ReportGenerationOptions options)
     {
+        ArgumentNullException.ThrowIfNull(options);
+        // Enforce case attribution at the generator boundary too: callers
+        // outside WPF must not bypass selected-client/source linkage.
+        // Check BEFORE any report-directory or output-file side effect.
+        if (ReportSourceCasePolicy.FindUnassociatedClientSource(options) is not null)
+            throw new InvalidOperationException(
+                "Una fuente seleccionada no está asociada al caso del equipo.");
+
         EnsureDirectoryExists(_reportsDirectory);
 
         var html = GenerateHtmlContent(options);
