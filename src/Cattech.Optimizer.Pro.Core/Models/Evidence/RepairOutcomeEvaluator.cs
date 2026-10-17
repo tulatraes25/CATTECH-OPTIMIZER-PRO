@@ -63,7 +63,8 @@ public sealed class RepairOutcomeAssessment
         string ruleId, string ruleVersion, string factKey,
         Guid beforeEvidenceId, Guid afterEvidenceId,
         RepairOutcomeStatus status, RepairOutcomeReason reason,
-        DiagnosticContextId contextId, DiagnosticSubjectId subjectId)
+        DiagnosticContextId contextId, DiagnosticSubjectId subjectId,
+        EvidenceRecord evaluatedBefore, EvidenceRecord evaluatedAfter)
     {
         if (string.IsNullOrWhiteSpace(ruleId)
             || string.IsNullOrWhiteSpace(ruleVersion)
@@ -71,6 +72,11 @@ public sealed class RepairOutcomeAssessment
             throw new ArgumentException("Outcome rule metadata is required.");
         if (beforeEvidenceId == Guid.Empty || afterEvidenceId == Guid.Empty)
             throw new ArgumentException("Outcome evidence IDs are required.");
+        ArgumentNullException.ThrowIfNull(evaluatedBefore);
+        ArgumentNullException.ThrowIfNull(evaluatedAfter);
+        if (evaluatedBefore.Id != beforeEvidenceId
+            || evaluatedAfter.Id != afterEvidenceId)
+            throw new ArgumentException("Outcome snapshots must match their evidence IDs.");
         if (!Enum.IsDefined(status) || !Enum.IsDefined(reason))
             throw new ArgumentOutOfRangeException(nameof(status));
 
@@ -98,7 +104,16 @@ public sealed class RepairOutcomeAssessment
         Reason = reason;
         ContextId = contextId;
         SubjectId = subjectId;
+        // Immutable in-memory bindings to the two actual source readings,
+        // not merely their reusable GUIDs; deliberately not serialized.
+        EvaluatedBefore = evaluatedBefore;
+        EvaluatedAfter = evaluatedAfter;
     }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    internal EvidenceRecord EvaluatedBefore { get; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    internal EvidenceRecord EvaluatedAfter { get; }
 
     public string RuleId { get; }
     public string RuleVersion { get; }
@@ -132,7 +147,7 @@ public static class RepairOutcomeEvaluator
             RepairOutcomeReason reason) =>
             new(rule.RuleId, rule.Version, rule.FactKey,
                 before.Id, after.Id, status, reason, before.ContextId,
-                before.SubjectId);
+                before.SubjectId, before, after);
 
         // Reject comparisons across equipment service contexts before any
         // apparent improvement is considered. Mismatches have no valid
@@ -142,7 +157,8 @@ public static class RepairOutcomeEvaluator
             return new RepairOutcomeAssessment(rule.RuleId, rule.Version,
                 rule.FactKey, before.Id, after.Id,
                 RepairOutcomeStatus.Indeterminate,
-                RepairOutcomeReason.IncompatibleContext, default, default);
+                RepairOutcomeReason.IncompatibleContext, default, default,
+                before, after);
 
         // Same machine does not imply the same disk or physical component.
         if (before.SubjectId != after.SubjectId
@@ -150,7 +166,8 @@ public static class RepairOutcomeEvaluator
             return new RepairOutcomeAssessment(rule.RuleId, rule.Version,
                 rule.FactKey, before.Id, after.Id,
                 RepairOutcomeStatus.Indeterminate,
-                RepairOutcomeReason.IncompatibleSubject, before.ContextId, default);
+                RepairOutcomeReason.IncompatibleSubject, before.ContextId, default,
+                before, after);
 
         // Different subjects, sources, identities or an inverted timeline are
         // not comparable. A failed comparison must never be reported as healthy.

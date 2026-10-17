@@ -162,3 +162,35 @@ passport v1 has **no evaluation event ID/time**, so repeated independent
 evaluations of precisely the same basis must fail closed rather than
 claim separate events. A future schema may add explicit event identity.
 **G3 remains open** until the full source-diff parity matrix is reconciled.
+
+## 7. Stage 4: bind derived conclusions to exact evaluated observations (2026-10-16)
+
+### GOAL / finding
+Historical PR #34 protects diagnostic context identity and outcome references, but the
+integrated passport builder previously checked only **GUID membership** plus
+case/component. Replacing one observation with different fact values/time/source
+but reusing its GUID could make an **old** `Corroborated` or
+`ObservedImprovement` status count toward a **new** public report.
+
+### DESIGN / requirements
+- The diagnostic evaluator privately retains only immutable references to
+  source observations matching its required component/fact keys (including
+  unavailable and future-dated candidates). The postcheck retains the exact
+  before/after records. No new public field, rule text or client data is added.
+- During passport construction, require equality of each evaluator-bound
+  record with the current report's record under that GUID; reject stale
+  substitutions before computing public status counts. Preserve normal order
+  invariance and legitimate unrelated components/rules.
+- Do not serialize these private record bindings. They are *local consistency*
+  metadata, **not a signature, hardware fingerprint, or actual repair proof**.
+- Use synthetic tests with identical GUIDs but swapped healthy/unhealthy
+  values, timestamps and unavailable status; exact-SHA Windows CI plus
+  two-pass package verification required before declaring this slice verified.
+
+### NON-GOALS / residual risks
+Does not prove a measurement genuinely came from a physical machine,
+prohibit trusted in-process code from deliberately forging an internal
+assessment, or guarantee an assessment considered all later observations.
+The app's public passport UI remains preview-only until trusted case-selection
+integration and physical Windows WPF QA. G3 remains OPEN until other parallel
+branch semantics are explicitly audited.

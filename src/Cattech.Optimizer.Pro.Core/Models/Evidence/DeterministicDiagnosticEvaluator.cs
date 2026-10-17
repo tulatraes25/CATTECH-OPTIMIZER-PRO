@@ -111,7 +111,8 @@ public sealed class DiagnosticAssessment
         DiagnosticAssessmentStatus status,
         IEnumerable<Guid> supporting, IEnumerable<Guid> contradicting,
         IEnumerable<DiagnosticFactReference> missing,
-        IEnumerable<DiagnosticFactReference> futureDated)
+        IEnumerable<DiagnosticFactReference> futureDated,
+        IEnumerable<EvidenceRecord> evaluatedObservations)
     {
         ContextId = contextId;
         RuleId = rule.RuleId;
@@ -136,7 +137,17 @@ public sealed class DiagnosticAssessment
             .Distinct(StringComparer.Ordinal).ToArray());
         FutureDatedFactKeys = Array.AsReadOnly(futureFacts.Select(x => x.FactKey)
             .Distinct(StringComparer.Ordinal).ToArray());
+
+        // Keep immutable observation references private to the assessment.
+        // The technical passport must reject reuse of a known evidence GUID
+        // after its actual facts, timestamp, source or privacy have changed.
+        // These are never sent to public JSON and are not an attestation.
+        EvaluatedObservations = new ReadOnlyDictionary<Guid, EvidenceRecord>(
+            evaluatedObservations.ToDictionary(item => item.Id));
     }
+
+    [JsonIgnore]
+    internal IReadOnlyDictionary<Guid, EvidenceRecord> EvaluatedObservations { get; }
 
     public DiagnosticContextId ContextId { get; }
     public string RuleId { get; }
@@ -196,6 +207,7 @@ public static class DeterministicDiagnosticEvaluator
         var contradicting = new List<Guid>();
         var missing = new List<DiagnosticFactReference>();
         var future = new List<DiagnosticFactReference>();
+        var evaluatedObservations = new List<EvidenceRecord>();
 
         foreach (var requirement in rule.RequiredFacts)
         {
@@ -203,6 +215,9 @@ public static class DeterministicDiagnosticEvaluator
                 .Where(item => item.SubjectId == requirement.SubjectId
                     && string.Equals(item.FactKey, requirement.FactKey,
                         StringComparison.Ordinal)).ToArray();
+            // Bind even unavailable/future candidates that influenced a
+            // missing/invalid-time conclusion, not only positive evidence.
+            evaluatedObservations.AddRange(candidates);
 
             // Clock inconsistencies invalidate a rule conclusion until reviewed.
             if (candidates.Any(item => item.ObservedAtUtc > atUtc))
@@ -242,6 +257,6 @@ public static class DeterministicDiagnosticEvaluator
                         : DiagnosticAssessmentStatus.Corroborated;
 
         return new DiagnosticAssessment(contextId, rule, status, supporting, contradicting,
-            missing, future);
+            missing, future, evaluatedObservations);
     }
 }

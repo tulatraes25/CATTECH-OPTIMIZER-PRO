@@ -185,6 +185,17 @@ public static class TechnicalPassportBuilder
                 .Any(id => !knownIds.Contains(id)))
                 throw new ArgumentException("Assessment refers to missing evidence.",
                     nameof(diagnostics));
+
+            // A record with the same opaque ID can represent different facts
+            // after a stale reload or accidental cross-report rebinding.
+            // A countable conclusion must still point to the exact immutable
+            // observations that the evaluator actually inspected.
+            if (assessment.EvaluatedObservations.Any(pair =>
+                    !recordsById.TryGetValue(pair.Key, out var current)
+                    || current != pair.Value))
+                throw new ArgumentException(
+                    "Diagnostic evaluated a different evidence snapshot.",
+                    nameof(diagnostics));
         }
 
         foreach (var outcome in postchecks)
@@ -200,6 +211,11 @@ public static class TechnicalPassportBuilder
 
             var before = recordsById[outcome.BeforeEvidenceId];
             var after = recordsById[outcome.AfterEvidenceId];
+            if (before != outcome.EvaluatedBefore
+                || after != outcome.EvaluatedAfter)
+                throw new ArgumentException(
+                    "Postcheck evaluated a different evidence snapshot.",
+                    nameof(outcomes));
             if (!outcome.SubjectId.IsValid || before.SubjectId != after.SubjectId
                 || before.SubjectId != outcome.SubjectId)
                 throw new ArgumentException(
