@@ -193,6 +193,16 @@ public class ServiceReport
     public string Id { get; set; } = Guid.NewGuid().ToString("N").ToUpperInvariant();
 
     /// <summary>
+    /// Optional explicit service case. Null means legacy/unbound evidence;
+    /// never infer this link from latest timestamp, short ID or serial.
+    /// Not hardware attestation or proof of origin.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(
+        Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public Guid? ServiceCaseId { get; set; }
+
+
+    /// <summary>
     /// Información del cliente.
     /// </summary>
     public ClientInfo Client { get; set; } = new();
