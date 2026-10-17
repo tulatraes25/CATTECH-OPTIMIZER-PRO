@@ -122,3 +122,9 @@ C1/C1b established the case ID and generated-report trace. C2-A and C2-B source/
 - La vista de informes ofrece verificar el caso y diagnóstico seleccionados, muestra un resumen legible y un prefijo de SHA-256, pide alias técnico local y casilla de confirmación desmarcada por defecto.
 - El ViewModel invalida instantáneamente el token en cambios de cliente, diagnóstico, carga nueva o selección A-B-A. Respuestas asincrónicas tardías no reviven el consentimiento.
 - La escritura revalida nuevamente el caso y la fuente mediante el coordinador. Se confirma solamente el registro auditado; el bloqueo de informes combinados sigue activo hasta C2-D y QA físico de WPF.
+
+
+## C2-D0 — negative export authorization regression
+- A recorded or revoked journal claim alone cannot authorize inclusion of independent diagnostics in a named-client HTML/PDF report. The eventual export pathway needs a detached, current, on-disk verified snapshot, not a flag or matching GUID.
+- Synthetic regression covers a reviewed claim and an explicitly revoked claim while confirming the renderer still rejects mixed attribution before writing any report file. Source evidence remains byte-identical.
+- C2-D activation must re-open and revalidate source bytes, currently effective revocations and selected service case at use time; the renderer, PDF and history index must use the same trusted snapshot and fail closed on changes. This stage does not enable combined exports.
