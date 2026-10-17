@@ -200,6 +200,10 @@ public partial class ReportViewModel : ObservableObject
     private SourceReviewPreview? _pendingSourceReview;
     private long _activeReviewAttempt;
     private bool _isReviewCommandRunning;
+    // One cancellable operation owns an in-flight source-review write.
+    // Invalidating the selected customer/source/consent cancels its token;
+    // epoch guards still reject callbacks from uncooperative implementations.
+    private CancellationTokenSource? _activeReviewCancellation;
 
     public ReportViewModel(
         IReportGenerationService reportService,
@@ -344,6 +348,9 @@ public partial class ReportViewModel : ObservableObject
     private void RevokeSourceReview()
     {
         Interlocked.Increment(ref _activeReviewAttempt);
+        var inFlight = _activeReviewCancellation;
+        _activeReviewCancellation = null;
+        inFlight?.Cancel();
         _pendingSourceReview = null;
         HasPendingSourceReview = false;
         ReviewConsent = false;
@@ -373,7 +380,26 @@ public partial class ReportViewModel : ObservableObject
     // form. On an edit, revoke its "latest report" buttons. Historical files
     // stay untouched and are still accessible through the report history.
     partial void OnIncludeCompanyChanged(bool value) => InvalidateGeneratedArtifacts();
-    partial void OnIncludeDiagnosticChanged(bool value) => InvalidateGeneratedArtifacts();
+    partial void OnIncludeDiagnosticChanged(bool value)
+    {
+        RevokeSourceReview();
+        InvalidateGeneratedArtifacts();
+    }
+    partial void OnReviewerAliasChanged(string value)
+    {
+        // Changing reviewer identity AFTER pressing Confirm is a new consent
+        // context; the old in-flight journal write must not survive it.
+        if (_isReviewCommandRunning && _pendingSourceReview is not null)
+            RevokeSourceReview();
+    }
+    partial void OnReviewConsentChanged(bool value)
+    {
+        // Checkbox withdrawal while confirmation is awaiting storage.
+        // RevokeSourceReview sets HasPendingSourceReview=false before toggling
+        // this property, so it cannot recurse.
+        if (!value && _isReviewCommandRunning && HasPendingSourceReview)
+            RevokeSourceReview();
+    }
     partial void OnIncludeStartupChanged(bool value) => InvalidateGeneratedArtifacts();
     partial void OnIncludeCleanupChanged(bool value) => InvalidateGeneratedArtifacts();
     partial void OnIncludeVisualOptimizationChanged(bool value) => InvalidateGeneratedArtifacts();
@@ -788,13 +814,16 @@ public partial class ReportViewModel : ObservableObject
         RevokeSourceReview();
         var attempt = Interlocked.Increment(ref _activeReviewAttempt);
         var revision = _artifactRevision;
+        using var reviewCancellation = new CancellationTokenSource();
+        _activeReviewCancellation = reviewCancellation;
         _isReviewCommandRunning = true;
         IsRunning = true;
         StatusText = "Verificando evidencia...";
         try
         {
             var prepared = await _sourceReviewCoordinator.PrepareAsync(
-                selectedCase, "Diagnostic", selectedDiagnostic.Id);
+                selectedCase, "Diagnostic", selectedDiagnostic.Id,
+                reviewCancellation.Token);
             if (attempt != Interlocked.Read(ref _activeReviewAttempt)
                 || revision != _artifactRevision
                 || !IncludeClient
@@ -829,6 +858,8 @@ public partial class ReportViewModel : ObservableObject
         }
         finally
         {
+            if (ReferenceEquals(_activeReviewCancellation, reviewCancellation))
+                _activeReviewCancellation = null;
             if (attempt == Interlocked.Read(ref _activeReviewAttempt)
                 && _isReviewCommandRunning)
             {
@@ -864,13 +895,16 @@ public partial class ReportViewModel : ObservableObject
         var originalDiagnostic = SelectedDiagnosticReport;
         var attempt = Interlocked.Increment(ref _activeReviewAttempt);
         var revision = _artifactRevision;
+        var reviewer = ReviewerAlias;
+        using var reviewCancellation = new CancellationTokenSource();
+        _activeReviewCancellation = reviewCancellation;
         _isReviewCommandRunning = true;
         IsRunning = true;
         StatusText = "Registrando revisión...";
         try
         {
             var result = await _sourceReviewCoordinator.ConfirmAsync(
-                preview, ReviewerAlias, true);
+                preview, reviewer, true, reviewCancellation.Token);
             if (attempt != Interlocked.Read(ref _activeReviewAttempt)
                 || revision != _artifactRevision
                 || !IncludeClient
@@ -900,6 +934,8 @@ public partial class ReportViewModel : ObservableObject
         }
         finally
         {
+            if (ReferenceEquals(_activeReviewCancellation, reviewCancellation))
+                _activeReviewCancellation = null;
             if (attempt == Interlocked.Read(ref _activeReviewAttempt)
                 && _isReviewCommandRunning)
             {

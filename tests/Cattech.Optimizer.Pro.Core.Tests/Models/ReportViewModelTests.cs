@@ -1669,12 +1669,70 @@ public class ReportViewModelTests
         Assert.Equal(0, coordinator.ConfirmCalls);
     }
 
+    [Theory]
+    [InlineData("customer")]
+    [InlineData("diagnostic")]
+    [InlineData("alias")]
+    [InlineData("consent")]
+    public async Task InFlightConfirm_IsCancelledWhenReviewContextChanges(string change)
+    {
+        var fake = new FakeSourceReviewCoordinator
+        {
+            ConfirmEntered = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously),
+            ResumeConfirm = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously)
+        };
+        var (vm, _) = CreateViewModel(
+            storedReports: new FakeServiceReportService
+            {
+                CaseId = Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+            }, review: fake);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        await vm.PreviewDiagnosticReviewCommand.ExecuteAsync(null);
+        Assert.True(vm.HasPendingSourceReview);
+        vm.ReviewerAlias = "TechQA";
+        vm.ReviewConsent = true;
+
+        var confirm = vm.ConfirmDiagnosticReviewCommand.ExecuteAsync(null);
+        await fake.ConfirmEntered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        switch (change)
+        {
+            case "customer":
+                vm.SelectedServiceReport = null;
+                break;
+            case "diagnostic":
+                vm.SelectedDiagnosticReport = null;
+                break;
+            case "alias":
+                vm.ReviewerAlias = "TechQB";
+                break;
+            case "consent":
+                vm.ReviewConsent = false;
+                break;
+        }
+        fake.ResumeConfirm.TrySetResult(true);
+        await confirm.WaitAsync(TimeSpan.FromSeconds(15));
+
+        Assert.True(fake.WasConfirmCancelled);
+        Assert.Equal(1, fake.ConfirmCalls);
+        Assert.Equal(0, fake.CommittedCalls);
+        Assert.False(vm.HasPendingSourceReview);
+        Assert.False(vm.ReviewConsent);
+        Assert.False(vm.IsRunning);
+        Assert.False(vm.IsSuccess);
+    }
+
     private sealed class FakeSourceReviewCoordinator : IReportSourceReviewCoordinator
     {
         public int PrepareCalls { get; private set; }
         public int ConfirmCalls { get; private set; }
         public TaskCompletionSource<bool>? PrepareEntered { get; init; }
         public TaskCompletionSource<bool>? ResumePrepare { get; init; }
+        public TaskCompletionSource<bool>? ConfirmEntered { get; init; }
+        public TaskCompletionSource<bool>? ResumeConfirm { get; init; }
+        public bool WasConfirmCancelled { get; private set; }
+        public int CommittedCalls { get; private set; }
 
         public async Task<SourceReviewCoordinationResult> PrepareAsync(
             ServiceReport? selectedCase, string kind, string sourceId,
@@ -1692,17 +1750,31 @@ public class ReportViewModelTests
             return new(SourceReviewCoordinationStatus.Prepared, preview);
         }
 
-        public Task<SourceReviewCoordinationResult> ConfirmAsync(
+        public async Task<SourceReviewCoordinationResult> ConfirmAsync(
             SourceReviewPreview? preview, string reviewerAlias, bool consent,
             CancellationToken cancellationToken = default)
         {
             ConfirmCalls++;
-            return Task.FromResult(consent
+            ConfirmEntered?.TrySetResult(true);
+            try
+            {
+                if (ResumeConfirm is not null)
+                    await ResumeConfirm.Task.WaitAsync(cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+            catch (OperationCanceledException)
+            {
+                WasConfirmCancelled = true;
+                throw;
+            }
+            if (consent)
+                CommittedCalls++;
+            return consent
                 ? new SourceReviewCoordinationResult(
                     SourceReviewCoordinationStatus.Recorded,
                     BindingId: Guid.Parse("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"))
                 : new SourceReviewCoordinationResult(
-                    SourceReviewCoordinationStatus.ReviewRequired));
+                    SourceReviewCoordinationStatus.ReviewRequired);
         }
     }
 

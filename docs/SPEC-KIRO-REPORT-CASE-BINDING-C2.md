@@ -128,3 +128,9 @@ C1/C1b established the case ID and generated-report trace. C2-A and C2-B source/
 - A recorded or revoked journal claim alone cannot authorize inclusion of independent diagnostics in a named-client HTML/PDF report. The eventual export pathway needs a detached, current, on-disk verified snapshot, not a flag or matching GUID.
 - Synthetic regression covers a reviewed claim and an explicitly revoked claim while confirming the renderer still rejects mixed attribution before writing any report file. Source evidence remains byte-identical.
 - C2-D activation must re-open and revalidate source bytes, currently effective revocations and selected service case at use time; the renderer, PDF and history index must use the same trusted snapshot and fail closed on changes. This stage does not enable combined exports.
+
+
+## C2-C2 — cancellation on customer / source / consent changes
+- WPF passes a per-operation CancellationToken into both PrepareAsync and ConfirmAsync; switching case, diagnostic, inclusion scope, reviewer alias during confirmation, or withdrawing consent cancels pending storage work and invalidates the UI attempt epoch. Abandoned callbacks cannot display success.
+- A cooperative fake verifies cancellation before commit for four adversarial mid-await changes. No report export permission is granted.
+- Residual risk: cancellation is cooperative, and a user event arriving after atomic File.Move may not undo an already published journal receipt. The eventual C2-D must always inspect current binding/revocation at use time; real WPF QA remains mandatory.
