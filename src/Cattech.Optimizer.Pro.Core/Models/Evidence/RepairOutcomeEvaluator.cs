@@ -115,8 +115,13 @@ public sealed class RepairOutcomeAssessment
     [System.Text.Json.Serialization.JsonIgnore]
     internal EvidenceRecord EvaluatedAfter { get; }
 
+    // This outcome is intentionally NOT a raw JSON source-data contract.
+    // A generic serializer must not reveal user-controlled rule/fact strings.
+    [System.Text.Json.Serialization.JsonIgnore]
     public string RuleId { get; }
+    [System.Text.Json.Serialization.JsonIgnore]
     public string RuleVersion { get; }
+    [System.Text.Json.Serialization.JsonIgnore]
     public string FactKey { get; }
     [System.Text.Json.Serialization.JsonIgnore]
     public Guid BeforeEvidenceId { get; }

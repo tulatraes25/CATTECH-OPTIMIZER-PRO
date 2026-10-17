@@ -158,19 +158,31 @@ public sealed class DiagnosticAssessment
     [JsonIgnore]
     internal ReadOnlyCollection<DiagnosticFactReference> EvaluatedFactReferences { get; }
 
+    // This is an in-memory evaluator object, NOT a public JSON contract.
+    // All source identifiers, arbitrary rule strings, fact keys and evidence
+    // GUIDs must be projected explicitly by an authorized privacy-safe DTO.
+    [JsonIgnore]
     public DiagnosticContextId ContextId { get; }
+    [JsonIgnore]
     public string RuleId { get; }
+    [JsonIgnore]
     public string RuleVersion { get; }
+    [JsonIgnore]
     public string Hypothesis { get; }
+    [JsonIgnore]
     public string FalsificationCriterion { get; }
     public DiagnosticAssessmentStatus Status { get; }
+    [JsonIgnore]
     public ReadOnlyCollection<Guid> SupportingEvidenceIds { get; }
+    [JsonIgnore]
     public ReadOnlyCollection<Guid> ContradictingEvidenceIds { get; }
     [JsonIgnore]
     public ReadOnlyCollection<DiagnosticFactReference> MissingFactReferences { get; }
     [JsonIgnore]
     public ReadOnlyCollection<DiagnosticFactReference> FutureDatedFactReferences { get; }
+    [JsonIgnore]
     public ReadOnlyCollection<string> MissingFactKeys { get; }
+    [JsonIgnore]
     public ReadOnlyCollection<string> FutureDatedFactKeys { get; }
 }
 
