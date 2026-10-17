@@ -311,6 +311,7 @@ public partial class ReportViewModel : ObservableObject
     private long _artifactRevision;
     private long _activeExportAttempt;
     private long _activeLoadAttempt;
+    private bool _isLoadingData;
     private bool IsCurrentLoad(long attempt) =>
         Interlocked.Read(ref _activeLoadAttempt) == attempt;
     private readonly HashSet<SmartTestSessionSelectionItem> _observedSmartTestSelections = new();
@@ -354,8 +355,15 @@ public partial class ReportViewModel : ObservableObject
     /// WPF state. This remains advisory: file identity can change after read.
     /// </summary>
     private async Task<bool> VerifySelectedClientBeforeOutputAsync(
-        ReportGenerationOptions options)
+        ReportGenerationOptions options, long exportAttempt)
     {
+        // A later export OR a report reload supersedes this attempt. An old
+        // read must never revoke or overwrite a newer client's UI selection.
+        bool OwnsExport() =>
+            exportAttempt == _activeExportAttempt && !_isLoadingData;
+        if (!OwnsExport())
+            return false;
+
         var selected = options.ServiceReport;
         if (selected is null)
             return false;
@@ -369,6 +377,8 @@ public partial class ReportViewModel : ObservableObject
 
         bool RejectChangedSelection()
         {
+            if (!OwnsExport())
+                return false;
             InvalidateGeneratedArtifacts();
             ShowError("La selección o los datos del cliente cambiaron mientras se preparaba el informe. Volvé a generar con la selección actual.");
             return false;
@@ -384,23 +394,31 @@ public partial class ReportViewModel : ObservableObject
         }
         catch (Exception)
         {
+            if (!OwnsExport())
+                return false;
             RevokeCustomerSelection("Los datos seleccionados no pudieron verificarse.");
             return false;
         }
 
-        if (!await CheckReportInventoryAsync())
+        if (!await CheckReportInventoryAsync(OwnsExport))
         {
+            if (!OwnsExport())
+                return false;
             RevokeCustomerSelection("La integridad de los informes cambió. " +
                 "Se canceló la generación con datos de clientes.");
             return false;
         }
 
+        if (!OwnsExport())
+            return false;
         if (!SelectionStillCurrent())
             return RejectChangedSelection();
 
         try
         {
             var live = await _serviceReportService.LoadReportAsync(selected.Id);
+            if (!OwnsExport())
+                return false;
 
             // Snapshot mutation and ABA selection changes both fail closed.
             if (!SelectionStillCurrent()
@@ -425,6 +443,8 @@ public partial class ReportViewModel : ObservableObject
             // Do not show private filesystem paths or serialized client data.
         }
 
+        if (!OwnsExport())
+            return false;
         RevokeCustomerSelection("El informe seleccionado cambió o dejó de estar disponible. " +
             "Se suspendió la generación con datos de clientes.");
         return false;
@@ -507,6 +527,10 @@ public partial class ReportViewModel : ObservableObject
         // A newer refresh always supersedes a pending older one, even when
         // a provider ignores UI CanExecute and responds out of order.
         var loadAttempt = Interlocked.Increment(ref _activeLoadAttempt);
+        // A new read invalidates all outstanding HTML/PDF attempts. Their
+        // late callbacks may finish I/O but cannot touch new form feedback.
+        Interlocked.Increment(ref _activeExportAttempt);
+        _isLoadingData = true;
         ClearMessages();
         IsRunning = true;
         StatusText = "Cargando datos...";
@@ -675,7 +699,10 @@ public partial class ReportViewModel : ObservableObject
         finally
         {
             if (IsCurrentLoad(loadAttempt))
+            {
+                _isLoadingData = false;
                 IsRunning = false;
+            }
         }
     }
 
@@ -685,6 +712,12 @@ public partial class ReportViewModel : ObservableObject
     [RelayCommand]
     private async Task GenerateReportAsync()
     {
+        // Direct command invocation must not export a half-reloaded form.
+        if (_isLoadingData)
+        {
+            StatusText = "Cargando datos: generá el informe al terminar.";
+            return;
+        }
         ClearMessages();
         var attempt = BeginExportAttempt();
         var revision = _artifactRevision;
@@ -708,7 +741,7 @@ public partial class ReportViewModel : ObservableObject
                 ShowError("Seleccioná un diagnóstico antes de generar el informe.");
                 return;
             }
-            if (options.IncludeClient && !await VerifySelectedClientBeforeOutputAsync(options))
+            if (options.IncludeClient && !await VerifySelectedClientBeforeOutputAsync(options, attempt))
                 return;
             if (!EnsureExportStillCurrent(attempt, revision))
                 return;
@@ -773,6 +806,11 @@ public partial class ReportViewModel : ObservableObject
     [RelayCommand]
     private async Task ExportPdfAsync()
     {
+        if (_isLoadingData)
+        {
+            StatusText = "Cargando datos: exportá el PDF al terminar.";
+            return;
+        }
         ClearMessages();
         var attempt = BeginExportAttempt();
         var revision = _artifactRevision;
@@ -800,7 +838,7 @@ public partial class ReportViewModel : ObservableObject
                 ShowError("Seleccioná un diagnóstico antes de generar el informe.");
                 return;
             }
-            if (options.IncludeClient && !await VerifySelectedClientBeforeOutputAsync(options))
+            if (options.IncludeClient && !await VerifySelectedClientBeforeOutputAsync(options, attempt))
                 return;
             if (!EnsureExportStillCurrent(attempt, revision))
                 return;

@@ -1327,6 +1327,81 @@ public class ReportViewModelTests
         Assert.DoesNotContain("QA-OLDER-REPORT", vm.ReportInventoryMessage);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SupersededExportCannotResetNewClientOnLateRevalidation(bool pdf)
+    {
+        var store = new FakeServiceReportService();
+        var (vm, generator) = CreateViewModel(storedReports: store);
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        var (entered, release) = PauseNextCustomerReload(store);
+
+        var oldExport = pdf
+            ? vm.ExportPdfCommand.ExecuteAsync(null)
+            : vm.GenerateReportCommand.ExecuteAsync(null);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+
+        // Release the fake for the newer refresh, but keep the old export's
+        // captured async gate pending to simulate out-of-order completion.
+        store.LoadEntered = null;
+        store.ResumeLoad = null;
+        await vm.LoadDataCommand.ExecuteAsync(null);
+        Assert.False(vm.HasReportInventoryWarning);
+        Assert.True(vm.HasClientData);
+        Assert.NotNull(vm.SelectedServiceReport);
+        Assert.True(vm.HasDiagnosticData);
+
+        if (pdf)
+            store.ReturnNullOnLoad = true; // only the older callback uses it
+        release.TrySetResult(true);
+        await oldExport.WaitAsync(TimeSpan.FromSeconds(15));
+
+        Assert.Equal(0, generator.GenerateCallCount);
+        Assert.False(vm.HasError);
+        Assert.False(vm.HasReportInventoryWarning);
+        Assert.True(vm.HasClientData);
+        Assert.NotNull(vm.SelectedServiceReport);
+        Assert.True(vm.IncludeClient);
+        Assert.True(vm.HasDiagnosticData);
+        Assert.NotNull(vm.SelectedDiagnosticReport);
+        Assert.False(vm.IsRunning);
+        Assert.False(vm.HasGeneratedPdf);
+        Assert.False(vm.HasGeneratedReport);
+    }
+
+    [Fact]
+    public async Task LoadingData_BlocksDirectHtmlAndPdfCommandsUntilSnapshotIsComplete()
+    {
+        var settings = new FakeSettingsService
+        {
+            FirstLoadGate = new TaskCompletionSource<AppSettings>(
+                TaskCreationOptions.RunContinuationsAsynchronously),
+            FirstLoadEntered = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously)
+        };
+        var (vm, generator) = CreateViewModel(settings: settings);
+        var pendingLoad = InvokeDirectReloadForRaceTest(vm);
+        await settings.FirstLoadEntered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+
+        await vm.GenerateReportCommand.ExecuteAsync(null);
+        await vm.ExportPdfCommand.ExecuteAsync(null);
+        Assert.Equal(0, generator.GenerateCallCount);
+        Assert.True(vm.IsRunning);
+        Assert.False(vm.HasGeneratedReport);
+        Assert.False(vm.HasGeneratedPdf);
+
+        settings.FirstLoadGate.SetResult(new AppSettings
+        {
+            Company = new CompanyInfo { Name = "SYNTHETIC CATTECH QA" }
+        });
+        await pendingLoad.WaitAsync(TimeSpan.FromSeconds(15));
+        Assert.False(vm.IsRunning);
+        Assert.True(vm.HasClientData);
+        Assert.True(vm.HasDiagnosticData);
+        Assert.False(vm.HasError);
+    }
+
     private static Task InvokeDirectReloadForRaceTest(ReportViewModel vm)
     {
         // Exercise out-of-order invocations even if the current WPF command
