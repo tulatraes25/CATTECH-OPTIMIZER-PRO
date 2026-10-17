@@ -23,19 +23,18 @@ public static class ReportSourceCasePolicy
         ArgumentNullException.ThrowIfNull(options);
         if (!options.IncludeClient || options.ServiceReport is null)
             return null;
-        var caseId = options.ServiceReport.ServiceCaseId;
-
-        if (options.IncludeDiagnostic && options.DiagnosticReport is { } diagnostic
-            && !HasMatchingExplicitCase(caseId, diagnostic.ServiceCaseId))
+        // SPEC #92 P0 interim containment: a mutable ServiceCaseId GUID,
+        // including an equal GUID, is not authenticated source provenance.
+        // Independent measurements cannot be attributed to a named client
+        // until C2 verifies an audited binding to immutable source bytes.
+        // Historical files and client-free standalone exports remain readable.
+        if (options.IncludeDiagnostic && options.DiagnosticReport is not null)
             return "Diagnóstico";
-        if (options.IncludeStartup && options.StartupAnalysis is { } startup
-            && !HasMatchingExplicitCase(caseId, startup.ServiceCaseId))
+        if (options.IncludeStartup && options.StartupAnalysis is not null)
             return "Inicio";
-        if (options.IncludeSmart && options.SmartAnalysis is { } smart
-            && !HasMatchingExplicitCase(caseId, smart.ServiceCaseId))
+        if (options.IncludeSmart && options.SmartAnalysis is not null)
             return "SMART";
-        if (options.IncludeSmartTests && options.SmartTestSessions.Any(item =>
-                item is null || !HasMatchingExplicitCase(caseId, item.ServiceCaseId)))
+        if (options.IncludeSmartTests && options.SmartTestSessions.Count > 0)
             return "SMART Self-Tests";
 
         // History-only cleanup/restore and the current visual optimization

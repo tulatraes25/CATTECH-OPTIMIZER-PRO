@@ -53,8 +53,18 @@ public sealed class DiskReportRenderingTests
         try
         {
             var service = new HtmlReportService(directory);
-            var path = await service.GenerateHtmlReportAsync(options);
-            return await File.ReadAllTextAsync(path);
+            // Until audited C2 binding, these are two separate legitimate
+            // documents, not one invented named-client diagnostic.
+            options.IncludeDiagnostic = false;
+            var clientPath = await service.GenerateHtmlReportAsync(options);
+            options.IncludeClient = false;
+            options.ServiceReport = null;
+            options.IncludeDiagnostic = true;
+            var diagnosticPath = await service.GenerateHtmlReportAsync(options);
+            var client = await File.ReadAllTextAsync(clientPath);
+            var diagnostic = await File.ReadAllTextAsync(diagnosticPath);
+            Assert.DoesNotContain("Synthetic Customer", diagnostic);
+            return client + "\n" + diagnostic;
         }
         finally
         {

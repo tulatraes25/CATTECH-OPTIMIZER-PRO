@@ -74,28 +74,83 @@ public sealed class ReportClientCaseLinkGuardTests
         }
     }
 
-    [Fact]
-    public async Task ExactLinkedDiagnosticAndClient_ProduceSafeHtml()
+    [Theory]
+    [InlineData("diagnostic")]
+    [InlineData("startup")]
+    [InlineData("smart")]
+    [InlineData("test")]
+    public async Task MatchingGuidWithoutAuditedBinding_RejectsBeforeHtml(string section)
     {
         var options = Options();
-        options.IncludeDiagnostic = true;
-        options.DiagnosticReport = new DiagnosticReport
+        switch (section)
         {
-            ServiceCaseId = CaseA,
-            OsName = "QA Windows synthetic"
-        };
+            case "diagnostic":
+                options.IncludeDiagnostic = true;
+                options.DiagnosticReport = new DiagnosticReport { ServiceCaseId = CaseA };
+                break;
+            case "startup":
+                options.IncludeStartup = true;
+                options.StartupAnalysis = new StartupAnalysis { ServiceCaseId = CaseA };
+                break;
+            case "smart":
+                options.IncludeSmart = true;
+                options.SmartAnalysis = new SmartAnalysisResult { ServiceCaseId = CaseA };
+                break;
+            case "test":
+                options.IncludeSmartTests = true;
+                options.SmartTestSessions.Add(new SmartTestSession { ServiceCaseId = CaseA });
+                break;
+        }
+
         var root = Path.Combine(Path.GetTempPath(),
-            "cattech-qa-link-good-" + Guid.NewGuid().ToString("N"));
+            "cattech-qa-link-same-guid-" + Guid.NewGuid().ToString("N"));
         try
         {
-            var file = await new HtmlReportService(root).GenerateHtmlReportAsync(options);
-            var html = await File.ReadAllTextAsync(file);
-            Assert.Contains("QA Windows synthetic", html);
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => new HtmlReportService(root).GenerateHtmlReportAsync(options));
+            Assert.False(Directory.Exists(Path.Combine(root, "reports", "html")));
         }
         finally
         {
             if (Directory.Exists(root))
                 Directory.Delete(root, recursive: true);
         }
+    }
+
+    [Fact]
+    public async Task IndependentDiagnostic_IsStillAllowedWithoutNamedClient()
+    {
+        var options = Options();
+        options.IncludeClient = false;
+        options.ServiceReport = null;
+        options.IncludeDiagnostic = true;
+        options.DiagnosticReport = new DiagnosticReport
+        {
+            ServiceCaseId = CaseA, OsName = "Synthetic standalone Windows"
+        };
+        var root = Path.Combine(Path.GetTempPath(),
+            "cattech-qa-standalone-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var file = await new HtmlReportService(root).GenerateHtmlReportAsync(options);
+            Assert.Contains("Synthetic standalone Windows", await File.ReadAllTextAsync(file));
+            Assert.Contains("_SinCliente_", Path.GetFileName(file));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void DirectRecommendations_DoNotBypassClientAttribution()
+    {
+        var options = Options();
+        options.IncludeRecommendations = true;
+        options.IncludeDiagnostic = true;
+        options.DiagnosticReport = new DiagnosticReport { ServiceCaseId = CaseA };
+        Assert.Throws<InvalidOperationException>(
+            () => ReportRecommendationEngine.GenerateRecommendations(options));
     }
 }

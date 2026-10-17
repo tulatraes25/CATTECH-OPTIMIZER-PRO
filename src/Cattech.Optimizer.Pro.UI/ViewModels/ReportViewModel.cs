@@ -607,12 +607,8 @@ public partial class ReportViewModel : ObservableObject
             }
             HasDiagnosticData = AvailableDiagnosticReports.Count > 0;
             if (HasDiagnosticData) SelectedDiagnosticReport = AvailableDiagnosticReports.First();
-            // Legacy independent sources have no trusted case link.
-            // Do not auto-attribute them to the currently selected client.
-            IncludeDiagnostic = HasDiagnosticData &&
-                (!IncludeClient || ReportSourceCasePolicy.HasMatchingExplicitCase(
-                    SelectedServiceReport?.ServiceCaseId,
-                    SelectedDiagnosticReport?.ServiceCaseId));
+            // An equal mutable GUID is not the audited C2 source binding.
+            IncludeDiagnostic = HasDiagnosticData && !IncludeClient;
 
             // Inicio
             var startupAnalyses = await _startupService.ListAnalysesAsync(5);
@@ -626,10 +622,7 @@ public partial class ReportViewModel : ObservableObject
             }
             HasStartupData = AvailableStartupAnalyses.Count > 0;
             if (HasStartupData) SelectedStartupAnalysis = AvailableStartupAnalyses.First();
-            IncludeStartup = HasStartupData &&
-                (!IncludeClient || ReportSourceCasePolicy.HasMatchingExplicitCase(
-                    SelectedServiceReport?.ServiceCaseId,
-                    SelectedStartupAnalysis?.ServiceCaseId));
+            IncludeStartup = HasStartupData && !IncludeClient;
 
             // History entries are SUMMARIES, not selectable full results.
             // No audited LoadResultAsync exists; never invent missing details.
@@ -663,10 +656,7 @@ public partial class ReportViewModel : ObservableObject
             if (HasSmartData)
             {
                 SelectedSmartAnalysis = AvailableSmartAnalyses.First();
-                IncludeSmart = !IncludeClient ||
-                    ReportSourceCasePolicy.HasMatchingExplicitCase(
-                        SelectedServiceReport?.ServiceCaseId,
-                        SelectedSmartAnalysis.ServiceCaseId);
+                IncludeSmart = !IncludeClient;
             }
             else
             {

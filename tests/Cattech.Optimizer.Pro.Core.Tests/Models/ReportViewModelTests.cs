@@ -17,54 +17,44 @@ public class ReportViewModelTests
     // ===== TEST A: HtmlReportService directo =====
 
     [Fact]
-    public async Task HtmlReportService_WithClientAndDiagnostic_RendersBothSections()
+    public async Task HtmlReportService_ClientAndStandaloneDiagnostic_DoNotMix()
     {
         using var tempDir = new TempDirectory();
-
         var service = new HtmlReportService(tempDir.Path);
         var syntheticCase = Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
-
-        var serviceReport = new ServiceReport
-        {
-            ServiceCaseId = syntheticCase,
-            Client = new ClientInfo { Name = "Cliente QA" },
-            Equipment = new EquipmentInfo { Brand = "CATTECH", Model = "Notebook QA" },
-            Service = new ServiceInfo { Reason = "Smoke Report Test" }
-        };
-
-        var diagnosticReport = new DiagnosticReport
-        {
-            ServiceCaseId = syntheticCase,
-            OsName = "Microsoft Windows 11 Pro"
-        };
-
         var options = new ReportGenerationOptions
         {
             IncludeCompany = false,
             IncludeClient = true,
-            ServiceReport = serviceReport,
-            IncludeDiagnostic = true,
-            DiagnosticReport = diagnosticReport,
-            IncludeStartup = false,
-            IncludeCleanup = false,
-            IncludeVisualOptimization = false,
-            IncludeRestorePoint = false,
-            IncludeSmart = false,
-            IncludeSmartTests = false,
-            IncludeRecommendations = false
+            ServiceReport = new ServiceReport
+            {
+                ServiceCaseId = syntheticCase,
+                Client = new ClientInfo { Name = "Cliente QA" },
+                Equipment = new EquipmentInfo { Brand = "CATTECH", Model = "Notebook QA" }
+            },
+            IncludeDiagnostic = false, IncludeStartup = false,
+            IncludeCleanup = false, IncludeVisualOptimization = false,
+            IncludeRestorePoint = false, IncludeSmart = false,
+            IncludeSmartTests = false, IncludeRecommendations = false
         };
+        var clientFile = await service.GenerateHtmlReportAsync(options);
+        var clientHtml = await File.ReadAllTextAsync(clientFile);
+        Assert.Contains("Cliente QA", clientHtml);
+        Assert.Contains("Notebook QA", clientHtml);
 
-        var filePath = await service.GenerateHtmlReportAsync(options);
-
-        Assert.False(string.IsNullOrEmpty(filePath));
-        Assert.False(filePath.Contains("SinCliente"), $"Filename should not contain 'SinCliente': {filePath}");
-
-        var html = await File.ReadAllTextAsync(filePath);
-
-        Assert.Contains("Cliente QA", html);
-        Assert.Contains("Notebook QA", html);
-        Assert.Contains("CATTECH", html);
-        Assert.Contains("Microsoft Windows 11 Pro", html);
+        options.IncludeClient = false;
+        options.ServiceReport = null;
+        options.IncludeDiagnostic = true;
+        options.DiagnosticReport = new DiagnosticReport
+        {
+            ServiceCaseId = syntheticCase,
+            OsName = "Microsoft Windows 11 Pro"
+        };
+        var standalone = await service.GenerateHtmlReportAsync(options);
+        var standaloneHtml = await File.ReadAllTextAsync(standalone);
+        Assert.Contains("Microsoft Windows 11 Pro", standaloneHtml);
+        Assert.DoesNotContain("Cliente QA", standaloneHtml);
+        Assert.Contains("_SinCliente_", Path.GetFileName(standalone));
     }
 
     // ===== TEST B: ReportViewModel Fresh Load→Generate =====
@@ -122,7 +112,7 @@ public class ReportViewModelTests
     }
 
     [Fact]
-    public async Task ExplicitlyLinkedSyntheticClientAndDiagnostic_AllowCheckedSection()
+    public async Task SyntheticMatchingGuid_DoesNotPermitAttributionWithoutAudit()
     {
         var stored = new FakeServiceReportService
         {
@@ -132,17 +122,13 @@ public class ReportViewModelTests
         await vm.LoadDataCommand.ExecuteAsync(null);
         Assert.NotNull(vm.SelectedDiagnosticReport);
         vm.SelectedDiagnosticReport.ServiceCaseId = stored.CaseId;
+        Assert.False(vm.IncludeDiagnostic);
         vm.IncludeDiagnostic = true;
-
         await vm.GenerateReportCommand.ExecuteAsync(null);
-        Assert.False(vm.HasError);
-        Assert.True(vm.HasGeneratedReport);
-        Assert.NotNull(writer.LastCapturedOptions);
-        Assert.Equal(stored.CaseId, writer.LastCapturedOptions.ServiceReport?.ServiceCaseId);
-        Assert.Equal(stored.CaseId, writer.LastCapturedOptions.DiagnosticReport?.ServiceCaseId);
-        if (!string.IsNullOrWhiteSpace(vm.LastReportPath)
-            && File.Exists(vm.LastReportPath))
-            File.Delete(vm.LastReportPath); // Synthetic unique fixture only.
+        Assert.True(vm.HasError);
+        Assert.Contains("no está asociada", vm.ErrorMessage);
+        Assert.Equal(0, writer.GenerateCallCount);
+        Assert.False(vm.HasGeneratedReport);
     }
 
     // ===== TEST C: Stale invalidation =====

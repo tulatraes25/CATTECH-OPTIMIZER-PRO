@@ -65,3 +65,8 @@ No deletion of old records; no network/cloud account, no fake hardware attestati
 
 ## CURRENT DISPOSITION
 C1/C1b established the case ID and generated-report trace. C2-A through C2-E remain **NOT IMPLEMENTED**. Current `ReportSourceCasePolicy.HasMatchingExplicitCase` is a necessary **not sufficient** condition; its existing passing test proves only equal GUIDs, not provenance. Maintain issue #92 P0 until real binding, negative tests and Windows physical QA pass.
+
+## P0 interim containment — pending C2 audited binding
+- A matching mutable GUID no longer grants permission to attribute independent diagnostic, startup, SMART or self-test measurements to a named customer's equipment. HTML, PDF and direct recommendation generation enforce this before attributed output.
+- WPF defaults those source sections off when a named client is selected; manual forcing is rejected with a readable, non-private error. Existing local histories remain intact and can be exported as independent client-free reports.
+- This is a temporary fail-closed release gate, not C2 completion. C2-B through C2-E must restore safely reviewed, on-disk provenance-verified combinations, with revocation, race tests and physical Windows QA. Never re-enable attribution by comparing GUIDs alone.

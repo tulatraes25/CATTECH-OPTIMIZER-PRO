@@ -15,6 +15,11 @@ public static class ReportRecommendationEngine
     public static List<ReportRecommendation> GenerateRecommendations(ReportGenerationOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
+        // Direct recommendation callers must obey the same source-attribution
+        // boundary as HTML/PDF, even without the renderer.
+        if (ReportSourceCasePolicy.FindUnassociatedClientSource(options) is not null)
+            throw new InvalidOperationException(
+                "Las fuentes independientes no están asociadas al equipo.");
         var recommendations = new List<ReportRecommendation>();
         if (!options.IncludeRecommendations)
             return recommendations;
