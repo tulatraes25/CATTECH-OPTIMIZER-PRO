@@ -67,7 +67,14 @@ jobs:
           # PowerShell Set-Content on Windows writes CRLF. Drop precisely
           # one terminal CR; reject embedded controls/extra whitespace.
           manifest_line=$(cat "$manifest")
-          manifest_line=${manifest_line%
+          # Remove the single final Windows CRLF carriage return. Embedded
+          # controls are still rejected by the strict anchored format check.
+          manifest_line=$(printf '%s' "$manifest_line" | sed 's/\r$//')
+          checksum_pattern='^([0-9A-Fa-f]{64})  CATTECH-Optimizer-Pro-v0[.]3[.]0-win-x64[.]zip$'
+          [[ "$manifest_line" =~ $checksum_pattern ]] || fail "Malformed SHA/name manifest"
+          listed_hash=$(printf '%s' "$manifest_line" | cut -c1-64)
+          listed_name=$(printf '%s' "$manifest_line" | cut -c67-)
+          [[ "$listed_name" == "$PACKAGED_ZIP_NAME" ]] || fail "Unexpected ZIP name in manifest"
           recalculated=$(sha256sum "$zip" | awk '{print $1}')
           upstream=$(printf '%s' "$PACKAGED_ZIP_SHA256" | tr '[:lower:]' '[:upper:]')
           declared=$(printf '%s' "$listed_hash" | tr '[:lower:]' '[:upper:]')
