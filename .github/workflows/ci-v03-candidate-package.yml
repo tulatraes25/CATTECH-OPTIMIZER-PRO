@@ -64,9 +64,101 @@ jobs:
           manifest="candidate/$PACKAGED_CHECKSUM_NAME"
           [[ -f "$zip" && -f "$manifest" ]] || fail "Candidate ZIP or checksum manifest absent"
           [[ "$(wc -l < "$manifest")" -eq 1 ]] || fail "Checksum manifest must contain exactly one line"
-          read -r listed_hash listed_name < "$manifest"
+          # PowerShell Set-Content on Windows writes CRLF. Drop precisely
+          # one terminal CR; reject embedded controls/extra whitespace.
+          manifest_line=$(cat "$manifest")
+          manifest_line=${manifest_line%
+          recalculated=$(sha256sum "$zip" | awk '{print $1}')
+          upstream=$(printf '%s' "$PACKAGED_ZIP_SHA256" | tr '[:lower:]' '[:upper:]')
+          declared=$(printf '%s' "$listed_hash" | tr '[:lower:]' '[:upper:]')
+          actual=$(printf '%s' "$recalculated" | tr '[:lower:]' '[:upper:]')
+          [[ "$upstream" == "$declared" && "$declared" == "$actual" ]] || fail "Three-way ZIP SHA-256 mismatch"
+          unzip -tqq "$zip" || fail "ZIP archive CRC/integrity check failed"
+
+          entries="$RUNNER_TEMP/cattech-candidate-entries.txt"
+          unzip -Z1 "$zip" > "$entries" || fail "Cannot enumerate ZIP members"
+          shopt -s nocasematch
+          while IFS= read -r entry; do
+            case "$entry" in
+              /*|../*|*/../*|*/..|./*|*/./*) fail "Unsafe ZIP entry path" ;;
+              data/*|logs/*|backups/*|reports/*) fail "Personal/runtime directory included" ;;
+              *smartctl.exe) fail "Unlicensed bundled smartctl detected" ;;
+            esac
+          done < "$entries"
+          for required in \
+            "Cattech.Optimizer.Pro.UI.exe" \
+            "Cattech.Optimizer.Pro.UI.runtimeconfig.json" \
+            "LibreHardwareMonitorLib.dll" \
+            "config/herramientas.json" \
+            "config/bugcheckcodes.json" "README.md" "LICENSE"; do
+            grep -Fxq -- "$required" "$entries" || fail "Required ZIP file is missing"
+          done
+          unzip -p "$zip" "Cattech.Optimizer.Pro.UI.runtimeconfig.json" |
+            jq -e '.runtimeOptions.tfm == "net10.0"' >/dev/null ||
+            fail "Candidate is not targeting the audited .NET 10 runtime"
+          {
+            echo "## CATTECH candidate — independent archive verification"
+            echo ""
+            echo "| Field | Result |"
+            echo "|---|---|"
+            echo "| Source SHA | $EXPECTED_SOURCE_SHA |"
+            echo "| ProductVersion | $PACKAGED_PRODUCT_VERSION |"
+            echo "| FileVersion | $PACKAGED_FILE_VERSION |"
+            echo "| SHA-256 (three independent readings) | $actual |"
+            echo "| ZIP CRC / mandatory files / runtimeconfig .NET 10 | PASS |"
+            echo "| Forbidden personal directories and bundled smartctl | ABSENT |"
+            echo "| GitHub tag / public release | NOT CREATED |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+\\r'}
+          checksum_pattern='^([0-9A-Fa-f]{64})  (CATTECH-Optimizer-Pro-v0\\.3\\.0-win-x64\\.zip)
+          recalculated=$(sha256sum "$zip" | awk '{print $1}')
+          upstream=$(printf '%s' "$PACKAGED_ZIP_SHA256" | tr '[:lower:]' '[:upper:]')
+          declared=$(printf '%s' "$listed_hash" | tr '[:lower:]' '[:upper:]')
+          actual=$(printf '%s' "$recalculated" | tr '[:lower:]' '[:upper:]')
+          [[ "$upstream" == "$declared" && "$declared" == "$actual" ]] || fail "Three-way ZIP SHA-256 mismatch"
+          unzip -tqq "$zip" || fail "ZIP archive CRC/integrity check failed"
+
+          entries="$RUNNER_TEMP/cattech-candidate-entries.txt"
+          unzip -Z1 "$zip" > "$entries" || fail "Cannot enumerate ZIP members"
+          shopt -s nocasematch
+          while IFS= read -r entry; do
+            case "$entry" in
+              /*|../*|*/../*|*/..|./*|*/./*) fail "Unsafe ZIP entry path" ;;
+              data/*|logs/*|backups/*|reports/*) fail "Personal/runtime directory included" ;;
+              *smartctl.exe) fail "Unlicensed bundled smartctl detected" ;;
+            esac
+          done < "$entries"
+          for required in \
+            "Cattech.Optimizer.Pro.UI.exe" \
+            "Cattech.Optimizer.Pro.UI.runtimeconfig.json" \
+            "LibreHardwareMonitorLib.dll" \
+            "config/herramientas.json" \
+            "config/bugcheckcodes.json" "README.md" "LICENSE"; do
+            grep -Fxq -- "$required" "$entries" || fail "Required ZIP file is missing"
+          done
+          unzip -p "$zip" "Cattech.Optimizer.Pro.UI.runtimeconfig.json" |
+            jq -e '.runtimeOptions.tfm == "net10.0"' >/dev/null ||
+            fail "Candidate is not targeting the audited .NET 10 runtime"
+          {
+            echo "## CATTECH candidate — independent archive verification"
+            echo ""
+            echo "| Field | Result |"
+            echo "|---|---|"
+            echo "| Source SHA | $EXPECTED_SOURCE_SHA |"
+            echo "| ProductVersion | $PACKAGED_PRODUCT_VERSION |"
+            echo "| FileVersion | $PACKAGED_FILE_VERSION |"
+            echo "| SHA-256 (three independent readings) | $actual |"
+            echo "| ZIP CRC / mandatory files / runtimeconfig .NET 10 | PASS |"
+            echo "| Forbidden personal directories and bundled smartctl | ABSENT |"
+            echo "| GitHub tag / public release | NOT CREATED |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+
+          [[ "$manifest_line" =~ $checksum_pattern ]] || fail "Checksum manifest does not contain the exact expected SHA/name pair"
+          listed_hash="${BASH_REMATCH[1]}"
+          listed_name="${BASH_REMATCH[2]}"
           [[ "$listed_name" == "$PACKAGED_ZIP_NAME" ]] || fail "Checksum manifest names wrong ZIP"
-          [[ "$listed_hash" =~ ^[0-9A-Fa-f]{64}$ ]] || fail "Malformed checksum manifest"
           recalculated=$(sha256sum "$zip" | awk '{print $1}')
           upstream=$(printf '%s' "$PACKAGED_ZIP_SHA256" | tr '[:lower:]' '[:upper:]')
           declared=$(printf '%s' "$listed_hash" | tr '[:lower:]' '[:upper:]')
