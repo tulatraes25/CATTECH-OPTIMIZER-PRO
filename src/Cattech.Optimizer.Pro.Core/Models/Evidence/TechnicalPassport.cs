@@ -174,6 +174,17 @@ public static class TechnicalPassportBuilder
             item.PrivacyClass == EvidencePrivacyClass.Sensitive)
             .Select(item => item.Id).ToHashSet();
 
+        // One consistent source of truth for which diagnostics cannot enter
+        // the public aggregate. An unavailable/private observation may have
+        // influenced evaluation without belonging to either support list.
+        // Keep validating private snapshots' exact GUID/content bindings,
+        // but do not apply public freshness rules to an omitted conclusion.
+        var privateAssessments = assessments.Where(item =>
+            item.SupportingEvidenceIds.Any(sensitiveIds.Contains)
+            || item.ContradictingEvidenceIds.Any(sensitiveIds.Contains)
+            || item.EvaluatedObservations.Keys.Any(sensitiveIds.Contains))
+            .ToHashSet();
+
         // Index the finite exported inventory once; keep comparisons bounded
         // even when many diagnostic rules inspect the same subject/fact.
         var recordsByFact = records.GroupBy(item => (item.SubjectId, item.FactKey))
@@ -209,15 +220,10 @@ public static class TechnicalPassportBuilder
             // and newly populated gaps. Do not reject historical records
             // strictly older than the earliest reading actually evaluated.
             //
-            // The privacy filter below never exports assessments linked to
-            // sensitive evidence. They still require exact bound identities,
-            // but must not block a safe report just because other readings
-            // of the same fact were deliberately omitted from that private
-            // assessment's input subset.
-            var isPrivateAssessment = assessment.SupportingEvidenceIds
-                .Concat(assessment.ContradictingEvidenceIds)
-                .Any(sensitiveIds.Contains);
-            if (!isPrivateAssessment)
+            // Public freshness must not let a private, omitted assessment
+            // veto independent public conclusions. Exact snapshot binding
+            // above is still mandatory even for confidential inputs.
+            if (!privateAssessments.Contains(assessment))
             {
                 var evaluatedByFact = assessment.EvaluatedObservations.Values
                     .GroupBy(item => (item.SubjectId, item.FactKey))
@@ -295,12 +301,7 @@ public static class TechnicalPassportBuilder
             && item.FutureDatedFactKeys.Count == 0
             && (item.SupportingEvidenceIds.Count > 0
                 || item.ContradictingEvidenceIds.Count > 0)
-            && !item.SupportingEvidenceIds.Any(sensitiveIds.Contains)
-            && !item.ContradictingEvidenceIds.Any(sensitiveIds.Contains)
-            // Confidential unavailable/future observations may influence an
-            // evaluation without being supporting/contradicting IDs. Do not
-            // publish a conclusion derived from ANY such private reading.
-            && !item.EvaluatedObservations.Keys.Any(sensitiveIds.Contains));
+            && !privateAssessments.Contains(item));
         var safeOutcomes = postchecks.Where(item =>
             !sensitiveIds.Contains(item.BeforeEvidenceId)
             && !sensitiveIds.Contains(item.AfterEvidenceId));

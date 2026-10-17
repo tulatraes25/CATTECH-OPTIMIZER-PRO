@@ -155,6 +155,89 @@ public class TechnicalPassportTests
     }
 
     [Fact]
+    public void PrivateUnavailableDiagnosticWithNewerReading_DoesNotVetoIndependentSafeExport()
+    {
+        const string secret = "SYNTHETIC-PRIVATE-ACCESS-SOURCE";
+        var oldHealthy = Observed(FirstId, "healthy");
+        var confidentialGap = EvidenceRecord.Missing(
+            SensitiveId, Context, Subject, secret, "windows.health",
+            IssuedAt.AddMinutes(-30), EvidenceAvailability.AccessDenied,
+            secret, EvidencePrivacyClass.Sensitive, secret);
+        var laterHealthy = Observed(SecondId, "healthy",
+            observedAt: IssuedAt.AddMinutes(-2));
+        var independent = EvidenceRecord.Observed(
+            Guid.Parse("44444444-4444-4444-8444-444444444444"),
+            Context, Subject, "synthetic-test", "disk.temperature",
+            IssuedAt.AddMinutes(-10), EvidenceValue.FromNumber(35),
+            "fictional QA", EvidencePrivacyClass.Equipment);
+
+        var privateAssessment = DeterministicDiagnosticEvaluator.Evaluate(
+            Context, new DiagnosticRule("private-health", "1",
+                "private hypothesis", "synthetic",
+                new[] { new EvidenceExpectation(Subject, "windows.health",
+                    EvidenceValue.FromText("healthy")) }),
+            new[] { oldHealthy, confidentialGap }, IssuedAt);
+        var publicAssessment = DeterministicDiagnosticEvaluator.Evaluate(
+            Context, new DiagnosticRule("safe-temperature", "1",
+                "public hypothesis", "synthetic",
+                new[] { new EvidenceExpectation(Subject, "disk.temperature",
+                    EvidenceValue.FromNumber(35)) }),
+            new[] { independent }, IssuedAt);
+
+        Assert.Equal(DiagnosticAssessmentStatus.Corroborated, privateAssessment.Status);
+        Assert.Equal(DiagnosticAssessmentStatus.Corroborated, publicAssessment.Status);
+        Assert.Empty(privateAssessment.ContradictingEvidenceIds);
+        Assert.Single(privateAssessment.SupportingEvidenceIds);
+
+        var passport = TechnicalPassportBuilder.Build(
+            Context, ExportId, IssuedAt,
+            new[] { oldHealthy, confidentialGap, laterHealthy, independent },
+            new[] { privateAssessment, publicAssessment },
+            Array.Empty<RepairOutcomeAssessment>());
+        using var doc = JsonDocument.Parse(passport.PayloadJson);
+        Assert.Equal("Corroborated", Assert.Single(doc.RootElement
+            .GetProperty("diagnosticAssessments").EnumerateArray())
+            .GetProperty("status").GetString());
+        Assert.Equal(1, doc.RootElement.GetProperty("diagnosticAssessments")[0]
+            .GetProperty("count").GetInt32());
+        Assert.Equal(3, doc.RootElement.GetProperty("evidence")
+            .GetProperty("observed").GetInt32());
+        Assert.Equal(0, doc.RootElement.GetProperty("evidence")
+            .GetProperty("accessDenied").GetInt32());
+        Assert.DoesNotContain(secret, passport.PayloadJson);
+        Assert.DoesNotContain(SensitiveId.ToString(), passport.PayloadJson);
+        Assert.True(passport.HasMatchingDigest());
+    }
+
+    [Fact]
+    public void OmittedPrivateDiagnostic_StillRejectsSameGuidContentReplacement()
+    {
+        var original = Observed(FirstId, "healthy");
+        var privateGap = EvidenceRecord.Missing(
+            SensitiveId, Context, Subject, "private-source",
+            "windows.health", IssuedAt.AddMinutes(-30),
+            EvidenceAvailability.AccessDenied, "fictional QA",
+            EvidencePrivacyClass.Sensitive, "synthetic denied");
+        var assessment = DeterministicDiagnosticEvaluator.Evaluate(
+            Context, new DiagnosticRule("private-health", "1", "synthetic",
+                "synthetic", new[] { new EvidenceExpectation(Subject,
+                    "windows.health", EvidenceValue.FromText("healthy")) }),
+            new[] { original, privateGap }, IssuedAt);
+
+        // GUID re-use with a changed source remains invalid even when the
+        // assessment is deliberately absent from public JSON.
+        var altered = EvidenceRecord.Missing(
+            SensitiveId, Context, Subject, "altered-private-source",
+            "windows.health", privateGap.ObservedAtUtc,
+            EvidenceAvailability.AccessDenied, "fictional QA",
+            EvidencePrivacyClass.Sensitive, "synthetic denied");
+
+        Assert.Throws<ArgumentException>(() => TechnicalPassportBuilder.Build(
+            Context, ExportId, IssuedAt, new[] { original, altered },
+            new[] { assessment }, Array.Empty<RepairOutcomeAssessment>()));
+    }
+
+    [Fact]
     public void UnrelatedPrivateFact_DoesNotSuppressIndependentPublicDiagnostic()
     {
         var healthy = Observed(FirstId, "healthy");
