@@ -19,6 +19,23 @@ internal enum ReportBundleInspectionStatus
 internal sealed record ReportBundleInspection(
     ReportBundleInspectionStatus Status, Guid? BundleId = null, bool HasPdf = false);
 
+/// <summary>
+/// Non-destructive recovery inventory. Counts only, no client data or paths.
+/// A TooMany/Unsafe status is never evidence of a healthy report store.
+/// </summary>
+internal enum ReportBundleInventoryStatus
+{
+    Ready,
+    Absent,
+    Unsafe,
+    TooMany
+}
+
+internal sealed record ReportBundleInventory(
+    ReportBundleInventoryStatus Status,
+    int VerifiedBundles = 0, int CorruptBundles = 0,
+    int PendingBundles = 0, int UnexpectedEntries = 0);
+
 internal sealed record ReportBundleManifest(
     int SchemaVersion, Guid BundleId, string Scope,
     string HtmlSha256, long HtmlBytes,
@@ -122,6 +139,90 @@ internal sealed class ReportBundlePublicationStore
             if (!committed)
                 TryCleanupOwnPending(pending);
         }
+    }
+
+    /// <summary>
+    /// C2-D4c: bounded recovery INSPECTION, not a repair/cleanup operation.
+    /// Orphaned pending dirs are never mistaken for committed reports and
+    /// are never deleted. Counts contain no filesystem paths or PII.
+    /// </summary>
+    internal async Task<ReportBundleInventory> InspectInventoryAsync(
+        int maxEntries = 512, CancellationToken cancellationToken = default)
+    {
+        if (maxEntries is < 1 or > 4096)
+            throw new ArgumentOutOfRangeException(nameof(maxEntries));
+        cancellationToken.ThrowIfCancellationRequested();
+        try
+        {
+            if (!IsSafeDirectoryChain(_root))
+                return new(ReportBundleInventoryStatus.Unsafe);
+            if (!Directory.Exists(_root))
+                return new(ReportBundleInventoryStatus.Absent);
+
+            var visited = 0;
+            var verified = 0;
+            var corrupt = 0;
+            var pending = 0;
+            var unexpected = 0;
+            foreach (var entry in Directory.EnumerateFileSystemEntries(_root))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (++visited > maxEntries)
+                    return new(ReportBundleInventoryStatus.TooMany);
+                if ((File.GetAttributes(entry) & FileAttributes.ReparsePoint) != 0)
+                    return new(ReportBundleInventoryStatus.Unsafe);
+
+                var name = Path.GetFileName(entry);
+                if (!Directory.Exists(entry))
+                {
+                    unexpected++;
+                    continue;
+                }
+
+                if (HasCanonicalId(name, ".pending-", out _))
+                {
+                    pending++; // No access or cleanup of pending contents.
+                    continue;
+                }
+                if (!HasCanonicalId(name, "bundle-", out var id))
+                {
+                    unexpected++;
+                    continue;
+                }
+
+                var outcome = await InspectAsync(id, cancellationToken)
+                    .ConfigureAwait(false);
+                if (outcome.Status == ReportBundleInspectionStatus.Unsafe)
+                    return new(ReportBundleInventoryStatus.Unsafe);
+                if (outcome.Status == ReportBundleInspectionStatus.Current)
+                    verified++;
+                else
+                    corrupt++; // Incomplete, removed or tampered means NOT current.
+            }
+            return new(ReportBundleInventoryStatus.Ready,
+                verified, corrupt, pending, unexpected);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (IOException)
+        {
+            return new(ReportBundleInventoryStatus.Unsafe);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return new(ReportBundleInventoryStatus.Unsafe);
+        }
+    }
+
+    private static bool HasCanonicalId(string name, string prefix, out Guid id)
+    {
+        id = Guid.Empty;
+        return name.StartsWith(prefix, StringComparison.Ordinal)
+            && Guid.TryParseExact(name[prefix.Length..], "N", out id)
+            && string.Equals(name, prefix + id.ToString("N"),
+                StringComparison.Ordinal);
     }
 
     /// <summary>
