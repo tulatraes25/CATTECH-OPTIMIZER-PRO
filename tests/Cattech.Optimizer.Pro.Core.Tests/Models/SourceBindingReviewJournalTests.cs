@@ -706,6 +706,147 @@ public sealed class SourceBindingReviewJournalTests
         finally { Directory.Delete(root, recursive: true); }
     }
 
+    [Fact]
+    public async Task TwoPhasePublication_ValidatesThenPublishesWithExclusiveMarker()
+    {
+        var root = NewRoot();
+        try
+        {
+            await WriteSourceAsync(root, "diagnostics/source.json",
+                "{\"id\":\"ABCDEF12\",\"v\":1}");
+            var journal = new SourceBindingReviewJournal(root);
+            var recorded = await journal.RecordReviewedAsync(CaseA,
+                "Diagnostic", "diagnostics/source.json", "TechQA", true);
+            var id = Assert.IsType<Guid>(recorded.BindingId);
+            var staged = new TestStage();
+            var result = await journal.StageAndPublishWhileCurrentAsync(
+                id, CaseA, "Diagnostic", "diagnostics/source.json",
+                async _ =>
+                {
+                    var during = await journal.InspectCurrentAsync(
+                        id, CaseA, "Diagnostic", "diagnostics/source.json");
+                    Assert.Equal(SourceBindingReadStatus.InvalidJournal,
+                        during.Status);
+                    return staged;
+                });
+
+            Assert.Equal(SourceBindingReadStatus.CurrentSnapshot, result.Status);
+            Assert.True(staged.Published);
+            Assert.True(staged.Disposed);
+            Assert.Single(Directory.GetFiles(JournalDirectory(root),
+                "binding-*.json"));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task TwoPhasePublication_ChangedSourceAfterStagingNeverPublishes()
+    {
+        var root = NewRoot();
+        try
+        {
+            var file = await WriteSourceAsync(root, "diagnostics/source.json",
+                "{\"id\":\"ABCDEF12\",\"v\":1}");
+            var journal = new SourceBindingReviewJournal(root);
+            var receipt = await journal.RecordReviewedAsync(CaseA,
+                "Diagnostic", "diagnostics/source.json", "TechQA", true);
+            var id = Assert.IsType<Guid>(receipt.BindingId);
+            var stage = new TestStage();
+            var result = await journal.StageAndPublishWhileCurrentAsync(
+                id, CaseA, "Diagnostic", "diagnostics/source.json",
+                async _ =>
+                {
+                    // A non-cooperating actor changes the source even though
+                    // the audit marker itself remains exclusively locked.
+                    await File.WriteAllTextAsync(file,
+                        "{\"id\":\"ABCDEF12\",\"v\":2}");
+                    return stage;
+                });
+            Assert.Equal(SourceBindingReadStatus.SourceChanged, result.Status);
+            Assert.False(stage.Published);
+            Assert.True(stage.Disposed);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task TwoPhasePublication_CancelledAfterStageCleansWithoutPublication()
+    {
+        var root = NewRoot();
+        try
+        {
+            await WriteSourceAsync(root, "diagnostics/source.json",
+                "{\"id\":\"ABCDEF12\"}");
+            var journal = new SourceBindingReviewJournal(root);
+            var receipt = await journal.RecordReviewedAsync(CaseA,
+                "Diagnostic", "diagnostics/source.json", "TechQA", true);
+            var id = Assert.IsType<Guid>(receipt.BindingId);
+            using var cancel = new CancellationTokenSource();
+            var stage = new TestStage();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                journal.StageAndPublishWhileCurrentAsync(id, CaseA,
+                    "Diagnostic", "diagnostics/source.json",
+                    _ =>
+                    {
+                        cancel.Cancel();
+                        return Task.FromResult<IJournalStagedPublication>(stage);
+                    }, cancel.Token));
+            Assert.False(stage.Published);
+            Assert.True(stage.Disposed);
+            Assert.Equal(SourceBindingReadStatus.CurrentSnapshot,
+                (await journal.InspectCurrentAsync(id, CaseA,
+                    "Diagnostic", "diagnostics/source.json")).Status);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task TwoPhasePublication_RevokedBindingCannotEvenCreateStage()
+    {
+        var root = NewRoot();
+        try
+        {
+            await WriteSourceAsync(root, "diagnostics/source.json",
+                "{\"id\":\"ABCDEF12\"}");
+            var journal = new SourceBindingReviewJournal(root);
+            var receipt = await journal.RecordReviewedAsync(CaseA,
+                "Diagnostic", "diagnostics/source.json", "TechQA", true);
+            var id = Assert.IsType<Guid>(receipt.BindingId);
+            Assert.Equal(SourceBindingJournalStatus.Revoked,
+                (await journal.RevokeAsync(id, "TechQB", true)).Status);
+            var stagingCalled = false;
+            var result = await journal.StageAndPublishWhileCurrentAsync(
+                id, CaseA, "Diagnostic", "diagnostics/source.json",
+                _ =>
+                {
+                    stagingCalled = true;
+                    return Task.FromResult<IJournalStagedPublication>(new TestStage());
+                });
+            Assert.Equal(SourceBindingReadStatus.Revoked, result.Status);
+            Assert.False(stagingCalled);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    private sealed class TestStage : IJournalStagedPublication
+    {
+        public bool Published { get; private set; }
+        public bool Disposed { get; private set; }
+
+        public Task PublishAsync(CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            Published = true;
+            return Task.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            Disposed = true;
+            return ValueTask.CompletedTask;
+        }
+    }
+
     private static string NewRoot()
     {
         var root = Path.Combine(Path.GetTempPath(),

@@ -56,6 +56,16 @@ internal enum SourceBindingReadStatus
 internal sealed record SourceBindingReadOutcome(SourceBindingReadStatus Status);
 
 /// <summary>
+/// Disposable, private staging resource: PublishAsync must be an atomic,
+/// no-overwrite operation and DisposeAsync must clean ONLY unpublished temp
+/// resources. This interface is not a report-source authorization.
+/// </summary>
+internal interface IJournalStagedPublication : IAsyncDisposable
+{
+    Task PublishAsync(CancellationToken cancellationToken);
+}
+
+/// <summary>
 /// SPEC #92 C2-B2-A: local, append-only claim receipts for future explicit
 /// technician-reviewed binding workflow. No public HTML/PDF integration.
 /// Files are staged then published without overwrite under a process lease.
@@ -97,7 +107,7 @@ internal sealed class SourceBindingReviewJournal
         Guid bindingId, Guid serviceCaseId, string sourceKind,
         string relativeSourcePath, CancellationToken cancellationToken = default) =>
         InspectWithReadLeaseAsync(bindingId, serviceCaseId, sourceKind,
-            relativeSourcePath, null, cancellationToken);
+            relativeSourcePath, null, null, cancellationToken);
 
     /// <summary>
     /// C2-D3b: execute a TRUSTED internal operation only while the complete
@@ -115,13 +125,32 @@ internal sealed class SourceBindingReviewJournal
     {
         ArgumentNullException.ThrowIfNull(verifiedOperation);
         return InspectWithReadLeaseAsync(bindingId, serviceCaseId, sourceKind,
-            relativeSourcePath, verifiedOperation, cancellationToken);
+            relativeSourcePath, verifiedOperation, null, cancellationToken);
+    }
+
+    /// <summary>
+    /// C2-D3c: trusted private staging, fresh review check, then publication
+    /// while the SAME exclusive journal handle is held. The factory must
+    /// create only unpublished temporary resources. A failed/canceled check
+    /// disposes staging without publishing anything. Still NOT a public
+    /// named-client export grant: existing P0 HTML/PDF guard remains.
+    /// </summary>
+    internal Task<SourceBindingReadOutcome> StageAndPublishWhileCurrentAsync(
+        Guid bindingId, Guid serviceCaseId, string sourceKind,
+        string relativeSourcePath,
+        Func<CancellationToken, Task<IJournalStagedPublication>> createStaging,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(createStaging);
+        return InspectWithReadLeaseAsync(bindingId, serviceCaseId, sourceKind,
+            relativeSourcePath, null, createStaging, cancellationToken);
     }
 
     private async Task<SourceBindingReadOutcome> InspectWithReadLeaseAsync(
         Guid bindingId, Guid serviceCaseId, string sourceKind,
         string relativeSourcePath,
         Func<CancellationToken, Task>? verifiedOperation,
+        Func<CancellationToken, Task<IJournalStagedPublication>>? createStaging,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -145,12 +174,37 @@ internal sealed class SourceBindingReviewJournal
                 bindingId, serviceCaseId, sourceKind, relativeSourcePath,
                 cancellationToken).ConfigureAwait(false);
             if (before.Status != SourceBindingReadStatus.CurrentSnapshot
-                || verifiedOperation is null)
+                || (verifiedOperation is null && createStaging is null))
                 return before;
 
             cancellationToken.ThrowIfCancellationRequested();
-            // Must await: disposing the marker early loses the guarantee.
-            await verifiedOperation(cancellationToken).ConfigureAwait(false);
+            if (createStaging is not null)
+            {
+                // Preparation is private and must not expose files to users.
+                // The await using disposes staged resources on rejection,
+                // cancellation, failure and successful publication.
+                await using var staged = await createStaging(cancellationToken)
+                    .ConfigureAwait(false)
+                    ?? throw new InvalidOperationException(
+                        "No private report publication stage was supplied.");
+                cancellationToken.ThrowIfCancellationRequested();
+                // Revalidate AFTER staging and BEFORE any visible commit,
+                // while retaining the same marker handle.
+                var current = await ValidateCurrentUnderLeaseAsync(
+                    bindingId, serviceCaseId, sourceKind, relativeSourcePath,
+                    cancellationToken).ConfigureAwait(false);
+                if (current.Status != SourceBindingReadStatus.CurrentSnapshot)
+                    return current;
+                cancellationToken.ThrowIfCancellationRequested();
+                await staged.PublishAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                // Do not claim an atomic multi-file transaction: the caller's
+                // PublishAsync must be one no-overwrite atomic publication.
+                return current;
+            }
+
+            // Existing trusted no-publication callback contract.
+            await verifiedOperation!(cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             // External filesystem mutation is still possible despite our
             // cross-process lease. Re-read all receipts and source before
