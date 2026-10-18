@@ -14,28 +14,38 @@ public static class ReportRecommendationEngine
 {
     public static List<ReportRecommendation> GenerateRecommendations(ReportGenerationOptions options)
     {
+        ArgumentNullException.ThrowIfNull(options);
+        // Direct recommendation callers must obey the same source-attribution
+        // boundary as HTML/PDF, even without the renderer.
+        if (ReportSourceCasePolicy.FindUnassociatedClientSource(options) is not null)
+            throw new InvalidOperationException(
+                "Las fuentes independientes no están asociadas al equipo.");
         var recommendations = new List<ReportRecommendation>();
+        if (!options.IncludeRecommendations)
+            return recommendations;
 
+        // A hidden section cannot leak its readings through recommendations.
+        // The same explicit consent contract applies to HTML and PDF.
         // Recomendaciones basadas en diagnóstico
-        if (options.DiagnosticReport != null)
+        if (options.IncludeDiagnostic && options.DiagnosticReport != null)
         {
             recommendations.AddRange(GetDiagnosticRecommendations(options.DiagnosticReport));
         }
 
         // Recomendaciones basadas en programas de inicio
-        if (options.StartupAnalysis != null)
+        if (options.IncludeStartup && options.StartupAnalysis != null)
         {
             recommendations.AddRange(GetStartupRecommendations(options.StartupAnalysis));
         }
 
         // Recomendaciones basadas en limpieza
-        if (options.CleanupResult != null)
+        if (options.IncludeCleanup && options.CleanupResult != null)
         {
             recommendations.AddRange(GetCleanupRecommendations(options.CleanupResult));
         }
 
         // Recomendaciones basadas en punto de restauración
-        if (options.RestorePointResult != null && !options.RestorePointResult.Success)
+        if (options.IncludeRestorePoint && options.RestorePointResult != null && !options.RestorePointResult.Success)
         {
             recommendations.Add(new ReportRecommendation
             {
@@ -308,8 +318,8 @@ public static class ReportRecommendationEngine
         }
 
         // Disco
-        if (diag.DiskType.Contains("HDD", StringComparison.OrdinalIgnoreCase) ||
-            diag.DiskType == "No detectado")
+        if (string.Equals(diag.DiskType?.Trim(), "HDD",
+            StringComparison.OrdinalIgnoreCase))
         {
             recs.Add(new ReportRecommendation
             {
@@ -320,7 +330,8 @@ public static class ReportRecommendationEngine
             });
         }
 
-        if (diag.DiskFreePercent > 0 && diag.DiskFreePercent < 15)
+        if (diag.DiskFreeSpaceKnown && diag.DiskFreeGB > 0 &&
+            diag.DiskFreePercent < 15)
         {
             recs.Add(new ReportRecommendation
             {

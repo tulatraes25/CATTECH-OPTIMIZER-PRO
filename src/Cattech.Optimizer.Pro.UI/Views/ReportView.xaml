@@ -26,6 +26,18 @@
 
         <!-- Row 1: Mensajes -->
         <StackPanel Grid.Row="1">
+            <!-- Advisory, read-only integrity warning; never offers file deletion. -->
+            <Border CornerRadius="6" Padding="12,10" Margin="0,0,0,10"
+                    Visibility="{Binding HasReportInventoryWarning, Converter={StaticResource BoolToVis}}"
+                    Background="#FFF4DC" BorderBrush="#B36B00" BorderThickness="1">
+                <StackPanel>
+                    <TextBlock Text="ATENCIÓN · INTEGRIDAD DE INFORMES"
+                               FontSize="12" FontWeight="Bold" Foreground="#754400"
+                               Margin="0,0,0,5" />
+                    <TextBlock Text="{Binding ReportInventoryMessage}" TextWrapping="Wrap"
+                               FontSize="12" Foreground="#603900" />
+                </StackPanel>
+            </Border>
             <Border CornerRadius="6" Padding="12,10" Margin="0,0,0,10"
                     Visibility="{Binding IsSuccess, Converter={StaticResource BoolToVis}}"
                     Background="#E6F4EA" BorderBrush="#34A853" BorderThickness="1">
@@ -121,6 +133,42 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- C2-C: technician review; does NOT enable mixed exports -->
+                    <Border BorderBrush="#B8CBDC" BorderThickness="1" CornerRadius="6"
+                            Padding="15" Background="#F3F8FC" Margin="0,0,0,10">
+                        <StackPanel>
+                            <TextBlock Text="REVISIÓN DE EVIDENCIA DEL EQUIPO"
+                                       FontSize="12" FontWeight="Bold" Foreground="#175C8E"
+                                       Margin="0,0,0,6" />
+                            <TextBlock Text="Antes de asociar un diagnóstico al cliente, verificá el equipo y el origen de la medición. La coincidencia de número de serie o fecha no demuestra procedencia."
+                                       FontSize="11" TextWrapping="Wrap" Margin="0,0,0,10" />
+                            <Button Content="1. Verificar diagnóstico seleccionado"
+                                    Command="{Binding PreviewDiagnosticReviewCommand}"
+                                    Padding="12,7" HorizontalAlignment="Left"
+                                    IsEnabled="{Binding IsRunning, Converter={StaticResource InvertBool}}" />
+                            <StackPanel Margin="0,10,0,0"
+                                        Visibility="{Binding HasPendingSourceReview, Converter={StaticResource BoolToVis}}">
+                                <TextBlock Text="{Binding SourceReviewEvidence}"
+                                           FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8" />
+                                <TextBlock Text="Alias local del técnico (3 a 48 caracteres, letras/números/guion):"
+                                           FontSize="11" TextWrapping="Wrap" Margin="0,0,0,3" />
+                                <TextBox Text="{Binding ReviewerAlias, UpdateSourceTrigger=PropertyChanged}"
+                                         MaxLength="48" Padding="8,5" Margin="0,0,0,8"
+                                         AutomationProperties.Name="Alias del técnico revisor" />
+                                <CheckBox IsChecked="{Binding ReviewConsent}"
+                                          Content="He revisado el caso y esta evidencia; autorizo registrar su asociación."
+                                          FontSize="11" Margin="0,0,0,8" />
+                                <Button Content="2. Confirmar y registrar revisión"
+                                        Command="{Binding ConfirmDiagnosticReviewCommand}"
+                                        Padding="12,7" HorizontalAlignment="Left"
+                                        IsEnabled="{Binding IsRunning, Converter={StaticResource InvertBool}}" />
+                            </StackPanel>
+                            <TextBlock Text="Esta revisión no habilita todavía el uso combinado de mediciones en un informe de cliente."
+                                       FontSize="10" TextWrapping="Wrap"
+                                       Foreground="#526779" Margin="0,10,0,0" />
+                        </StackPanel>
+                    </Border>
+
                     <!-- Selección de datos -->
                     <Border BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
                             Padding="15" Background="White" Margin="0,0,0,10">
@@ -130,11 +178,29 @@
 
                             <!-- Cliente/Equipo -->
                             <TextBlock Text="Cliente/Equipo:" FontSize="11" FontWeight="SemiBold" Foreground="#555" Margin="0,0,0,4" />
+                            <!-- Do not show indistinguishable duplicate client names:
+                                 include equipment and service date, never raw serial/ID. -->
                             <ComboBox ItemsSource="{Binding AvailableServiceReports}"
                                       SelectedItem="{Binding SelectedServiceReport}"
-                                      DisplayMemberPath="Client.Name"
                                       FontSize="11" Padding="8,6" Margin="0,0,0,10"
-                                      IsEnabled="{Binding HasClientData}" />
+                                      IsEnabled="{Binding HasClientData}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding Client.Name}"
+                                                       FontWeight="SemiBold" />
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding Equipment.Brand}" Foreground="#666" />
+                                                <TextBlock Text=" · " Foreground="#777" />
+                                                <TextBlock Text="{Binding Equipment.Model}" Foreground="#666" />
+                                                <TextBlock Text=" · " Foreground="#777" />
+                                                <TextBlock Text="{Binding CreatedAt, StringFormat={}{0:dd/MM/yy HH:mm}}"
+                                                           Foreground="#666" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
 
                             <!-- Diagnóstico -->
                             <TextBlock Text="Diagnóstico:" FontSize="11" FontWeight="SemiBold" Foreground="#555" Margin="0,0,0,4" />

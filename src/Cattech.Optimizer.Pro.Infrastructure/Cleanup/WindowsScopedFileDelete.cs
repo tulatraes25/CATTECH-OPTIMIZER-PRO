@@ -1,0 +1,243 @@
+using System.Runtime.InteropServices;
+using System.Text;
+using Microsoft.Win32.SafeHandles;
+using Cattech.Optimizer.Pro.Core.Models.Cleanup;
+
+namespace Cattech.Optimizer.Pro.Infrastructure.Cleanup;
+
+/// <summary>
+/// Windows-only, handle-verified deletion used by the development cleanup.
+/// A candidate is opened with DELETE permission, verified using THAT handle,
+/// then marked for disposition on the SAME handle.
+/// CI tests cover isolated fixtures; independent review and release/hardware
+/// qualification remain mandatory before use on customer computers.
+/// </summary>
+internal static class WindowsScopedFileDelete
+{
+    private const uint FileReadAttributes = 0x80;
+    private const uint DeleteAccess = 0x00010000;
+    private const uint FileShareNone = 0;
+    private const uint FileShareRead = 0x00000001;
+    private const uint FileShareWrite = 0x00000002;
+    private const uint OpenExisting = 3;
+    private const uint FileFlagOpenReparsePoint = 0x00200000;
+    private const uint FileFlagBackupSemantics = 0x02000000;
+    private const uint FileAttributeReparsePoint = 0x00000400;
+    private const uint FileAttributeDirectory = 0x00000010;
+    private const uint FileAttributeSystem = 0x00000004;
+    private const uint FileAttributeHidden = 0x00000002;
+    private const uint FileAttributeReadOnly = 0x00000001;
+    private const int FileDispositionInfoClass = 4;
+
+    /// <summary>
+    /// Deletes only a handle-verified, old, ordinary DIRECT-CHILD file at its
+    /// exact path in the handle-verified directory. Returns false if
+    /// anything cannot be proven. All caller-supplied paths are untrusted.
+    /// </summary>
+    internal static bool TryDelete(
+        string allowedDirectory, string candidatePath, out long deletedBytes)
+    {
+        deletedBytes = 0;
+        if (!OperatingSystem.IsWindows()
+            || string.IsNullOrWhiteSpace(allowedDirectory)
+            || string.IsNullOrWhiteSpace(candidatePath)
+            || !Path.IsPathFullyQualified(allowedDirectory)
+            || !Path.IsPathFullyQualified(candidatePath)
+            || allowedDirectory.StartsWith(@"\\", StringComparison.Ordinal)
+            || candidatePath.StartsWith(@"\\", StringComparison.Ordinal))
+            return false;
+
+        string root;
+        string candidate;
+        try
+        {
+            root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(allowedDirectory));
+            candidate = Path.GetFullPath(candidatePath);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException
+            or PathTooLongException)
+        {
+            return false;
+        }
+
+        // Defensive filename check on the native deletion boundary: even a
+        // caller bypassing managed scanner cannot remove protected lock, PID
+        // or socket-like files based only on their old timestamps.
+        if (CleanupTargets.IsProtectedTemporaryFileName(Path.GetFileName(candidate))
+            || !IsSafeAllowedRoot(root))
+            return false;
+
+        // Fail closed on nested paths. Intermediate child directories could
+        // be renamed after a pathname check; until handle-relative traversal
+        // is independently reviewed, only delete DIRECT children of a held
+        // allowed-root directory handle. Never recursively delete under it.
+        // Also reject alternate data streams, device paths, and volume roots.
+        if (candidate.Length < 3 || root.Length < 3
+            || candidate.AsSpan(2).Contains(':')
+            || root.AsSpan(2).Contains(':')
+            || !string.Equals(Path.GetDirectoryName(candidate), root,
+                StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        using var rootHandle = CreateFile(
+            root, FileReadAttributes, FileShareRead | FileShareWrite,
+            IntPtr.Zero, OpenExisting,
+            FileFlagOpenReparsePoint | FileFlagBackupSemantics, IntPtr.Zero);
+        if (rootHandle.IsInvalid
+            || !GetFileInformationByHandle(rootHandle, out var rootInfo)
+            || (rootInfo.FileAttributes & FileAttributeDirectory) == 0
+            || (rootInfo.FileAttributes & FileAttributeReparsePoint) != 0
+            || !MatchesFinalPath(rootHandle, root))
+            return false;
+
+        // Do not follow a leaf symlink. Request exclusive ownership for
+        // the brief verified-handle disposition: refuse even active readers
+        // that voluntarily allow FILE_SHARE_DELETE. Never delete a file
+        // currently held open for ordinary read/write access.
+        using var fileHandle = CreateFile(
+            candidate, FileReadAttributes | DeleteAccess, FileShareNone,
+            IntPtr.Zero, OpenExisting, FileFlagOpenReparsePoint, IntPtr.Zero);
+        if (fileHandle.IsInvalid
+            || !GetFileInformationByHandle(fileHandle, out var info))
+            return false;
+
+        const uint excluded = FileAttributeDirectory | FileAttributeReparsePoint
+            | FileAttributeHidden | FileAttributeSystem | FileAttributeReadOnly;
+        if ((info.FileAttributes & excluded) != 0 || info.NumberOfLinks != 1
+            || !MatchesFinalPath(fileHandle, candidate))
+            return false;
+
+        // A recently created file may carry an ancient LastWriteTime after
+        // extraction or copying. Require BOTH ages from this same file handle
+        // to exceed the retention period. Unknown timestamps fail closed.
+        var lastWriteTicks = ((long)info.LastWriteTime.High << 32)
+            | info.LastWriteTime.Low;
+        var creationTicks = ((long)info.CreationTime.High << 32)
+            | info.CreationTime.Low;
+        if (lastWriteTicks <= 0 || creationTicks <= 0)
+            return false;
+        DateTime lastWriteUtc;
+        DateTime createdUtc;
+        try
+        {
+            lastWriteUtc = DateTime.FromFileTimeUtc(lastWriteTicks);
+            createdUtc = DateTime.FromFileTimeUtc(creationTicks);
+        }
+        catch (ArgumentOutOfRangeException) { return false; }
+        var retentionCutoff = DateTime.UtcNow.AddDays(-CleanupTargets.MinimumAgeDays);
+        if (lastWriteUtc > retentionCutoff || createdUtc > retentionCutoff)
+            return false;
+
+        var length = ((ulong)info.FileSizeHigh << 32) | info.FileSizeLow;
+        if (length > long.MaxValue)
+            return false;
+
+        var disposition = new FileDispositionInfo { DeleteFile = true };
+        if (!SetFileInformationByHandle(fileHandle, FileDispositionInfoClass,
+            ref disposition, (uint)Marshal.SizeOf<FileDispositionInfo>()))
+            return false;
+
+        // The kernel unlinks THIS handle's file when it closes. No second
+        // pathname-based File.Delete() occurs after identity verification.
+        deletedBytes = (long)length;
+        return true;
+    }
+
+    /// <summary>
+    /// Defense in depth. The native deletion primitive must itself reject
+    /// a volume root even if a future caller bypasses the service allowlist.
+    /// This routine is pure path validation and never opens a file/directory.
+    /// </summary>
+    internal static bool IsSafeAllowedRoot(string? directory)
+    {
+        if (!OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(directory)
+            || directory.StartsWith(@"\\", StringComparison.Ordinal)
+            || !Path.IsPathFullyQualified(directory))
+            return false;
+
+        try
+        {
+            var canonical = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
+            var root = Path.TrimEndingDirectorySeparator(
+                Path.GetPathRoot(canonical) ?? string.Empty);
+            return !string.IsNullOrWhiteSpace(root)
+                && !string.Equals(canonical, root, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException
+            or PathTooLongException)
+        {
+            return false;
+        }
+    }
+
+    private static bool MatchesFinalPath(SafeFileHandle handle, string expectedPath)
+    {
+        var buffer = new StringBuilder(32768);
+        var length = GetFinalPathNameByHandleW(handle, buffer,
+            (uint)buffer.Capacity, 0);
+        if (length == 0 || length >= buffer.Capacity)
+            return false;
+
+        var actual = buffer.ToString();
+        if (!actual.StartsWith(@"\\?\", StringComparison.Ordinal)
+            || actual.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        actual = actual[4..];
+        return string.Equals(
+            Path.TrimEndingDirectorySeparator(actual),
+            Path.TrimEndingDirectorySeparator(expectedPath),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeFileTime
+    {
+        public uint Low;
+        public uint High;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ByHandleFileInformation
+    {
+        public uint FileAttributes;
+        public NativeFileTime CreationTime;
+        public NativeFileTime LastAccessTime;
+        public NativeFileTime LastWriteTime;
+        public uint VolumeSerialNumber;
+        public uint FileSizeHigh;
+        public uint FileSizeLow;
+        public uint NumberOfLinks;
+        public uint FileIndexHigh;
+        public uint FileIndexLow;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct FileDispositionInfo
+    {
+        [MarshalAs(UnmanagedType.U1)]
+        public bool DeleteFile;
+    }
+
+    [DllImport("kernel32.dll", EntryPoint = "CreateFileW",
+        CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern SafeFileHandle CreateFile(
+        string fileName, uint desiredAccess, uint shareMode,
+        IntPtr securityAttributes, uint creationDisposition,
+        uint flagsAndAttributes, IntPtr templateFile);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetFileInformationByHandle(
+        SafeFileHandle handle, out ByHandleFileInformation information);
+
+    [DllImport("kernel32.dll", EntryPoint = "GetFinalPathNameByHandleW",
+        CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern uint GetFinalPathNameByHandleW(
+        SafeFileHandle handle, StringBuilder output, uint length, uint flags);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetFileInformationByHandle(
+        SafeFileHandle handle, int infoClass, ref FileDispositionInfo info, uint length);
+}

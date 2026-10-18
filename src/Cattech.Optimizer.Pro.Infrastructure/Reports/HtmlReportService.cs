@@ -17,6 +17,12 @@ public class HtmlReportService : IReportGenerationService
     private readonly string _baseDirectory;
     private readonly string _reportsDirectory;
     private readonly string _reportsInfoPath;
+    private readonly string _reportsIndexLeasePath;
+
+    // The exclusive OS file handle serializes every process using this directory.
+    // Unlike deleting a lock file, retaining a small permanent marker avoids
+    // unlink races. A terminated process releases the handle automatically.
+    private static readonly TimeSpan ReportsIndexLeaseTimeout = TimeSpan.FromSeconds(15);
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -29,39 +35,182 @@ public class HtmlReportService : IReportGenerationService
         _baseDirectory = baseDirectory ?? AppDomain.CurrentDomain.BaseDirectory;
         _reportsDirectory = Path.Combine(_baseDirectory, "reports", "html");
         _reportsInfoPath = Path.Combine(_reportsDirectory, "reports-info.json");
+        _reportsIndexLeasePath = Path.Combine(_reportsDirectory, ".cattech-index.lock");
     }
 
     /// <inheritdoc/>
-    public async Task<string> GenerateHtmlReportAsync(ReportGenerationOptions options)
-    {
-        EnsureDirectoryExists(_reportsDirectory);
+    public Task<string> GenerateHtmlReportAsync(ReportGenerationOptions options) =>
+        GenerateHtmlWithPublicationCheckAsync(options, _ => Task.FromResult(true));
 
+    /// <summary>
+    /// C2-D4b INTERNAL bridge to the integrity-checked bundle format.
+    /// Deliberately CLIENT-FREE ONLY: neither an enabled client section nor
+    /// a latent ServiceReport reference is accepted. This never bypasses
+    /// the existing P0 report attribution policy or WPF export workflow.
+    /// </summary>
+    internal async Task<Guid> GenerateClientFreeBundleAsync(
+        ReportGenerationOptions options, ReportBundlePublicationStore bundleStore,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(bundleStore);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (options.IncludeClient || options.ServiceReport is not null)
+            throw new InvalidOperationException(
+                "Un paquete sin cliente no puede contener datos de un caso.");
+        if (ReportSourceCasePolicy.FindUnassociatedClientSource(options) is not null)
+            throw new InvalidOperationException(
+                "La fuente elegida no permite generar un informe asociado.");
+
+        // Render in memory once; bundleStore owns private copies and hashes.
+        // No reports/html, reports/pdf or reports-info.json side effects.
+        var content = GenerateHtmlContent(options);
+        cancellationToken.ThrowIfCancellationRequested();
+        return await bundleStore.PublishClientFreeAsync(
+            Encoding.UTF8.GetBytes(content), cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// A disposable private HTML stage. Only the final File.Move publishes
+    /// output, without overwrite. DisposeAsync never deletes a published file.
+    /// This resource alone is NOT an export authorization.
+    /// </summary>
+    internal sealed class StagedHtmlReport : IJournalStagedPublication
+    {
+        private readonly string _temporaryPath;
+        internal string OutputPath { get; }
+
+        internal StagedHtmlReport(string temporaryPath, string outputPath)
+        {
+            _temporaryPath = temporaryPath;
+            OutputPath = outputPath;
+        }
+
+        public Task PublishAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            File.Move(_temporaryPath, OutputPath); // Same folder; no overwrite.
+            return Task.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            try
+            {
+                if (File.Exists(_temporaryPath))
+                    File.Delete(_temporaryPath);
+            }
+            catch (IOException) { /* Preserve caller's original failure. */ }
+            catch (UnauthorizedAccessException) { }
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    /// <summary>
+    /// C2-D3d: only private staging. Shared by normal HTML output and the
+    /// audited journal two-phase contract. P0 client/source attribution is
+    /// checked before any output directory or staging side effect.
+    /// </summary>
+    internal async Task<StagedHtmlReport> StageHtmlForPublicationAsync(
+        ReportGenerationOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (ReportSourceCasePolicy.FindUnassociatedClientSource(options) is not null)
+            throw new InvalidOperationException(
+                "Una fuente seleccionada no está asociada al caso del equipo.");
+
+        EnsureDirectoryExists(_reportsDirectory);
         var html = GenerateHtmlContent(options);
 
-        // Generar nombre de archivo
-        var clientName = options.ServiceReport?.Client?.Name ?? "SinCliente";
+        // No-client exports must never leak names through filenames.
+        var clientName = options.IncludeClient
+            ? options.ServiceReport?.Client?.Name ?? "SinCliente"
+            : "SinCliente";
         var safeName = SanitizeFileName(clientName);
         var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
-        var fileName = $"Informe_Tecnico_CATTECH_{safeName}_{timestamp}.html";
-        var filePath = Path.Combine(_reportsDirectory, fileName);
+        var id = Guid.NewGuid().ToString("N");
+        var fileName = $"Informe_Tecnico_CATTECH_{safeName}_{timestamp}_{id}.html";
+        var destination = Path.Combine(_reportsDirectory, fileName);
+        var temporary = Path.Combine(_reportsDirectory, $".cattech-report-{id}.tmp");
 
-        await File.WriteAllTextAsync(filePath, html, Encoding.UTF8);
+        try
+        {
+            // Never share a scratch filename with concurrent exports.
+            await using (var stream = new FileStream(temporary,
+                FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                8192, useAsync: true))
+            await using (var writer = new StreamWriter(stream, Encoding.UTF8))
+            {
+                await writer.WriteAsync(html.AsMemory(), cancellationToken)
+                    .ConfigureAwait(false);
+                await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+                await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            return new StagedHtmlReport(temporary, destination);
+        }
+        catch
+        {
+            try { if (File.Exists(temporary)) File.Delete(temporary); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+            throw;
+        }
+    }
 
-        return filePath;
+    /// <summary>
+    /// C2-D3a: optional last check between private staging and publication.
+    /// Never bypasses the existing P0 named-client mixed-source restriction.
+    /// </summary>
+    internal async Task<string> GenerateHtmlWithPublicationCheckAsync(
+        ReportGenerationOptions options,
+        Func<CancellationToken, Task<bool>> confirmBeforePublish,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(confirmBeforePublish);
+        await using var stage = await StageHtmlForPublicationAsync(
+            options, cancellationToken).ConfigureAwait(false);
+        if (!await confirmBeforePublish(cancellationToken).ConfigureAwait(false))
+            throw new InvalidOperationException(
+                "No se pudo verificar el estado actual del informe.");
+        cancellationToken.ThrowIfCancellationRequested();
+        await stage.PublishAsync(cancellationToken).ConfigureAwait(false);
+        return stage.OutputPath;
     }
 
     /// <inheritdoc/>
     public async Task SaveReportInfoAsync(GeneratedReportInfo info)
     {
-        var reports = await LoadReportsInfoInternalAsync();
+        ArgumentNullException.ThrowIfNull(info);
+        EnsureDirectoryExists(_reportsDirectory);
+
+        // Keep the lease open for the ENTIRE read-modify-publish transaction.
+        // A lock file on the same volume protects against independent CATTECH
+        // processes, as well as multiple service instances within one process.
+        await using var lease = await AcquireIndexLeaseAsync(
+            _reportsIndexLeasePath, ReportsIndexLeaseTimeout).ConfigureAwait(false);
+
+        var reports = await LoadReportsInfoInternalAsync().ConfigureAwait(false);
         reports.Add(info);
-        await SaveReportsInfoInternalAsync(reports);
+        await SaveReportsInfoInternalAsync(reports).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task<List<GeneratedReportInfo>> ListGeneratedReportsAsync(int maxResults = 20)
     {
-        var reports = await LoadReportsInfoInternalAsync();
+        if (!Directory.Exists(_reportsDirectory))
+            return new List<GeneratedReportInfo>();
+
+        // Readers use the same lease to avoid transient sharing violations
+        // while another process atomically replaces the published index.
+        await using var lease = await AcquireIndexLeaseAsync(
+            _reportsIndexLeasePath, ReportsIndexLeaseTimeout).ConfigureAwait(false);
+
+        var reports = await LoadReportsInfoInternalAsync().ConfigureAwait(false);
         return reports.OrderByDescending(r => r.CreatedAt).Take(maxResults).ToList();
     }
 
@@ -175,24 +324,95 @@ public class HtmlReportService : IReportGenerationService
         return sb.ToString();
     }
 
+    /// <summary>
+    /// Accept only CSS hexadecimal colors, not arbitrary CSS or markup.
+    /// Supports 3- and 6-digit colors from existing company settings.
+    /// Invalid persisted data gets a safe default without leaking its text.
+    /// </summary>
+    internal static string SafeBrandColor(string? configured)
+    {
+        if (configured is null || configured.Length is not (4 or 7)
+            || configured[0] != '#')
+            return "#0078D4";
+
+        for (var i = 1; i < configured.Length; i++)
+        {
+            if (!Uri.IsHexDigit(configured[i]))
+                return "#0078D4";
+        }
+        return configured;
+    }
+
+    private const long MaximumReportLogoBytes = 4 * 1024 * 1024;
+
+    /// <summary>
+    /// Only embed small PNG/JPEG files with the expected byte headers.
+    /// Settings may contain arbitrary paths: do not read generic or oversized
+    /// local files into a customer-facing HTML/PDF. Header checks are not a
+    /// full image decoder or a universal race-free identity guarantee.
+    /// </summary>
+    private static string BuildSafeLogoHtml(string? logoPath)
+    {
+        if (string.IsNullOrWhiteSpace(logoPath))
+            return string.Empty;
+
+        var mime = Path.GetExtension(logoPath).ToLowerInvariant() switch
+        {
+            ".png" => "image/png",
+            ".jpg" or ".jpeg" => "image/jpeg",
+            _ => null
+        };
+        if (mime is null)
+            return string.Empty;
+
+        try
+        {
+            // Reject a direct symlink/junction, keeping the report read-only.
+            // File sharing and a bounded read reduce races; this is not a
+            // promise about every ancestor or third-party filesystem filter.
+            if ((File.GetAttributes(logoPath) &
+                (FileAttributes.ReparsePoint | FileAttributes.Directory)) != 0)
+                return string.Empty;
+
+            using var stream = new FileStream(logoPath, FileMode.Open,
+                FileAccess.Read, FileShare.Read);
+            if (stream.Length < 16 || stream.Length > MaximumReportLogoBytes)
+                return string.Empty;
+
+            var imageBytes = new byte[(int)stream.Length];
+            stream.ReadExactly(imageBytes);
+
+            var validHeader = mime == "image/png"
+                ? imageBytes.AsSpan(0, 8).SequenceEqual(
+                    new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 })
+                  && imageBytes.Length >= 24
+                  && Encoding.ASCII.GetString(imageBytes, 12, 4) == "IHDR"
+                : imageBytes[0] == 0xFF && imageBytes[1] == 0xD8
+                  && imageBytes[2] == 0xFF;
+            if (!validHeader)
+                return string.Empty;
+
+            var base64 = Convert.ToBase64String(imageBytes);
+            return $"<img src=\"data:{mime};base64,{base64}\" alt=\"Logo\" class=\"logo\">";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+            or System.Security.SecurityException or ArgumentException
+            or NotSupportedException)
+        {
+            // An inaccessible/invalid optional logo must not disclose paths.
+            return string.Empty;
+        }
+    }
+
     private string BuildHeader(ReportGenerationOptions options)
     {
-        var company = options.Settings?.Company;
-        var color = company?.PrimaryColor ?? "#0078D4";
-        var logoHtml = "";
-
-        if (company != null && !string.IsNullOrEmpty(company.LogoPath) && File.Exists(company.LogoPath))
-        {
-            try
-            {
-                var imageBytes = File.ReadAllBytes(company.LogoPath);
-                var base64 = Convert.ToBase64String(imageBytes);
-                var ext = Path.GetExtension(company.LogoPath).ToLowerInvariant();
-                var mime = ext == ".png" ? "image/png" : "image/jpeg";
-                logoHtml = $"<img src=\"data:{mime};base64,{base64}\" alt=\"Logo\" class=\"logo\">";
-            }
-            catch { }
-        }
+        // The company checkbox is a privacy opt-out, including the logo,
+        // technician signature, contact details and footer legend.
+        var company = options.IncludeCompany ? options.Settings?.Company : null;
+        // Settings are editable JSON; never interpolate arbitrary text into
+        // quoted style attributes in customer-facing HTML/PDF.
+        var color = SafeBrandColor(company?.PrimaryColor);
+        var logoHtml = BuildSafeLogoHtml(company?.LogoPath);
 
         return $@"
 <div class='header' style='border-bottom: 4px solid {color};'>
@@ -235,6 +455,10 @@ public class HtmlReportService : IReportGenerationService
     private string BuildEquipmentSection(ReportGenerationOptions options)
     {
         var equip = options.ServiceReport!.Equipment;
+        var capacityText = equip.DiskFreeSpaceKnown && equip.DiskCapacityGB > 0
+            ? $"{equip.DiskCapacityGB:F1} GB" : "N/D";
+        var freeText = equip.DiskFreeSpaceKnown && equip.DiskCapacityGB > 0
+            ? $"{equip.DiskFreeGB:F1} GB" : "N/D";
         return $@"
 <div class='section'>
     <h2 class='section-title'>Datos del Equipo</h2>
@@ -245,7 +469,7 @@ public class HtmlReportService : IReportGenerationService
         <tr><td class='label'>SO:</td><td>{EscapeHtml(equip.OperatingSystem)}</td><td class='label'>Edición:</td><td>{EscapeHtml(equip.WindowsEdition)}</td></tr>
         <tr><td class='label'>Arquitectura:</td><td>{EscapeHtml(equip.Architecture)}</td><td class='label'>Procesador:</td><td>{EscapeHtml(equip.Processor)}</td></tr>
         <tr><td class='label'>RAM:</td><td>{equip.RamTotalGB} GB</td><td class='label'>Disco:</td><td>{EscapeHtml(equip.PrimaryDisk)} ({EscapeHtml(equip.DiskType)})</td></tr>
-        <tr><td class='label'>Capacidad:</td><td>{equip.DiskCapacityGB:F1} GB</td><td class='label'>Libre:</td><td>{equip.DiskFreeGB:F1} GB</td></tr>
+        <tr><td class='label'>Volumen del sistema:</td><td>{capacityText}</td><td class='label'>Libre:</td><td>{freeText}</td></tr>
         <tr><td class='label'>Motivo:</td><td colspan='3'>{EscapeHtml(equip.ServiceReason)}</td></tr>
     </table>
 </div>";
@@ -254,6 +478,8 @@ public class HtmlReportService : IReportGenerationService
     private string BuildDiagnosticSection(ReportGenerationOptions options)
     {
         var diag = options.DiagnosticReport!;
+        var diskFreeText = diag.DiskFreeSpaceKnown && diag.DiskCapacityGB > 0
+            ? $"{diag.DiskFreeGB:F1} GB ({diag.DiskFreePercent}%)" : "N/D";
         var alertsHtml = "";
 
         if (diag.Alerts.Count > 0)
@@ -281,7 +507,7 @@ public class HtmlReportService : IReportGenerationService
     <table>
         <tr><td class='label'>SO:</td><td>{EscapeHtml(diag.OsName)}</td><td class='label'>Edición:</td><td>{EscapeHtml(diag.WindowsEdition)}</td></tr>
         <tr><td class='label'>CPU:</td><td>{EscapeHtml(diag.Processor)} ({diag.CpuCores} núcleos)</td><td class='label'>RAM:</td><td>{diag.RamTotalGB} GB ({diag.RamUsagePercent}% uso)</td></tr>
-        <tr><td class='label'>Disco:</td><td>{EscapeHtml(diag.PrimaryDiskName)} ({EscapeHtml(diag.DiskType)})</td><td class='label'>Espacio libre:</td><td>{diag.DiskFreeGB:F1} GB ({diag.DiskFreePercent}%)</td></tr>
+        <tr><td class='label'>Disco del sistema:</td><td>{EscapeHtml(diag.PrimaryDiskName)} ({EscapeHtml(diag.DiskType)})</td><td class='label'>Espacio libre:</td><td>{diskFreeText}</td></tr>
         <tr><td class='label'>Inicio:</td><td>{diag.Startup.TotalCount} programas ({diag.Startup.ThirdPartyCount} de terceros)</td><td class='label'>Temporales:</td><td>{diag.TempFiles.TotalSizeGB} GB</td></tr>
         <tr><td class='label'>Antivirus:</td><td>{EscapeHtml(diag.Security.AntivirusName)}</td><td class='label'>Firewall:</td><td>{(diag.Security.FirewallActive ? "Activo" : "Inactivo")}</td></tr>
         <tr><td class='label'>Windows Update:</td><td colspan='3'>{EscapeHtml(diag.Security.WindowsUpdateStatus)}</td></tr>
@@ -341,13 +567,15 @@ public class HtmlReportService : IReportGenerationService
         var results = new List<string>();
 
         // Resultado de limpieza
-        if (options.CleanupResult != null && options.CleanupResult.DeletedFiles > 0)
+        if (options.IncludeCleanup && options.CleanupResult != null
+            && options.CleanupResult.DeletedFiles > 0)
         {
             results.Add($"<div class='result-item'><strong>Espacio liberado:</strong> {options.CleanupResult.DeletedMB} MB ({options.CleanupResult.DeletedFiles} archivos eliminados)</div>");
         }
 
         // Resultado de optimización
-        if (options.VisualOptimizationResult != null && options.VisualOptimizationResult.AppliedCount > 0)
+        if (options.IncludeVisualOptimization && options.VisualOptimizationResult != null
+            && options.VisualOptimizationResult.AppliedCount > 0)
         {
             results.Add($"<div class='result-item'><strong>Ajustes visuales aplicados:</strong> {options.VisualOptimizationResult.AppliedCount}</div>");
             if (options.VisualOptimizationResult.RequiresRestart)
@@ -355,7 +583,7 @@ public class HtmlReportService : IReportGenerationService
         }
 
         // Punto de restauración
-        if (options.RestorePointResult != null)
+        if (options.IncludeRestorePoint && options.RestorePointResult != null)
         {
             if (options.RestorePointResult.Success)
                 results.Add($"<div class='result-item success'>✅ Punto de restauración creado: {EscapeHtml(options.RestorePointResult.RestorePointName)}</div>");
@@ -758,7 +986,9 @@ public class HtmlReportService : IReportGenerationService
 
     private string BuildSignatureSection(ReportGenerationOptions options)
     {
-        var company = options.Settings?.Company;
+        // The company checkbox is a privacy opt-out, including the logo,
+        // technician signature, contact details and footer legend.
+        var company = options.IncludeCompany ? options.Settings?.Company : null;
         return $@"
 <div class='section signature'>
     <div class='sig-block'>
@@ -778,7 +1008,7 @@ public class HtmlReportService : IReportGenerationService
     {
         return $@"
 <div class='footer'>
-    <p>Informe generado por CATTECH OPTIMIZER PRO v0.2.2 | {DateTime.Now:dd/MM/yyyy HH:mm}</p>
+    <p>Informe generado por CATTECH OPTIMIZER PRO v0.3.0 (candidata) | {DateTime.Now:dd/MM/yyyy HH:mm}</p>
 </div>";
     }
 
@@ -866,31 +1096,108 @@ public class HtmlReportService : IReportGenerationService
     private static string SanitizeFileName(string name)
     {
         var invalid = Path.GetInvalidFileNameChars();
-        return new string(name.Where(c => !invalid.Contains(c)).ToArray());
+        var clean = new string(name.Where(c => !invalid.Contains(c) && !char.IsControl(c))
+            .ToArray()).Trim().Trim('.');
+        if (string.IsNullOrWhiteSpace(clean))
+            return "SinCliente";
+
+        // Limit by Unicode grapheme, rather than splitting a surrogate pair.
+        var text = new System.Globalization.StringInfo(clean);
+        return text.LengthInTextElements > 48
+            ? text.SubstringByTextElements(0, 48)
+            : clean;
     }
 
     private async Task<List<GeneratedReportInfo>> LoadReportsInfoInternalAsync()
     {
-        if (!File.Exists(_reportsInfoPath))
-            return new List<GeneratedReportInfo>();
-
+        string json;
         try
         {
-            var json = await File.ReadAllTextAsync(_reportsInfoPath);
-            return JsonSerializer.Deserialize<List<GeneratedReportInfo>>(json, SerializerOptions)
-                   ?? new List<GeneratedReportInfo>();
+            // Only a genuinely missing index means there are no previous reports.
+            // Malformed JSON, denied access or I/O errors must never be replaced
+            // with an empty collection: SaveReportInfoAsync would erase history.
+            json = await File.ReadAllTextAsync(_reportsInfoPath).ConfigureAwait(false);
         }
-        catch
+        catch (FileNotFoundException)
         {
             return new List<GeneratedReportInfo>();
         }
+        catch (DirectoryNotFoundException)
+        {
+            return new List<GeneratedReportInfo>();
+        }
+
+        var reports = JsonSerializer.Deserialize<List<GeneratedReportInfo>>(
+            json, SerializerOptions)
+            ?? throw new InvalidDataException(
+                "El índice de informes contiene un valor nulo y se conserva sin cambios.");
+
+        if (reports.Any(report => report is null))
+            throw new InvalidDataException(
+                "El índice de informes contiene entradas nulas y se conserva sin cambios.");
+
+        return reports;
     }
 
     private async Task SaveReportsInfoInternalAsync(List<GeneratedReportInfo> reports)
     {
         EnsureDirectoryExists(_reportsDirectory);
         var json = JsonSerializer.Serialize(reports, SerializerOptions);
-        await File.WriteAllTextAsync(_reportsInfoPath, json);
+        var staging = Path.Combine(_reportsDirectory,
+            ".cattech-index-" + Guid.NewGuid().ToString("N") + ".tmp");
+        try
+        {
+            // Write complete JSON to a uniquely named file before publication.
+            await using (var stream = new FileStream(staging, FileMode.CreateNew,
+                FileAccess.Write, FileShare.None, 8192, useAsync: true))
+            await using (var writer = new StreamWriter(stream, Encoding.UTF8))
+            {
+                await writer.WriteAsync(json).ConfigureAwait(false);
+            }
+            File.Move(staging, _reportsInfoPath, overwrite: true);
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(staging))
+                    File.Delete(staging);
+            }
+            catch (IOException) { /* Preserve original exception. */ }
+            catch (UnauthorizedAccessException) { /* Preserve original exception. */ }
+        }
+    }
+
+
+    /// <summary>
+    /// Acquire a filesystem-level exclusive lease, safe across Windows processes.
+    /// Re-opening an abandoned marker succeeds after an OS-terminated process.
+    /// Only Windows sharing/lock violations are retried; other I/O failures
+    /// remain visible rather than being misclassified as contention.
+    /// </summary>
+    internal static async Task<FileStream> AcquireIndexLeaseAsync(
+        string leasePath, TimeSpan timeout)
+    {
+        if (timeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(timeout));
+
+        var watch = Stopwatch.StartNew();
+        while (true)
+        {
+            try
+            {
+                return new FileStream(leasePath, FileMode.OpenOrCreate,
+                    FileAccess.ReadWrite, FileShare.None, 1, FileOptions.None);
+            }
+            catch (IOException ex) when ((ex.HResult & 0xFFFF) is 32 or 33)
+            {
+                if (watch.Elapsed >= timeout)
+                    throw new TimeoutException(
+                        "El índice de informes está en uso por otro proceso. No se modificó.", ex);
+
+                await Task.Delay(TimeSpan.FromMilliseconds(35)).ConfigureAwait(false);
+            }
+        }
     }
 
     private static void EnsureDirectoryExists(string path)
