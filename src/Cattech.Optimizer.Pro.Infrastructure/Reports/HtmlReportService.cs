@@ -43,10 +43,98 @@ public class HtmlReportService : IReportGenerationService
         GenerateHtmlWithPublicationCheckAsync(options, _ => Task.FromResult(true));
 
     /// <summary>
-    /// C2-D3a: optional LAST-MOMENT check after the private staging write and
-    /// before final publication. Never bypasses the existing mixed-customer
-    /// source restriction. A future audit-scoped caller must hold its trusted
-    /// journal transaction THROUGH publication; this alone is not proof.
+    /// A disposable private HTML stage. Only the final File.Move publishes
+    /// output, without overwrite. DisposeAsync never deletes a published file.
+    /// This resource alone is NOT an export authorization.
+    /// </summary>
+    internal sealed class StagedHtmlReport : IJournalStagedPublication
+    {
+        private readonly string _temporaryPath;
+        internal string OutputPath { get; }
+
+        internal StagedHtmlReport(string temporaryPath, string outputPath)
+        {
+            _temporaryPath = temporaryPath;
+            OutputPath = outputPath;
+        }
+
+        public Task PublishAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            File.Move(_temporaryPath, OutputPath); // Same folder; no overwrite.
+            return Task.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            try
+            {
+                if (File.Exists(_temporaryPath))
+                    File.Delete(_temporaryPath);
+            }
+            catch (IOException) { /* Preserve caller's original failure. */ }
+            catch (UnauthorizedAccessException) { }
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    /// <summary>
+    /// C2-D3d: only private staging. Shared by normal HTML output and the
+    /// audited journal two-phase contract. P0 client/source attribution is
+    /// checked before any output directory or staging side effect.
+    /// </summary>
+    internal async Task<StagedHtmlReport> StageHtmlForPublicationAsync(
+        ReportGenerationOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (ReportSourceCasePolicy.FindUnassociatedClientSource(options) is not null)
+            throw new InvalidOperationException(
+                "Una fuente seleccionada no está asociada al caso del equipo.");
+
+        EnsureDirectoryExists(_reportsDirectory);
+        var html = GenerateHtmlContent(options);
+
+        // No-client exports must never leak names through filenames.
+        var clientName = options.IncludeClient
+            ? options.ServiceReport?.Client?.Name ?? "SinCliente"
+            : "SinCliente";
+        var safeName = SanitizeFileName(clientName);
+        var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+        var id = Guid.NewGuid().ToString("N");
+        var fileName = $"Informe_Tecnico_CATTECH_{safeName}_{timestamp}_{id}.html";
+        var destination = Path.Combine(_reportsDirectory, fileName);
+        var temporary = Path.Combine(_reportsDirectory, $".cattech-report-{id}.tmp");
+
+        try
+        {
+            // Never share a scratch filename with concurrent exports.
+            await using (var stream = new FileStream(temporary,
+                FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                8192, useAsync: true))
+            await using (var writer = new StreamWriter(stream, Encoding.UTF8))
+            {
+                await writer.WriteAsync(html.AsMemory(), cancellationToken)
+                    .ConfigureAwait(false);
+                await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+                await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            return new StagedHtmlReport(temporary, destination);
+        }
+        catch
+        {
+            try { if (File.Exists(temporary)) File.Delete(temporary); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// C2-D3a: optional last check between private staging and publication.
+    /// Never bypasses the existing P0 named-client mixed-source restriction.
     /// </summary>
     internal async Task<string> GenerateHtmlWithPublicationCheckAsync(
         ReportGenerationOptions options,
@@ -55,65 +143,14 @@ public class HtmlReportService : IReportGenerationService
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(confirmBeforePublish);
-        cancellationToken.ThrowIfCancellationRequested();
-        // Enforce case attribution at the generator boundary too: callers
-        // outside WPF must not bypass selected-client/source linkage.
-        // Check BEFORE any report-directory or output-file side effect.
-        if (ReportSourceCasePolicy.FindUnassociatedClientSource(options) is not null)
+        await using var stage = await StageHtmlForPublicationAsync(
+            options, cancellationToken).ConfigureAwait(false);
+        if (!await confirmBeforePublish(cancellationToken).ConfigureAwait(false))
             throw new InvalidOperationException(
-                "Una fuente seleccionada no está asociada al caso del equipo.");
-
-        EnsureDirectoryExists(_reportsDirectory);
-
-        var html = GenerateHtmlContent(options);
-
-        // Generar nombre de archivo
-        // Omitting the client section must also omit identifying information
-        // from filesystem names, not merely from HTML sections.
-        var clientName = options.IncludeClient
-            ? options.ServiceReport?.Client?.Name ?? "SinCliente"
-            : "SinCliente";
-        var safeName = SanitizeFileName(clientName);
-        var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
-        // A timestamp rounded to seconds is NOT a unique report identity.
-        // A GUID distinguishes concurrent exports, while File.Move guarantees
-        // that an existing final report is never silently overwritten.
-        var id = Guid.NewGuid().ToString("N");
-        var fileName = $"Informe_Tecnico_CATTECH_{safeName}_{timestamp}_{id}.html";
-        var filePath = Path.Combine(_reportsDirectory, fileName);
-        var stagedPath = Path.Combine(_reportsDirectory, $".cattech-report-{id}.tmp");
-
-        try
-        {
-            // Stage with OS-enforced create-new semantics: no shared scratch
-            // filename, even if several reports are generated concurrently.
-            await using (var stream = new FileStream(stagedPath, FileMode.CreateNew,
-                FileAccess.Write, FileShare.None, 8192, useAsync: true))
-            await using (var writer = new StreamWriter(stream, Encoding.UTF8))
-            {
-                await writer.WriteAsync(html);
-            }
-
-            // A rejected, canceled or failed final verification must never
-            // publish a temporary report under its final .html filename.
-            if (!await confirmBeforePublish(cancellationToken).ConfigureAwait(false))
-                throw new InvalidOperationException(
-                    "No se pudo verificar el estado actual del informe.");
-            cancellationToken.ThrowIfCancellationRequested();
-            File.Move(stagedPath, filePath); // No overwrite; same directory/filesystem.
-            return filePath;
-        }
-        finally
-        {
-            // No partial HTML is published if the staging write failed.
-            try
-            {
-                if (File.Exists(stagedPath))
-                    File.Delete(stagedPath);
-            }
-            catch (IOException) { /* Best-effort cleanup, preserve original error. */ }
-            catch (UnauthorizedAccessException) { /* Preserve original error. */ }
-        }
+                "No se pudo verificar el estado actual del informe.");
+        cancellationToken.ThrowIfCancellationRequested();
+        await stage.PublishAsync(cancellationToken).ConfigureAwait(false);
+        return stage.OutputPath;
     }
 
     /// <inheritdoc/>
