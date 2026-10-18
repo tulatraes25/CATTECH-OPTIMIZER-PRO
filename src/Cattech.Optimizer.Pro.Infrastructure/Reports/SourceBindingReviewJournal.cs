@@ -89,15 +89,40 @@ internal sealed class SourceBindingReviewJournal
     }
 
     /// <summary>
-    /// Inspect one reviewed claim against the COMPLETE currently readable
-    /// journal and a fresh on-disk source fingerprint. No directories, files,
-    /// receipts or markers are created. Never cache this result as consent.
-    /// The C2-D renderer must re-open and verify during its actual output
-    /// transaction, not rely on a prior "CurrentSnapshot" status.
+    /// Standalone inspection of a CURRENT on-disk claim. The result is
+    /// ephemeral and NOT HTML/PDF authorization. Journal leases prevent
+    /// normal concurrent CATTECH revocation only while actually held.
     /// </summary>
-    internal async Task<SourceBindingReadOutcome> InspectCurrentAsync(
+    internal Task<SourceBindingReadOutcome> InspectCurrentAsync(
         Guid bindingId, Guid serviceCaseId, string sourceKind,
-        string relativeSourcePath, CancellationToken cancellationToken = default)
+        string relativeSourcePath, CancellationToken cancellationToken = default) =>
+        InspectWithReadLeaseAsync(bindingId, serviceCaseId, sourceKind,
+            relativeSourcePath, null, cancellationToken);
+
+    /// <summary>
+    /// C2-D3b: execute a TRUSTED internal operation only while the complete
+    /// receipt and source are verified and the journal marker is held with
+    /// FileShare.None. Cooperating CATTECH revocations cannot interleave.
+    /// Caller operation MUST be bounded, cancellation-aware, and not claim
+    /// permission for named-client HTML/PDF (the P0 guard remains active).
+    /// Returning CurrentSnapshot is NOT an enduring export permit.
+    /// </summary>
+    internal Task<SourceBindingReadOutcome> ExecuteWhileCurrentAsync(
+        Guid bindingId, Guid serviceCaseId, string sourceKind,
+        string relativeSourcePath,
+        Func<CancellationToken, Task> verifiedOperation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(verifiedOperation);
+        return InspectWithReadLeaseAsync(bindingId, serviceCaseId, sourceKind,
+            relativeSourcePath, verifiedOperation, cancellationToken);
+    }
+
+    private async Task<SourceBindingReadOutcome> InspectWithReadLeaseAsync(
+        Guid bindingId, Guid serviceCaseId, string sourceKind,
+        string relativeSourcePath,
+        Func<CancellationToken, Task>? verifiedOperation,
+        CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (bindingId == Guid.Empty || serviceCaseId == Guid.Empty
@@ -112,45 +137,27 @@ internal sealed class SourceBindingReviewJournal
             if (!JournalAncestryIsSafe() || MarkerIsReparsePoint()
                 || !File.Exists(_marker))
                 return new(SourceBindingReadStatus.UnsafeStore);
-            // FileMode.Open is intentionally non-creating. FileShare.None
-            // coordinates with journal writers and readers without changing
-            // persistent state. Busy or missing lock => no positive result.
+            // Non-creating exclusive reader: writers using the SAME marker
+            // cannot publish a revocation between validation and callback.
             await using var lease = new FileStream(_marker, FileMode.Open,
                 FileAccess.Read, FileShare.None, 1, FileOptions.Asynchronous);
-            var claims = await ReadAllEntriesAsync(cancellationToken)
-                .ConfigureAwait(false);
-            var revocations = await ReadAllRevocationsAsync(cancellationToken)
-                .ConfigureAwait(false);
-            if (claims is null || revocations is null
-                || revocations.Any(e => !claims.Any(c =>
-                    c.Claim.BindingId == e.BindingId)))
-                return new(SourceBindingReadStatus.InvalidJournal);
+            var before = await ValidateCurrentUnderLeaseAsync(
+                bindingId, serviceCaseId, sourceKind, relativeSourcePath,
+                cancellationToken).ConfigureAwait(false);
+            if (before.Status != SourceBindingReadStatus.CurrentSnapshot
+                || verifiedOperation is null)
+                return before;
 
-            var claimEntry = claims.SingleOrDefault(e => e.Claim.BindingId == bindingId);
-            if (claimEntry is null)
-                return new(SourceBindingReadStatus.UnknownBinding);
-            if (revocations.Any(e => e.BindingId == bindingId))
-                return new(SourceBindingReadStatus.Revoked);
-            var claim = claimEntry.Claim;
-            if (claim.ServiceCaseId != serviceCaseId)
-                return new(SourceBindingReadStatus.CaseMismatch);
-            if (!string.Equals(claim.SourceKind, sourceKind, StringComparison.Ordinal)
-                || !string.Equals(claim.RelativeSourcePath, relativeSourcePath,
-                    StringComparison.Ordinal))
-                return new(SourceBindingReadStatus.SourceChanged);
-
-            var observed = await _sourceReader.InspectAsync(sourceKind,
-                relativeSourcePath, cancellationToken).ConfigureAwait(false);
-            if (!observed.HasReadableSnapshot)
-                return new(SourceBindingReadStatus.SourceUnavailable);
-            var fingerprint = observed.Fingerprint!;
-            var validation = ServiceSourceBindingClaimPolicy.Validate(
-                claim, serviceCaseId, sourceKind, fingerprint.SourceRecordId,
-                fingerprint.Sha256, fingerprint.RelativePath,
-                claims.Select(e => e.Claim).ToArray());
-            return validation == ServiceSourceBindingFailure.None
-                ? new(SourceBindingReadStatus.CurrentSnapshot)
-                : new(SourceBindingReadStatus.SourceChanged);
+            cancellationToken.ThrowIfCancellationRequested();
+            // Must await: disposing the marker early loses the guarantee.
+            await verifiedOperation(cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            // External filesystem mutation is still possible despite our
+            // cross-process lease. Re-read all receipts and source before
+            // returning success; do NOT authorize publication on this alone.
+            return await ValidateCurrentUnderLeaseAsync(
+                bindingId, serviceCaseId, sourceKind, relativeSourcePath,
+                cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -168,6 +175,50 @@ internal sealed class SourceBindingReviewJournal
         {
             return new(SourceBindingReadStatus.UnsafeStore);
         }
+    }
+
+    /// <summary>
+    /// Caller must already hold an exclusive read or write marker handle.
+    /// Never invoke this helper without that lease.
+    /// </summary>
+    private async Task<SourceBindingReadOutcome> ValidateCurrentUnderLeaseAsync(
+        Guid bindingId, Guid serviceCaseId, string sourceKind,
+        string relativeSourcePath, CancellationToken cancellationToken)
+    {
+        var claims = await ReadAllEntriesAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var revocations = await ReadAllRevocationsAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (claims is null || revocations is null
+            || revocations.Any(e => !claims.Any(c =>
+                c.Claim.BindingId == e.BindingId)))
+            return new(SourceBindingReadStatus.InvalidJournal);
+
+        var claimEntry = claims.SingleOrDefault(e => e.Claim.BindingId == bindingId);
+        if (claimEntry is null)
+            return new(SourceBindingReadStatus.UnknownBinding);
+        if (revocations.Any(e => e.BindingId == bindingId))
+            return new(SourceBindingReadStatus.Revoked);
+        var claim = claimEntry.Claim;
+        if (claim.ServiceCaseId != serviceCaseId)
+            return new(SourceBindingReadStatus.CaseMismatch);
+        if (!string.Equals(claim.SourceKind, sourceKind, StringComparison.Ordinal)
+            || !string.Equals(claim.RelativeSourcePath, relativeSourcePath,
+                StringComparison.Ordinal))
+            return new(SourceBindingReadStatus.SourceChanged);
+
+        var observed = await _sourceReader.InspectAsync(sourceKind,
+            relativeSourcePath, cancellationToken).ConfigureAwait(false);
+        if (!observed.HasReadableSnapshot)
+            return new(SourceBindingReadStatus.SourceUnavailable);
+        var fingerprint = observed.Fingerprint!;
+        var validation = ServiceSourceBindingClaimPolicy.Validate(
+            claim, serviceCaseId, sourceKind, fingerprint.SourceRecordId,
+            fingerprint.Sha256, fingerprint.RelativePath,
+            claims.Select(e => e.Claim).ToArray());
+        return validation == ServiceSourceBindingFailure.None
+            ? new(SourceBindingReadStatus.CurrentSnapshot)
+            : new(SourceBindingReadStatus.SourceChanged);
     }
 
     /// <summary>

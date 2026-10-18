@@ -556,6 +556,156 @@ public sealed class SourceBindingReviewJournalTests
         finally { Directory.Delete(root, recursive: true); }
     }
 
+    [Fact]
+    public async Task ScopedValidation_HoldsExclusiveJournalLeaseUntilCallbackEnds()
+    {
+        var root = NewRoot();
+        try
+        {
+            await WriteSourceAsync(root, "diagnostics/source.json",
+                "{\"id\":\"ABCDEF12\",\"synthetic\":true}");
+            var journal = new SourceBindingReviewJournal(root);
+            var recorded = await journal.RecordReviewedAsync(CaseA,
+                "Diagnostic", "diagnostics/source.json", "TechQA", true);
+            Assert.Equal(SourceBindingJournalStatus.Recorded, recorded.Status);
+            var id = recorded.BindingId!.Value;
+            var entered = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            var resume = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            var current = journal.ExecuteWhileCurrentAsync(
+                id, CaseA, "Diagnostic", "diagnostics/source.json",
+                async token =>
+                {
+                    entered.TrySetResult(true);
+                    await resume.Task.WaitAsync(token);
+                });
+            try
+            {
+                await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                // The marker must STILL be exclusive while the callback
+                // is awaiting; an outside inspection cannot read it.
+                var concurrentRead = await new SourceBindingReviewJournal(root)
+                    .InspectCurrentAsync(id, CaseA, "Diagnostic",
+                        "diagnostics/source.json");
+                Assert.Equal(SourceBindingReadStatus.InvalidJournal,
+                    concurrentRead.Status);
+
+                var pendingRevocation = new SourceBindingReviewJournal(root)
+                    .RevokeAsync(id, "TechQB", true);
+                await Task.Delay(100);
+                Assert.False(pendingRevocation.IsCompleted);
+                Assert.Empty(Directory.GetFiles(JournalDirectory(root),
+                    "revoked-*.json"));
+                resume.TrySetResult(true);
+                Assert.Equal(SourceBindingReadStatus.CurrentSnapshot,
+                    (await current.WaitAsync(TimeSpan.FromSeconds(10))).Status);
+                Assert.Equal(SourceBindingJournalStatus.Revoked,
+                    (await pendingRevocation.WaitAsync(
+                        TimeSpan.FromSeconds(10))).Status);
+                Assert.Equal(SourceBindingReadStatus.Revoked,
+                    (await journal.InspectCurrentAsync(id, CaseA, "Diagnostic",
+                        "diagnostics/source.json")).Status);
+            }
+            finally
+            {
+                resume.TrySetResult(true);
+                await current.WaitAsync(TimeSpan.FromSeconds(10));
+            }
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ScopedValidation_DoesNotInvokeCallbackForInvalidOrRevokedReceipt(
+        bool revoked)
+    {
+        var root = NewRoot();
+        try
+        {
+            await WriteSourceAsync(root, "diagnostics/source.json",
+                "{\"id\":\"ABCDEF12\"}");
+            var journal = new SourceBindingReviewJournal(root);
+            var accepted = await journal.RecordReviewedAsync(CaseA,
+                "Diagnostic", "diagnostics/source.json", "TechQA", true);
+            Assert.Equal(SourceBindingJournalStatus.Recorded, accepted.Status);
+            var id = accepted.BindingId!.Value;
+            if (revoked)
+                Assert.Equal(SourceBindingJournalStatus.Revoked,
+                    (await journal.RevokeAsync(id, "TechQA", true)).Status);
+            var invoked = false;
+            var outcome = await journal.ExecuteWhileCurrentAsync(
+                id, CaseB, "Diagnostic", "diagnostics/source.json",
+                _ =>
+                {
+                    invoked = true;
+                    return Task.CompletedTask;
+                });
+            Assert.False(invoked);
+            Assert.Equal(revoked ? SourceBindingReadStatus.Revoked
+                : SourceBindingReadStatus.CaseMismatch, outcome.Status);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task ScopedValidation_SeesExternalMutationAfterCallback()
+    {
+        var root = NewRoot();
+        try
+        {
+            var path = await WriteSourceAsync(root, "diagnostics/source.json",
+                "{\"id\":\"ABCDEF12\",\"state\":1}");
+            var journal = new SourceBindingReviewJournal(root);
+            var receipt = await journal.RecordReviewedAsync(CaseA,
+                "Diagnostic", "diagnostics/source.json", "TechQA", true);
+            Assert.Equal(SourceBindingJournalStatus.Recorded, receipt.Status);
+            var outcome = await journal.ExecuteWhileCurrentAsync(
+                receipt.BindingId!.Value, CaseA, "Diagnostic",
+                "diagnostics/source.json", async _ =>
+                {
+                    // Models a non-cooperating external actor: the journal
+                    // marker does not protect arbitrary source files.
+                    await File.WriteAllTextAsync(path,
+                        "{\"id\":\"ABCDEF12\",\"state\":2}");
+                });
+            Assert.Equal(SourceBindingReadStatus.SourceChanged, outcome.Status);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task ScopedValidation_CancellationDoesNotLeaveMarkerHeld()
+    {
+        var root = NewRoot();
+        try
+        {
+            await WriteSourceAsync(root, "diagnostics/source.json",
+                "{\"id\":\"ABCDEF12\"}");
+            var journal = new SourceBindingReviewJournal(root);
+            var receipt = await journal.RecordReviewedAsync(CaseA,
+                "Diagnostic", "diagnostics/source.json", "TechQA", true);
+            Assert.Equal(SourceBindingJournalStatus.Recorded, receipt.Status);
+            using var cts = new CancellationTokenSource();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                journal.ExecuteWhileCurrentAsync(receipt.BindingId!.Value,
+                    CaseA, "Diagnostic", "diagnostics/source.json",
+                    ct =>
+                    {
+                        cts.Cancel();
+                        ct.ThrowIfCancellationRequested();
+                        return Task.CompletedTask;
+                    }, cts.Token));
+
+            Assert.Equal(SourceBindingReadStatus.CurrentSnapshot,
+                (await journal.InspectCurrentAsync(receipt.BindingId.Value,
+                    CaseA, "Diagnostic", "diagnostics/source.json")).Status);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
     private static string NewRoot()
     {
         var root = Path.Combine(Path.GetTempPath(),
