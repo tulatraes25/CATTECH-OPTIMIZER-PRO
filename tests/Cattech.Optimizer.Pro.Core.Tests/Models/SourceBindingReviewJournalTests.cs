@@ -700,7 +700,7 @@ public sealed class SourceBindingReviewJournalTests
                     }, cts.Token));
 
             Assert.Equal(SourceBindingReadStatus.CurrentSnapshot,
-                (await journal.InspectCurrentAsync(receipt.BindingId.Value,
+                (await journal.InspectCurrentAsync(receipt.BindingId!.Value,
                     CaseA, "Diagnostic", "diagnostics/source.json")).Status);
         }
         finally { Directory.Delete(root, recursive: true); }
