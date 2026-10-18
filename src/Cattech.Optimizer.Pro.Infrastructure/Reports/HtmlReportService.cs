@@ -43,6 +43,35 @@ public class HtmlReportService : IReportGenerationService
         GenerateHtmlWithPublicationCheckAsync(options, _ => Task.FromResult(true));
 
     /// <summary>
+    /// C2-D4b INTERNAL bridge to the integrity-checked bundle format.
+    /// Deliberately CLIENT-FREE ONLY: neither an enabled client section nor
+    /// a latent ServiceReport reference is accepted. This never bypasses
+    /// the existing P0 report attribution policy or WPF export workflow.
+    /// </summary>
+    internal async Task<Guid> GenerateClientFreeBundleAsync(
+        ReportGenerationOptions options, ReportBundlePublicationStore bundleStore,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(bundleStore);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (options.IncludeClient || options.ServiceReport is not null)
+            throw new InvalidOperationException(
+                "Un paquete sin cliente no puede contener datos de un caso.");
+        if (ReportSourceCasePolicy.FindUnassociatedClientSource(options) is not null)
+            throw new InvalidOperationException(
+                "La fuente elegida no permite generar un informe asociado.");
+
+        // Render in memory once; bundleStore owns private copies and hashes.
+        // No reports/html, reports/pdf or reports-info.json side effects.
+        var content = GenerateHtmlContent(options);
+        cancellationToken.ThrowIfCancellationRequested();
+        return await bundleStore.PublishClientFreeAsync(
+            Encoding.UTF8.GetBytes(content), cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// A disposable private HTML stage. Only the final File.Move publishes
     /// output, without overwrite. DisposeAsync never deletes a published file.
     /// This resource alone is NOT an export authorization.
