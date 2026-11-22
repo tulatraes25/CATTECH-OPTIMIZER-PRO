@@ -5,10 +5,10 @@
 Workflow: `.github/workflows/ci.yml`
 
 - Se ejecuta en push a `main`, pull requests contra `main` y `workflow_dispatch`
-- Pasos: restore, build Release, tests Release
-- Resultados TRX conservados como artifact (`cattech-test-results`, retención 14 días)
+- Pasos: auditoría de inputs de los workflows de release (scripts sintéticos de QA), restore, build Release, tests Release, resumen de cobertura y upload de resultados
+- Resultados TRX + cobertura Cobertura conservados como artifact (`cattech-test-results`, retención 14 días)
 - Permisos: `contents: read` — completamente read-only
-- Runner: `windows-latest` (requerido por `net8.0-windows` + WPF)
+- Runner: `windows-latest` (requerido por `net10.0-windows` + WPF)
 
 ## P.2.1 — CATTECH Release Package
 
@@ -41,7 +41,7 @@ Evita publicar un binario construido desde un commit distinto del source/tag pre
 - Consistencia de versión en `Cattech.Optimizer.Pro.UI.csproj` (Version / AssemblyVersion / FileVersion)
 - Versiones visibles coherentes: README, MainWindow.xaml, MainViewModel.cs, HtmlReportService.cs, CHANGELOG
 - Tests Release ejecutados DOS veces (detección de flakiness)
-- EXE publicado con FileVersion `{version}.0` y ProductVersion comenzando en `{version}`
+- EXE publicado con FileVersion `{version}.0` y ProductVersion exacta `{version}+{source_sha}`
 - `config/herramientas.json` presente, JSON válido, sin rutas personales ni secretos
 - `smartctl.exe` AUSENTE (dependencia externa, no se empaqueta)
 - ZIP completo (EXE, LHM, config, README, LICENSE; sin smartctl ni directorios personales)
@@ -65,13 +65,13 @@ Evita publicar un binario construido desde un commit distinto del source/tag pre
 
 ```bash
 gh workflow run release-package.yml \
-  -f version=0.2.0 \
-  -f source_ref=v0.2.0 \
+  -f version=0.3.0 \
+  -f source_ref=v0.3.0 \
   --ref main
 ```
 
 Este comando genera un candidate artifact con la versión y el código indicados.
-NO modifica la Release v0.2.0 existente.
+NO modifica ni publica ninguna Release.
 
 ## P.2.2 — CATTECH Release (publicación controlada)
 
@@ -100,9 +100,9 @@ Publicación manual CONTROLADA de una versión futura. **Solo `workflow_dispatch
 
 ```bash
 gh workflow run release.yml \
-  -f version=0.2.0 \
-  -f source_sha=8d54e8a527f0183314eb1812ffb226f7ac1d5255 \
-  -f release_notes_path=docs/RELEASE_NOTES_V0_2.md \
+  -f version=0.3.0 \
+  -f source_sha=<SHA de main> \
+  -f release_notes_path=docs/RELEASE_NOTES_V0_3.md \
   -f dry_run=true \
   --ref main
 ```
@@ -135,10 +135,3 @@ gh attestation verify CATTECH-Optimizer-Pro-vX.Y.Z-win-x64.zip \
 ```
 
 Solo disponible para releases publicadas por el camino real con attestation. El dry-run no genera attestations.
-
-## P.2.2
-
-Estado: Pendiente.
-
-Objetivo: publicación controlada de tag/GitHub Release reutilizando el workflow P.2.1
-(descargar artifact, crear tag controlado, crear Release con ZIP + checksum, gate humano).

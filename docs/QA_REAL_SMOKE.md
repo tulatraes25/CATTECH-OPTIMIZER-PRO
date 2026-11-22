@@ -7,7 +7,7 @@ Validar una Release REAL de CATTECH OPTIMIZER PRO en equipos Windows reales, des
 ## Alcance
 
 - P.3.1 (actual): toolkit + verificación del paquete oficial publicado.
-- P.3.2 (pendiente): ejecución manual real por perfil de hardware (Desktop / Notebook).
+- P.3.2 (pendiente): ejecución manual real por perfil de hardware (Desktop / Notebook) sobre la release v0.3.0.
 
 ## Qué NO cubre
 
@@ -31,7 +31,7 @@ El smoke NO es una sesión de trabajo real: es validación de la aplicación pub
 
 ## Diferencia entre tests automatizados y smoke real
 
-- Tests automatizados: 945+ unit/integration con fakes, ejecutados por CI en runners efímeros.
+- Tests automatizados: 1870 unit/integration con fakes, ejecutados por CI en runners efímeros.
 - Smoke real: observación manual de la aplicación publicada en una máquina real, con hardware real o ausencia del mismo.
 
 No asumir que "los tests pasan" implica que la app funciona en una PC real.
@@ -40,44 +40,41 @@ No asumir que "los tests pasan" implica que la app funciona en una PC real.
 
 ## Paso 0 — Integridad de la Release oficial
 
-Descargar los assets oficiales (GitHub CLI disponible):
+Descargar los assets oficiales (GitHub CLI disponible). Reemplazar `$VERSION` por la versión actual (ej. `0.3.0`):
 
 ```powershell
-gh release download v0.2.0 `
+$VERSION = "0.3.0"
+gh release download "v$VERSION" `
   --repo tulatraes25/CATTECH-OPTIMIZER-PRO `
-  -p "CATTECH-Optimizer-Pro-v0.2.0-win-x64.zip" `
-  -p "CATTECH-Optimizer-Pro-v0.2.0-win-x64.sha256.txt" `
+  -p "CATTECH-Optimizer-Pro-v$VERSION-win-x64.zip" `
+  -p "CATTECH-Optimizer-Pro-v$VERSION-win-x64.sha256.txt" `
   -D output/qa-smoke/source
 ```
 
-Verificar el checksum oficial (fixture v0.2.0):
+Verificar el checksum oficial contra el archivo `.sha256.txt` publicado:
 
 ```powershell
-Get-FileHash output/qa-smoke/source/CATTECH-Optimizer-Pro-v0.2.0-win-x64.zip -Algorithm SHA256
+Get-FileHash "output/qa-smoke/source/CATTECH-Optimizer-Pro-v$VERSION-win-x64.zip" -Algorithm SHA256
 ```
 
-Esperado para v0.2.0:
+El hash calculado debe coincidir exactamente con el contenido de `CATTECH-Optimizer-Pro-v$VERSION-win-x64.sha256.txt`. Si no coincide: FAIL, no continuar.
 
-```
-797AD589438F22D16F0DDC8BF79C02B1BCF3B0E7851B6DC7FA32998C587A50BF
-```
-
-Debe coincidir con el contenido de `CATTECH-Optimizer-Pro-v0.2.0-win-x64.sha256.txt`. Si no coincide: FAIL, no continuar.
+> Referencia histórica: el asset v0.2.0 publicado tenía SHA-256 `797AD589438F22D16F0DDC8BF79C02B1BCF3B0E7851B6DC7FA32998C587A50BF`.
 
 ## Paso 1 — Extraer en carpeta aislada
 
 ```powershell
-Expand-Archive output/qa-smoke/source/CATTECH-Optimizer-Pro-v0.2.0-win-x64.zip -DestinationPath output/qa-smoke/v0.2.0
+Expand-Archive "output/qa-smoke/source/CATTECH-Optimizer-Pro-v$VERSION-win-x64.zip" -DestinationPath "output/qa-smoke/v$VERSION"
 ```
 
-La raíz de `output/qa-smoke/v0.2.0` debe contener directamente `Cattech.Optimizer.Pro.UI.exe` (sin carpeta anidada extra).
+La raíz de `output/qa-smoke/v$VERSION` debe contener directamente `Cattech.Optimizer.Pro.UI.exe` (sin carpeta anidada extra).
 
 ## Paso 2 — Collector automático (sin PII)
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/qa/Collect-SmokeEvidence.ps1 `
-  -PackagePath output/qa-smoke/v0.2.0 `
-  -Label baseline-v0.2.0
+  -PackagePath "output/qa-smoke/v$VERSION" `
+  -Label "baseline-v$VERSION"
 ```
 
 Genera `output/qa-smoke/smoke-evidence-baseline-v0.2.0-{timestamp}.json` y `.md` con:
@@ -103,10 +100,12 @@ Cada prueba admite: **PASS / FAIL / N/D / NO EJECUTADO**. No inventar PASS cuand
 
 ### Arranque normal
 1. Ejecutar CATTECH sin elevar.
-2. Verificar: abre, ventana visible, sin crash, footer v0.2.0, Home muestra "CATTECH OPTIMIZER PRO v0.2.0", navegación responde.
+2. Verificar: abre, ventana visible, sin crash, footer `v$VERSION`, Home muestra "CATTECH OPTIMIZER PRO v$VERSION", navegación responde.
 
 ### Navegación (abrir cada sección, sin acciones)
-Home · Configuración · Cliente/equipo · Diagnóstico · Programas de inicio · Limpieza · Optimización · Punto de restauración · Discos SMART · Hardware · Informes
+Home · Configuración · Cliente/equipo · Diagnóstico · Pantallas azules · Reparaciones (vista previa) · Decisiones · DEMO · Programas de inicio · Limpieza · Optimización · Punto de restauración · Discos SMART · Hardware · Informes
+
+> Las secciones nuevas de v0.3 son **read-only por diseño**: Pantallas azules solo lee dumps/eventos, Reparaciones solo muestra preflight y plan, Decisiones · DEMO es una demostración. No ejecutar ninguna acción mutante durante el smoke.
 
 ### Configuración (datos FICTICIOS)
 - Empresa: `CATTECH QA` · Técnico: `Técnico QA`
@@ -145,8 +144,23 @@ Home · Configuración · Cliente/equipo · Diagnóstico · Programas de inicio 
 - Solo si smartctl YA está disponible: Verificar smartctl, Listar discos, Analizar SMART (read-only). Verificar estados y que un disco que falla no aborte el resto.
 - PROHIBIDO en smoke base: tests cortos y extendidos.
 
+### Pantallas azules (BSOD) — read-only
+- Abrir la sección: debe listar minidumps/eventos `BugCheck` disponibles o informar que no hay fuentes.
+- Verificar que la decodificación muestra código, nombre y módulos candidatos sin afirmar una causa única.
+- No usar DumpChk sobre archivos dudosos salvo que el técnico lo decida explícitamente; registrar el resultado.
+- Si no hay dumps: la sección debe informar "sin evidencia", no un estado saludable inventado.
+
+### Reparaciones (vista previa) — read-only
+- Abrir la sección y generar el preflight/plan SIN ejecutar reparaciones.
+- Verificar que muestra requisitos de permisos, riesgos y verificación posterior.
+- Confirmar que ningún botón ejecuta Windows Update/SFC/DISM sin consentimiento explícito adicional.
+
+### Decisiones · DEMO
+- Abrir la sección y verificar que es explícitamente una demostración.
+- Verificar la separación de texto técnico/cliente y que no se presenta como diagnóstico de hardware real.
+
 ### Informe
-- Generar HTML con datos QA ficticios: verificar que incluye v0.2.0, empresa QA, y que estados Unknown/NotAvailable no aparecen como "sano".
+- Generar HTML con datos QA ficticios: verificar que incluye `v$VERSION`, empresa QA, y que estados Unknown/NotAvailable no aparecen como "sano".
 - Generar PDF si Edge está disponible: verificar que es PDF real (cabecera `%PDF`) y abre.
 
 ### Reinicio de app
@@ -163,10 +177,10 @@ Home · Configuración · Cliente/equipo · Diagnóstico · Programas de inicio 
 
 ## Estado actual
 
-- P.3.1: ✅ toolkit + baseline package verification
-- P.3.2: ⏳ pruebas manuales reales por perfil (Desktop / Notebook)
+- P.3.1: ✅ toolkit + verificación de baseline del paquete publicado.
+- P.3.2: ⏳ pendiente — pruebas manuales reales por perfil (Desktop / Notebook) sobre v0.3.0.
 
-No marcar Desktop PASS / Notebook PASS hasta ejecutarlos realmente.
+La release v0.3.0 se publicó con build sin warnings y 1870 tests automatizados en verde sobre el SHA exacto. La verificación física sigue pendiente: no marcar Desktop PASS / Notebook PASS hasta ejecutarla realmente.
 
 ## Hallazgos conocidos de v0.2.0
 

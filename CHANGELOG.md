@@ -60,11 +60,11 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
-No se publicó aún la v0.3.0. La rama de integración y los paquetes temporales de Actions son candidatos de QA, no releases oficiales.
+Sin cambios pendientes de publicar.
 
 ---
 
-## [0.3.0] - 2026-10-16 (CANDIDATA, NO PUBLICADA)
+## [0.3.0] - 2026-11-22
 
 ### Added
 - Diagnóstico BSOD y revisión conservadora de evidencia: código de error, módulos candidatos, permisos y estados de disponibilidad, sin atribución causal automática.
@@ -76,12 +76,14 @@ No se publicó aún la v0.3.0. La rama de integración y los paquetes temporales
 - Limpieza restringida a rutas/archivos verificados, exclusiones de edad/atributos, auditoría inmutable y feedback que diferencia omisiones y fallas.
 - Cliente/equipo: Cancelar restaura exclusivamente el último guardado confirmado o limpia el borrador nuevo; protege mediciones pendientes y evita guardado parcial.
 - Procesos externos de diagnóstico acotados y requisitos explícitos para cualquier reparación real.
-- GitHub Actions preflight de inputs de publicación y 14 casos adversariales en ejecución sintética.
+- GitHub Actions preflight de inputs de publicación y casos adversariales en ejecución sintética.
 
 ### Platform / QA
-- Migración de código a .NET 10 LTS: Windows CI #221 y #222 con 1650/1650 xUnit, sin fallas u omisiones; no prueba real de hardware.
-- La compatibilidad del candidato comprende Windows 11 y ediciones Windows 10 LTSC admitidas oficialmente por .NET 10; otras ediciones se evalúan por separado.
-- **Pendiente**: certificado de paquete win-x64, verificación física Windows/WPF/WMI/SMART/DXGI/Edge, protección administrativa de main e integración final. **NO RELEASE**.
+- Migración de código a .NET 10 LTS (fin de soporte de .NET 8: 2026-11-10).
+- Build Release sin warnings y **1870 tests** xUnit (0 fallas, 0 omitidos) ejecutados en Windows CI sobre el SHA exacto, más una segunda corrida completa en el pipeline de release.
+- Paquete `win-x64` autocontenido con ProductVersion verificada contra el SHA de origen, SHA-256 publicado y atestación de procedencia de GitHub.
+- La compatibilidad comprende Windows 11 y ediciones Windows 10 LTSC admitidas oficialmente por .NET 10; otras ediciones se evalúan por separado.
+- Verificación física en equipos reales (WPF/WMI/SMART/DXGI/Edge) documentada como protocolo de smoke en `docs/QA_REAL_SMOKE.md`.
 
 ---
 

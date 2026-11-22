@@ -1,7 +1,7 @@
-# Arquitectura Inicial - CATTECH OPTIMIZER PRO
+# Arquitectura - CATTECH OPTIMIZER PRO
 
-Versión: 0.1 (MVP)  
-Fecha: 2026  
+Versión: 0.3.0  
+Fecha: 2026 (actualizado 2026-11-22)  
 Objetivo: Definir estructura, tecnologías y módulos del proyecto.
 
 ---
@@ -16,7 +16,7 @@ Objetivo: Definir estructura, tecnologías y módulos del proyecto.
 |----------|-----|---------|
 | **Estabilidad** | Maduro (2006+), testeado en producción | Más nuevo, menos battle-tested |
 | **Compatibilidad** | .NET Framework 4.7.2+ / .NET 6-8 | Solo .NET 5+ / .NET Core |
-| **Portabilidad** | Windows 10/11 (con .NET 8) | Solo Windows 10 1803+ |
+| **Portabilidad** | Windows 10/11 (con .NET 10) | Solo Windows 10 1803+ |
 | **Controls** | Amplio ecosistema (Telerik, DevExpress, MaterialDesign) | Controles limitados aún |
 | **Documentación** | Extensa, muchos ejemplos | Creciente pero menor |
 | **Community** | Gran base de usuarios, Stack Overflow extenso | Comunidad creciente |
@@ -24,7 +24,7 @@ Objetivo: Definir estructura, tecnologías y módulos del proyecto.
 | **MVP suitability** | Excelente para MVP rápido | Mejor para apps modernas a futuro |
 
 **Conclusión**: WPF es la elección correcta para un MVP técnico portable. Permite:
-- **Objetivo principal**: Windows 10/11 (donde .NET 8 funciona oficialmente)
+- **Objetivo principal**: Windows 10/11 (donde .NET 10 funciona oficialmente)
 - **Compatibilidad futura limitada**: Windows 7/8/8.1 mediante rama legacy con .NET Framework 4.8 (no en MVP)
 - Ecosistema maduro de controles
 - Facilidad para desarrolladores .NET experimentados
@@ -37,7 +37,7 @@ Objetivo: Definir estructura, tecnologías y módulos del proyecto.
 ┌─────────────────────────────────────────────────────────────┐
 │                    CATTECH OPTIMIZER PRO                     │
 ├─────────────────────────────────────────────────────────────┤
-│  UI Layer:        WPF (.NET 8) + XAML                      │
+│  UI Layer:        WPF (.NET 10) + XAML                      │
 │  MVVM Framework:  CommunityToolkit.Mvvm                     │
 │  DI Container:    Microsoft.Extensions.DependencyInjection  │
 │  Logging:         Serilog +Seq                              │
@@ -543,7 +543,7 @@ ManagementBaseObject outParams = restorePoint.InvokeMethod("CreateRestorePoint",
 
 | Dependencia | Licencia | Uso | Restricciones |
 |-------------|----------|-----|---------------|
-| .NET 8 | MIT | Runtime | Ninguna |
+| .NET 10 | MIT | Runtime | Ninguna |
 | WPF | - | UI Framework | Parte de .NET |
 | CommunityToolkit.Mvvm | MIT | MVVM | Ninguna |
 | Microsoft Edge | (pre-instalado) | PDF Generation | Edge headless required |
@@ -652,91 +652,81 @@ SOFTWARE.
 
 ---
 
-## 7. Requisitos del Sistema
+## 7. Requisitos del Sistema (v0.3.0)
 
-### Para Ejecutar CATTECH OPTIMIZER PRO (MVP v0.1)
+### Para Ejecutar
 
-- **SO**: Windows 10 (1809+) / Windows 11 — **requisito obligatorio para .NET 8**
-- **.NET**: .NET 8 Desktop Runtime (se instala automáticamente si no está presente)
+- **SO**: Windows 11 o Windows 10 LTSC (ediciones admitidas oficialmente por .NET 10)
+- **.NET**: no requiere instalación manual — el paquete publicado es autocontenido (win-x64)
 - **RAM**: 512 MB mínimo, 1 GB recomendado
-- **Disco**: 100 MB para instalación + espacio para reportes
-- **Permisos**: Administrador (para diagnóstico completo)
+- **Disco**: 100 MB para la aplicación + espacio para reportes y backups
+- **Permisos**: Administrador (diagnóstico completo y operaciones que modifican el sistema)
 - **Resolución**: 1280x720 mínimo, 1920x1080 recomendado
 
-### Compatibilidad Futura (Post-MVP)
+### Compatibilidad Fuera de Soporte
 
-- **Windows 7/8/8.1**: Posible soporte mediante rama legacy separada que use .NET Framework 4.8 en lugar de .NET 8
-- **No está planificado para v0.1**: Requeriría mantenimiento de dos codebases
+- **Windows 7/8/8.1 y ediciones Windows 10 sin soporte de .NET 10**: quedarían fuera de cobertura. Requeriría una rama legacy separada con .NET Framework 4.8 (no planificada).
 
 ### Para Desarrollo
 
-- **IDE**: Visual Studio 2022 17.8+ o Rider 2023.3+
-- **SDK**: .NET 8 SDK
-- **Windows ADK**: Solo para futura creación de USB Rescue
+- **IDE**: Visual Studio 2022 17.10+ o Rider 2024.1+
+- **SDK**: .NET 10 SDK (10.0.x)
+- **Windows ADK**: solo para la futura creación de USB Rescue
 
 ---
 
-## 8. Roadmap Técnico
+## 8. Estado del Roadmap Técnico
 
-### v0.1 (MVP) - 6-8 semanas
-- [ ] Setup de proyecto y estructura
-- [ ] Configuración de empresa/técnico
-- [ ] Formulario de cliente/equipo
-- [ ] Detección de hardware básica (CPU, RAM, GPU, discos)
-- [ ] Información de discos: espacio libre, tipo HDD/SSD (si Windows lo informa)
-- [ ] **NO** implementar SMART completo (se posterga a v0.2)
-- [ ] Limpieza de temporales (solo usuario, con confirmación)
-- [ ] Optimización visual (con backup y confirmación)
-- [ ] Punto de restauración
-- [ ] Generación de informe HTML
-- [ ] Generación de informe PDF
-- [ ] Build portable (sin instalador)
+### v0.1 (MVP) - COMPLETADO
+- [x] Setup de proyecto y estructura
+- [x] Configuración de empresa/técnico
+- [x] Formulario de cliente/equipo
+- [x] Detección de hardware básica (CPU, RAM, GPU, discos)
+- [x] Limpieza de temporales (solo usuario, con confirmación)
+- [x] Optimización visual (con backup y confirmación)
+- [x] Punto de restauración
+- [x] Generación de informe HTML y PDF
+- [x] Build portable (sin instalador)
 
-### v0.2 - 4 semanas
-- [ ] SMART completo con histórico
-- [ ] Monitoreo de temperaturas en tiempo real
-- [ ] Reportes comparativos (antes/después)
-- [ ] Exportación a JSON/CSV
-- [ ] Modo oscuro
+### v0.2 - COMPLETADO
+- [x] SMART completo con histórico y self-tests
+- [x] Monitoreo de hardware en tiempo real (LibreHardwareMonitor)
+- [x] Inventario WMI/SMBIOS (CPU, GPU, RAM, módulos, placa/BIOS)
+- [x] Informe SMART y recomendaciones automáticas
+- [ ] Exportación a JSON/CSV y modo oscuro (no incluidos; siguen en el backlog)
 
-### v0.3 - 4 semanas
-- [ ] Análisis básico de minidumps (BSOD)
-- [ ] Reparación de Windows Update
-- [ ] Reparación de archivos del sistema (SFC/DISM)
-- [ ] Historial de servicios por cliente
+### v0.3 - PUBLICADO (2026-11-22)
+- [x] Análisis read-only de minidumps (BSOD) y eventos `BugCheck`
+- [x] Decodificación de bug checks desde catálogo JSON
+- [x] Plan y preflight de reparación de Windows Update
+- [x] Preflight SFC/DISM y punto de restauración con consentimiento
+- [x] Evidence Engine, Decision Center DEMO y pasaporte técnico
+- [x] Informes endurecidos con publicación atómica de bundles
+- [x] Migración a .NET 10 LTS y paquete autocontenido win-x64
 
-### v0.4 - 6 semanas
-- [ ] CATTECH Preserve (backup de configuración)
-- [ ] Restauración de configuración
+### v0.4 - 6 semanas (planificado)
+- [ ] CATTECH Preserve (backup y restauración de configuración)
 - [ ] Backup de drivers
 - [ ] Sincronización entre equipos
 
-### v0.5 - 8 semanas
+### v0.5 - 8 semanas (planificado)
 - [ ] CATTECH Rescue USB
 - [ ] Creación de USB bootable con WinPE
 - [ ] Integración de Memtest86+
 - [ ] Herramientas de rescate offline
 
-### v1.0 - 4 semanas
+### v1.0 - (planificado)
 - [ ] Suite completa estable
-- [ ] Instalador profesional
+- [ ] Instalador profesional y firma de código
 - [ ] Actualizaciones automáticas
-- [ ] Documentación completa
 - [ ] Soporte multi-idioma
 
 ---
 
-## 9. Próximos Pasos Inmediatos
+## 9. Estado Actual del Proyecto
 
-1. **Inicializar repositorio Git**
-2. **Crear proyecto .NET 8 WPF en Visual Studio**
-3. **Instalar dependencias NuGet iniciales**
-4. **Implementar estructura de carpetas Core/Infrastructure/UI**
-5. **Crear primer ViewModel y View de prueba**
-6. **Configurar Serilog para logging**
-7. **Implementar detección de hardware básica**
-8. **Crear formulario de configuración de empresa**
+El proyecto está **publicado en v0.3.0** (2026-11-22), con build Release sin warnings y 1870 tests automatizados en verde sobre .NET 10 LTS. Para el detalle de cambios, ver `CHANGELOG.md`; para el plan futuro, `ROADMAP.md`.
 
 ---
 
-*Documento generado como parte de la planificación de CATTECH OPTIMIZER PRO*
+*Documento de arquitectura de CATTECH OPTIMIZER PRO — actualizado a v0.3.0.*

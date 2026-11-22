@@ -2,15 +2,16 @@
 
 [![CATTECH CI](https://github.com/tulatraes25/CATTECH-OPTIMIZER-PRO/actions/workflows/ci.yml/badge.svg)](https://github.com/tulatraes25/CATTECH-OPTIMIZER-PRO/actions/workflows/ci.yml)
 
-**Versión**: v0.3.0 (candidata no publicada)  
+**Versión**: v0.3.0  
 **Licencia**: MIT  
-**Plataforma del candidato**: Windows 11 y ediciones Windows 10 LTSC admitidas por .NET 10; otras ediciones deben verificarse y no cuentan con garantía de soporte del fabricante.
+**Plataforma**: Windows 11 y ediciones Windows 10 LTSC admitidas oficialmente por .NET 10; otras ediciones de Windows 10 requieren verificación propia.  
+**Runtime**: .NET 10 LTS. El paquete publicado es autocontenido (win-x64): no requiere instalar .NET.
 
-> **Última release pública estable**: [v0.2.2](https://github.com/tulatraes25/CATTECH-OPTIMIZER-PRO/releases/tag/v0.2.2). La v0.3.0 de esta rama es un candidato sujeto a certificación del ejecutable y pruebas físicas; no descargar como versión final.
+> **Descarga**: [v0.3.0](https://github.com/tulatraes25/CATTECH-OPTIMIZER-PRO/releases/tag/v0.3.0) — ZIP autocontenido win-x64 + SHA-256.
 >
 > Soporte oficial de plataforma .NET 10: https://github.com/dotnet/core/blob/main/release-notes/10.0/supported-os.md .
 
-> Historial publicado: [v0.1.1 MVP estabilizado](CHANGELOG.md#011---2026).
+> Historial completo de cambios: [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -18,14 +19,29 @@
 
 CATTECH OPTIMIZER PRO es una aplicación de escritorio para Windows diseñada para técnicos informáticos. Ofrece herramientas de diagnóstico, optimización y mantenimiento de equipos, generando informes profesionales en PDF con datos de la empresa y técnico.
 
-### Características principales (MVP v0.1)
+### Características principales (v0.3.0)
 
 - **Configuración personalizable**: Logo de empresa, datos del técnico
-- **Gestión de clientes**: Registro de clientes y equipos
-- **Diagnóstico básico**: Hardware, discos, estado del sistema
-- **Optimización segura**: Limpieza de temporales, ajustes visuales
-- **Puntos de restauración**: Creación antes de cambios
-- **Informes profesionales**: HTML y PDF con logo personalizado
+- **Gestión de clientes**: Registro de clientes y equipos, con detección WMI
+- **Diagnóstico del sistema**: hardware, discos, inicio, seguridad y espacios
+- **Discos SMART**: análisis read-only, self-tests corto/extendido y recomendaciones
+- **Hardware en tiempo real**: temperaturas, carga, memoria GPU, batería y SPD
+- **Pantallas azules**: lectura de dump/Event Log y decodificación de bug checks
+- **Reparaciones**: vistas previas de Windows Update, SFC/DISM y restauración, con consentimiento
+- **Decisiones · DEMO**: centro de decisiones explicable sobre un caso de ejemplo
+- **Optimización segura**: limpieza de temporales, ajustes visuales y punto de restauración
+- **Informes profesionales**: HTML y PDF con logo, historial de casos y trazabilidad
+
+### Novedades v0.3.0
+
+- **Migración a .NET 10 LTS**: runtime soportado, build sin warnings y paquete win-x64 autocontenido
+- **Pantallas azules (BSOD)**: descubrimiento read-only de minidumps y eventos `BugCheck`, decodificación desde catálogo (`config/bugcheckcodes.json`), verificación opcional con DumpChk y separación explícita entre síntomas y causa
+- **Centro de reparaciones**: plan y preflight de reparaciones (Windows Update, SFC/DISM, restauración) con niveles de permiso, consentimiento explícito y verificación posterior; nunca ejecuta reparaciones sin confirmación del técnico
+- **Evidence Engine**: hechos, reglas deterministas, vista previa de reparación y evaluación de resultado, aislados por cliente, equipo, sesión y componente; prohíbe conclusiones de éxito fabricadas
+- **Pasaporte técnico**: exportación redactada en memoria, con checksum y consentimiento revocable por caso (superficie de revisión)
+- **Informes endurecidos**: publicación atómica de bundles, control de exportaciones HTML/PDF, IDs desambiguados e inventario honesto de archivos dañados
+- **Limpieza verificada**: raíces confiables, exclusiones por edad/atributos, auditoría inmutable y feedback que distingue omitidos, errores y fallas
+- **1870 tests** automatizados (0 fallas, 0 omitidos)
 
 ### Correcciones v0.2.2
 
@@ -56,18 +72,18 @@ CATTECH OPTIMIZER PRO es una aplicación de escritorio para Windows diseñada pa
 
 ### Para ejecutar
 
-- **Windows 10 (1809+) / Windows 11** (requerido para .NET 8)
-- .NET 8 Desktop Runtime
+- **Windows 11** o **Windows 10 LTSC** (ediciones admitidas oficialmente por .NET 10)
+- El ZIP publicado es **autocontenido**: incluye el runtime .NET 10, no hace falta instalarlo
 - 512 MB RAM mínimo (1 GB recomendado)
 - 100 MB de espacio en disco
-- Permisos de administrador (para diagnóstico completo)
+- Permisos de administrador (para diagnóstico completo y operaciones que modifican el sistema)
 
-> **Nota**: Windows 7/8/8.1 no son soportados por .NET 8. Para esos sistemas se requeriría una rama legacy con .NET Framework 4.8 (no planificado en MVP).
+> **Nota**: .NET 8 alcanzó su fin de soporte el 10-nov-2026, por eso v0.3.0 migra a .NET 10 LTS. Windows 7/8/8.1 no son soportados; para esos sistemas se requeriría una rama legacy con .NET Framework 4.8 (no planificada).
 
 ### Para desarrollar
 
-- Visual Studio 2022 17.8+ o JetBrains Rider 2023.3+
-- .NET 8 SDK
+- Visual Studio 2022 17.10+ (o JetBrains Rider 2024.1+) con la carga de trabajo de escritorio .NET
+- **.NET 10 SDK** (10.0.x)
 - Git
 
 ---
@@ -113,13 +129,14 @@ dotnet publish src\Cattech.Optimizer.Pro.UI\Cattech.Optimizer.Pro.UI.csproj `
 
 ## Instalación
 
-### Versión portable (recomendada para v0.1)
+### Versión portable (recomendada)
 
-1. Descargar la última versión desde Releases
-2. Extraer el ZIP en una carpeta
-3. Ejecutar `Cattech.Optimizer.Pro.UI.exe` como administrador
+1. Descargar la última versión desde [Releases](https://github.com/tulatraes25/CATTECH-OPTIMIZER-PRO/releases)
+2. Verificar el SHA-256 publicado junto al ZIP
+3. Extraer el ZIP en una carpeta
+4. Ejecutar `Cattech.Optimizer.Pro.UI.exe` como administrador
 
-### Versión con instalador (disponible en v1.0)
+### Versión con instalador
 
 1. Descargar el instalador desde Releases
 2. Ejecutar el instalador
@@ -194,6 +211,39 @@ Ir a **🔍 Diagnóstico** para ejecutar un análisis no invasivo del equipo. No
 - Windows fuera de objetivo (no Win10/11)
 
 Los diagnósticos se guardan en `data/diagnostics/diagnostic-YYYYMMDD-HHMMSS.json`.
+
+## Pantallas azules (BSOD)
+
+Ir a **🟦 Pantallas azules** para revisar caídas del sistema de forma **read-only**.
+
+**Qué hace:**
+- Descubre minidumps y eventos `BugCheck` del registro de eventos de Windows
+- Decodifica el código de bug check con `config/bugcheckcodes.json` (nombre y descripción conservadora)
+- Lista módulos candidatos y estado de disponibilidad de cada fuente, sin atribuir causa automáticamente
+- Permite verificación opcional con **DumpChk** cuando la herramienta está disponible y el técnico lo solicita
+- No borra, mueve ni repara archivos de volcado
+
+Los resultados se muestran en pantalla y pueden incluirse en el informe; no se ejecutan reparaciones desde esta sección.
+
+## Reparaciones (vista previa)
+
+Ir a **🛠️ Reparaciones (vista previa)** para preparar y revisar reparaciones comunes **sin ejecutarlas automáticamente**.
+
+**Qué hace:**
+- Verifica preflight de **Windows Update**, **SFC/DISM** y **punto de restauración**: permisos, disponibilidad de servicios y límites
+- Genera un plan con comandos propuestos, riesgos y criterios de verificación posterior
+- Requiere consentimiento explícito del técnico para cualquier ejecución y registra el resultado
+- No ejecuta reparaciones por una orden genérica ni desactiva Defender/firewall como "optimización"
+
+> La vista previa es deliberadamente conservadora: si el entorno no permite verificar el resultado, lo informa en vez de asumir éxito.
+
+## Decisiones · DEMO
+
+Ir a **🧭 Decisiones · DEMO** para ver el **Decision Center**: un caso de demostración que explica cómo se combinan hechos, reglas deterministas y recomendaciones prudentes.
+
+- Separa **técnico** y **cliente** en el texto de cada recomendación
+- No diagnostica hardware real: es una superficie de demostración, no un reemplazo del diagnóstico
+- Prohíbe conclusiones de éxito fabricadas y mantiene separados cliente, equipo, sesión y componente
 
 ## Programas de inicio
 
@@ -409,6 +459,11 @@ Las recomendaciones SMART solo se generan si la sección correspondiente fue inc
 
 Los informes se guardan en `reports/html/Informe_Tecnico_CATTECH_Cliente_YYYYMMDD-HHMMSS.html`.
 
+**Trazabilidad y privacidad:**
+- Los bundles de informe se publican de forma atómica y con checksum, de modo que un archivo a medio escribir nunca se presenta como válido
+- La revisión de origen exige confirmar el caso y el origen de los datos antes de exportar; si el caso cambia, la selección y los consentimientos previos se revocan
+- El pasaporte técnico se exporta **redactado en memoria** (sin escribir datos privados a disco) y su consentimiento es revocable por caso
+
 ## Exportación a PDF
 
 Desde **📊 Informes**, podés exportar el informe HTML a PDF en formato A4.
@@ -439,28 +494,31 @@ Desde **📊 Informes**, podés exportar el informe HTML a PDF en formato A4.
 
 ```
 CATTECH-OPTIMIZER-PRO/
-├── src/                          # Código fuente
-│   ├── Cattech.Optimizer.Pro.Core/        # Lógica de negocio
-│   ├── Cattech.Optimizer.Pro.Infrastructure/ # Integración
-│   └── Cattech.Optimizer.Pro.UI/          # Interfaz WPF
-├── tools/                        # Herramientas externas
-├── docs/                         # Documentación
-├── config/                       # Configuración
-├── templates/                    # Plantillas de reportes
-└── tests/                        # Tests unitarios
+├── src/                                   # Código fuente
+│   ├── Cattech.Optimizer.Pro.Core/        # Modelos, interfaces y reglas de dominio
+│   ├── Cattech.Optimizer.Pro.Infrastructure/ # WMI, SMART, hardware, reportes, reparaciones
+│   └── Cattech.Optimizer.Pro.UI/          # Interfaz WPF (MVVM)
+├── tests/                                 # Tests xUnit (Core + UI + smoke XAML)
+├── config/                                # Configuración y catálogos (herramientas, bugchecks)
+├── scripts/qa/                            # Scripts de QA y verificación de workflows
+├── docs/                                  # Documentación técnica, QA y release notes
+└── .github/workflows/                     # CI, packaging y publicación de releases
 ```
 
-Para más detalles, ver [ARQUITECTURA_INICIAL.md](ARQUITECTURA_INICIAL.md)
+Para más detalles, ver [ARQUITECTURA_INICIAL.md](ARQUITECTURA_INICIAL.md).
 
 ---
 
 ## Documentación
 
-- [Auditoría de Referencias](AUDITORIA_REFERENCIAS.md) - Análisis de herramientas existentes
-- [Arquitectura Inicial](ARQUITECTURA_INICIAL.md) - Estructura y tecnologías
+- [Release notes v0.3.0](docs/RELEASE_NOTES_V0_3.md) - Cambios, certificación y descarga
+- [Automatización de releases](docs/RELEASE_AUTOMATION.md) - CI, packaging y publicación controlada
+- [QA real en Windows](docs/QA_REAL_SMOKE.md) - Protocolo de verificación en equipos reales
 - [Seguridad](SEGURIDAD.md) - Reglas de seguridad obligatorias
-- [Roadmap](ROADMAP.md) - Plan de desarrollo por versiones
-- [Changelog](CHANGELOG.md) - Historial de cambios
+- [Roadmap](ROADMAP.md) - Estado y plan de desarrollo por versiones
+- [Arquitectura](ARQUITECTURA_INICIAL.md) - Estructura, capas y tecnologías
+- [Auditoría de referencias](AUDITORIA_REFERENCIAS.md) - Herramientas analizadas y licencias
+- [Changelog](CHANGELOG.md) - Historial completo de cambios
 
 ---
 
@@ -512,11 +570,13 @@ Este proyecto está bajo la licencia MIT. Ver [LICENSE](LICENSE) para más detal
 
 | Dependencia | Licencia |
 |-------------|----------|
-| .NET 8 | MIT |
+| .NET 10 | MIT |
 | CommunityToolkit.Mvvm | MIT |
-| Serilog | Apache 2.0 |
+| Newtonsoft.Json | MIT |
 | LibreHardwareMonitorLib | MPL 2.0 |
+| System.Management | MIT |
 | Microsoft Edge | (pre-instalado, para exportación PDF) |
+| smartmontools / smartctl | GPLv2 (dependencia externa opcional, NO incluida en el ZIP) |
 
 Ver [AUDITORIA_REFERENCIAS.md](AUDITORIA_REFERENCIAS.md) para detalles completos.
 

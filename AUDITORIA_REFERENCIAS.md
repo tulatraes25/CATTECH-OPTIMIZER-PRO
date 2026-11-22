@@ -101,10 +101,10 @@ smartctl.exe -a -j /dev/sdX  →  Salida JSON  →  Parser propio  →  Modelo d
 - Incluir smartctl.exe en carpeta `tools/` como binario independiente
 
 ### Implementación en v0.2
-- **Plan detallado**: `docs/V0_2_PLAN_SMART_HARDWARE.md`
+- **Plan y resultados**: `docs/RELEASE_NOTES_V0_2.md` y `CHANGELOG.md`
 - **Decisión de integración**: `docs/SMART_INTEGRATION_DECISION.md`
 - **Estrategia**: Invocar smartctl.exe como binario externo, parsear salida JSON
-- **Carpeta**: `tools/smartmontools/smartctl.exe`
+- **Carpeta**: `tools/smartmontools/smartctl.exe` (no redistribuida; autodetección)
 - **Parsing**: Usar smartctl `-j` para salida JSON (evitar dependencia de idioma)
 
 ---

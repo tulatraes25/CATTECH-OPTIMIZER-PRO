@@ -1,30 +1,54 @@
-# CATTECH OPTIMIZER PRO — instrucciones para agentes
+# AGENTS.md — Guía para agentes e ingeniería CATTECH
 
-Estas instrucciones aplican a **toda ronda de ingeniería CATTECH**: investigar, auditar, programar, corregir, testear, certificar, publicar o simplemente "seguir", "continuar", "SPEC Kiro" y "modo brutal".
+Estas instrucciones aplican a cualquier agente o colaborador que modifique este repositorio.
 
-## Inicio obligatorio en cada ronda
+## Estado actual
 
-1. **Cargar el skill de proyecto `cattech-engineering` con la herramienta nativa `skill` de OpenCode**. Ubicación: `.opencode/skills/cattech-engineering/SKILL.md`. Si la herramienta no está disponible, leer ese archivo directamente y consultar sus `references/` pertinentes. No confiar únicamente en instrucciones recordadas de rondas anteriores.
-2. Antes de elegir tareas, comprobar GitHub: `main`, rama de desarrollo actual, PR abierto, SHA exacto, issues, roadmap, diff y CI del SHA. Una cifra o commit anterior no es prueba de estado vigente.
-3. Trabajar con **SPEC Kiro feedback-first**: objetivos, requisitos, restricciones, riesgos, diseño, criterios de aceptación y evidencia. Priorizar la siguiente tarea segura no bloqueada.
-4. Todo cambio debe ser atómico y versionado en una rama de desarrollo; comprobar el HEAD antes de escribir y no sobrescribir trabajo concurrente. `main`, tags y releases oficiales permanecen intactos sin un gate de integración/publicación explícitamente autorizado.
-5. Cerrar cada slice con comprobación del diff remoto, tests focalizados y suite completa, CI Windows sobre el **SHA exacto**, y auditoría de riesgos. CI verde no equivale a validación física o funcional de reparaciones reales.
-6. Informar estado verificable, commit, PR, CI/run, cantidad de tests y hallazgos. Si el CI está corriendo, declarar `PENDING`; si falla un gate, detener desarrollo dependiente y corregirlo antes de avanzar.
+- Versión publicada: **v0.3.0** (2026-11-22), .NET 10 LTS, paquete `win-x64` autocontenido.
+- Línea de trabajo: `main`. No trabajar directamente sobre `main` para cambios grandes: usar una rama corta y un PR.
+- Única fuente de verdad del estado: `git log`, los workflows de `.github/workflows/` y `CHANGELOG.md`. No asumir cifras de tests o versiones de memoria.
 
-## Límites de seguridad
+## Comandos
 
-- Nunca ejecutar operaciones destructivas, `SFC /scannow`, `DISM /RestoreHealth`, reparaciones de Windows Update, ni cambios de servicios por una orden genérica "seguir".
-- Diagnosticar antes de reparar; exigir autorización y controles específicos para cualquier reparación real.
-- No desactivar antivirus, firewall ni servicios de seguridad como optimización.
-- No subir minidumps, nombres reales de usuarios, seriales o logs privados a GitHub.
-- No mergear el PR draft ni publicar releases para forzar avances o porcentajes.
-- OpenCode/DeepSeek no deben declarar PASS por su propio relato: exponer evidencia que pueda contrastarse independientemente en GitHub.
+```powershell
+# Compilar (Release, sin warnings esperados)
+dotnet build src/Cattech.Optimizer.Pro.sln --configuration Release
 
-## Guía
+# Ejecutar la suite completa (debe quedar 100% en verde)
+dotnet test src/Cattech.Optimizer.Pro.sln --configuration Release
 
-- Skill: `.opencode/skills/cattech-engineering/SKILL.md`
-- GitHub/CI: `.opencode/skills/cattech-engineering/references/git-and-ci.md`
-- Seguridad/reparaciones: `.opencode/skills/cattech-engineering/references/security-and-repair.md`
-- Reportes/handoff: `.opencode/skills/cattech-engineering/references/report-and-handoff.md`
+# Paquete portable win-x64 (autocontenido)
+dotnet publish src/Cattech.Optimizer.Pro.UI/Cattech.Optimizer.Pro.UI.csproj `
+  --configuration Release --runtime win-x64 --self-contained true --output output/release
+```
 
-El repositorio versiona el skill para OpenCode y para lectura de otros agentes. **Esto no instala automáticamente el skill en la biblioteca de ChatGPT**: allí se importa el ZIP validado por separado.
+Requisito: **.NET 10 SDK** (10.0.x). La app es WPF: solo compila y se prueba en Windows.
+
+## Mapa rápido del código
+
+- `src/Cattech.Optimizer.Pro.Core/` — modelos, interfaces y reglas de dominio (sin dependencias de Windows).
+- `src/Cattech.Optimizer.Pro.Infrastructure/` — WMI, SMART/smartctl, sensores, reportes, reparaciones, persistencia JSON.
+- `src/Cattech.Optimizer.Pro.UI/` — WPF + MVVM (CommunityToolkit.Mvvm). Composición manual de servicios en `MainViewModel`.
+- `tests/` — xUnit; incluye gates de release que leen README/CHANGELOG/RELEASE_NOTES y un smoke test XAML.
+- `config/` — `herramientas.json` (smartctl externo) y `bugcheckcodes.json` (catálogo BSOD).
+- `docs/` — QA, release notes, automatización y documentación técnica.
+
+## Reglas no negociables
+
+- **Diagnosticar antes de reparar.** Toda operación que modifique el sistema exige consentimiento explícito, vista previa y verificación posterior; no ejecutar reparaciones por una orden genérica.
+- **Nunca** desactivar Defender, firewall ni servicios de seguridad como "optimización".
+- **No** subir minidumps, nombres de usuarios reales, seriales, rutas privadas ni logs a GitHub.
+- Mantener las operaciones destructivas fuera de la UI y de los tests automatizados: los tests no ejecutan reparaciones reales.
+- CI en verde no equivale a validación física. La verificación en equipos reales se documenta con `docs/QA_REAL_SMOKE.md`.
+- No declarar un resultado como PASS sin evidencia contrastable (runs de CI, tests, diff).
+
+## Publicación
+
+El release se publica únicamente con el workflow `.github/workflows/release.yml` (workflow_dispatch) desde un SHA exacto de `main`, con versión semántica, notas de release y `dry_run=false` + confirmación. El workflow crea el tag anotado, el paquete, el SHA-256 y la atestación de procedencia; no crear tags o releases a mano.
+
+Antes de publicar:
+
+1. Actualizar versión en `src/Cattech.Optimizer.Pro.UI/Cattech.Optimizer.Pro.UI.csproj` (`Version`, `AssemblyVersion`, `FileVersion`).
+2. Actualizar `CHANGELOG.md`, `README.md` (`**Versión**: vX.Y.Z`) y `docs/RELEASE_NOTES_VX_Y.md`.
+3. Ejecutar el gate de release en verde (`ReleaseGateTests` + suite completa).
+4. Publicar en dry-run y verificar; luego publicar en modo live.

@@ -47,7 +47,7 @@ public class CompanyInfo
 
     /// <summary>
     /// Ruta al archivo de logo (PNG/JPG).
-    /// TODO: En futuras versiones, copiar el logo a config/assets/logo_empresa.*
+    /// El logo se guarda como ruta absoluta o relativa al directorio de la aplicación.
     /// para mantener las rutas relativas y facilitar la portabilidad.
     /// </summary>
     public string LogoPath { get; set; } = string.Empty;

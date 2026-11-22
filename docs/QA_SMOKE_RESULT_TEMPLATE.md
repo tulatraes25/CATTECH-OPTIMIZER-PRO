@@ -1,9 +1,9 @@
 # CATTECH Smoke Test Result
 
-**Version**: v0.2.0
+**Version**: v0.3.0
 **Fecha**: YYYY-MM-DD
 **Perfil**: Desktop / Notebook / Otro
-**Windows**: Windows 10/11 (build)
+**Windows**: Windows 11 / Windows 10 LTSC (build)
 **Admin smoke**: Sí / No / NO EJECUTADO
 **smartctl**: Disponible / No disponible
 **Evidence schema**: 2
@@ -19,11 +19,14 @@
 | Área | Resultado | Observaciones |
 |------|-----------|---------------|
 | Arranque normal (sin elevar) | | |
-| Footer v0.2.0 / Home | | |
+| Footer v0.3.0 / Home | | |
 | Navegación (secciones abren) | | |
 | Configuración (datos ficticios + persistencia) | | |
 | Cliente/equipo (datos ficticios) | | |
 | Diagnóstico (read-only) | | |
+| Pantallas azules (read-only, sin dumps) | | |
+| Reparaciones (vista previa, sin ejecutar) | | |
+| Decisiones · DEMO (sin diagnóstico real) | | |
 | Programas de inicio (solo análisis) | | |
 | Limpieza (solo escaneo) | | |
 | Optimización (solo análisis) | | |
@@ -39,6 +42,7 @@
 | SMART con smartctl (análisis read-only) | | |
 | Informe HTML | | |
 | Informe PDF | | |
+| Pasaporte técnico (revisión y consentimiento) | | |
 | Reinicio de app | | |
 | Admin (solo read-only) | | |
 | Escalado/UI (100% y otros si aplica) | | |
@@ -74,3 +78,4 @@ Resultados válidos: PASS / FAIL / N/D / NO EJECUTADO
 
 - Evidencia generada solo local; no subir automáticamente (PII accidental).
 - No usar datos reales de clientes.
+- No ejecutar acciones mutantes (limpieza, optimización, reparaciones, self-tests) durante el smoke base.

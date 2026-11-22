@@ -80,7 +80,8 @@ public partial class MainViewModel : ObservableObject
 
     internal MainViewModel(IHardwareSensorService hardwareSensorService)
     {
-        // TODO: Reemplazar con Dependency Injection cuando se configure
+        // Composición manual de servicios: el arranque no depende de un contenedor DI,
+        // lo que mantiene la aplicación simple de publicar y de probar.
         _settingsService = new JsonSettingsService();
         _reportService = new JsonServiceReportService();
         _hardwareService = new WmiHardwareService();
@@ -126,7 +127,7 @@ public partial class MainViewModel : ObservableObject
 
         CurrentView = section switch
         {
-            "Home" => CreatePlaceholder("Inicio - Panel principal"),
+            "Home" => CreateHomeView(),
             "Hardware" => CreateHardwareView(),
             "SmartDisk" => CreateSmartDiskView(),
             "Diagnostics" => CreateQuickDiagnosticView(),
@@ -140,7 +141,7 @@ public partial class MainViewModel : ObservableObject
             "Settings" => CreateCompanySettingsView(),
             "ClientEquipment" => CreateClientEquipmentView(),
             "Startup" => CreateStartupAnalysisView(),
-            _ => CreatePlaceholder("Sección no encontrada")
+            _ => CreateNotFoundView()
         };
     }
 
@@ -305,7 +306,25 @@ public partial class MainViewModel : ObservableObject
         };
     }
 
-    private static ContentControl CreatePlaceholder(string text)
+    private static object CreateHomeView()
+    {
+        return CreateMessageView(
+            "CATTECH OPTIMIZER PRO",
+            "Diagnóstico, optimización y documentación técnica para equipos Windows.\n" +
+            "Seleccioná una sección del menú lateral para comenzar. Toda operación que modifique el sistema " +
+            "requiere confirmación explícita y deja respaldo para revertir.",
+            showVersion: true);
+    }
+
+    private static object CreateNotFoundView()
+    {
+        return CreateMessageView(
+            "Sección no encontrada",
+            "La sección solicitada no existe en esta versión de la aplicación.",
+            showVersion: false);
+    }
+
+    private static object CreateMessageView(string title, string subtitle, bool showVersion)
     {
         var border = new Border
         {
@@ -318,9 +337,9 @@ public partial class MainViewModel : ObservableObject
             VerticalAlignment = VerticalAlignment.Top
         };
 
-        var title = new TextBlock
+        var titleBlock = new TextBlock
         {
-            Text = text,
+            Text = title,
             FontSize = 28,
             FontWeight = FontWeights.Bold,
             Foreground = new System.Windows.Media.SolidColorBrush(
@@ -328,26 +347,29 @@ public partial class MainViewModel : ObservableObject
             Margin = new Thickness(0, 20, 0, 10)
         };
 
-        var subtitle = new TextBlock
+        var subtitleBlock = new TextBlock
         {
-            Text = "Panel principal en desarrollo.",
+            Text = subtitle,
             FontSize = 14,
+            TextWrapping = TextWrapping.Wrap,
             Foreground = new System.Windows.Media.SolidColorBrush(
                 System.Windows.Media.Color.FromRgb(0x66, 0x66, 0x66)),
             Margin = new Thickness(0, 0, 0, 20)
         };
 
-        var version = new TextBlock
-        {
-            Text = "CATTECH OPTIMIZER PRO v0.3.0 (candidata)",
-            FontSize = 12,
-            Foreground = new System.Windows.Media.SolidColorBrush(
-                System.Windows.Media.Color.FromRgb(0x99, 0x99, 0x99))
-        };
+        stackPanel.Children.Add(titleBlock);
+        stackPanel.Children.Add(subtitleBlock);
 
-        stackPanel.Children.Add(title);
-        stackPanel.Children.Add(subtitle);
-        stackPanel.Children.Add(version);
+        if (showVersion)
+        {
+            stackPanel.Children.Add(new TextBlock
+            {
+                Text = "CATTECH OPTIMIZER PRO v0.3.0",
+                FontSize = 12,
+                Foreground = new System.Windows.Media.SolidColorBrush(
+                    System.Windows.Media.Color.FromRgb(0x99, 0x99, 0x99))
+            });
+        }
 
         border.Child = stackPanel;
 
