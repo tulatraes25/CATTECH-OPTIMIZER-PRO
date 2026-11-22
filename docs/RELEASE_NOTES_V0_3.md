@@ -7,8 +7,14 @@
 
 ## Descarga e integridad
 
+**Instalador (recomendado):**
+- `CATTECH-Optimizer-Pro-v0.3.0-Setup.exe` — asistente con instalación "Solo para mí" (sin UAC) o "Para todos los usuarios", accesos directos y desinstalador.
+- `CATTECH-Optimizer-Pro-v0.3.0-Setup.exe.sha256.txt` (verificar antes de usar)
+
+**Portable:**
 - `CATTECH-Optimizer-Pro-v0.3.0-win-x64.zip` (autocontenido, x64)
 - `CATTECH-Optimizer-Pro-v0.3.0-win-x64.sha256.txt` (verificar antes de usar)
+
 - Atestación de procedencia de GitHub sobre el ZIP publicado
 
 ## Objetivo técnico
@@ -37,9 +43,18 @@ El paquete utiliza .NET 10 LTS y se distribuye autocontenido para Windows x64. L
 
 ## Instalación
 
+**Con instalador (recomendado):**
+
+1. Descargar `CATTECH-Optimizer-Pro-v0.3.0-Setup.exe` y su `.sha256.txt`.
+2. Verificar el hash (`Get-FileHash .\CATTECH-Optimizer-Pro-v0.3.0-Setup.exe -Algorithm SHA256`).
+3. Ejecutar el asistente y elegir el modo: **Solo para mí** (recomendado, sin UAC y carpeta escribible) o **Para todos los usuarios** (requiere administrador; ejecutar la app como administrador).
+4. El instalador crea accesos directos y entrada de desinstalación. La desinstalación conserva `data\`, `reports\` y `backups\`.
+
+**Portable:**
+
 1. Descargar el ZIP y su SHA-256.
 2. Verificar el hash (`Get-FileHash .\CATTECH-Optimizer-Pro-v0.3.0-win-x64.zip -Algorithm SHA256`).
-3. Extraer en una carpeta y ejecutar `Cattech.Optimizer.Pro.UI.exe` como administrador.
+3. Extraer en una carpeta escribible y ejecutar `Cattech.Optimizer.Pro.UI.exe` como administrador.
 
 ## Historial
 
