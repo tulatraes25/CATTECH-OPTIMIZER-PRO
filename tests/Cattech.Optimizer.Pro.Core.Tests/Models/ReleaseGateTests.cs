@@ -484,6 +484,24 @@ public class ReleaseGateTests
     }
 
     [Fact]
+    public void Installer_ScriptVersion_MatchesProjectVersion()
+    {
+        var csproj = ReadRepoFile("src/Cattech.Optimizer.Pro.UI/Cattech.Optimizer.Pro.UI.csproj");
+        var iss = ReadRepoFile("installer/CATTECH-Optimizer-Pro.iss");
+
+        var projectVersion = System.Text.RegularExpressions.Regex.Match(
+            csproj, @"<Version>([^<]+)</Version>").Groups[1].Value;
+        var installerVersion = System.Text.RegularExpressions.Regex.Match(
+            iss, @"#define\s+MyAppVersion\s+""([^""]+)""").Groups[1].Value;
+
+        Assert.False(string.IsNullOrWhiteSpace(projectVersion));
+        Assert.Equal(projectVersion, installerVersion);
+        Assert.Contains("PrivilegesRequired=lowest", iss);
+        Assert.Contains("ArchitecturesAllowed=x64compatible", iss);
+        Assert.Contains("Cattech.Optimizer.Pro.UI.exe", iss);
+    }
+
+    [Fact]
     public void HerramientasConfig_IsValidJson_NoSecrets()
     {
         var config = ReadRepoFile("config/herramientas.json");

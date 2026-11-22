@@ -129,18 +129,22 @@ dotnet publish src\Cattech.Optimizer.Pro.UI\Cattech.Optimizer.Pro.UI.csproj `
 
 ## Instalación
 
-### Versión portable (recomendada)
+### Versión con instalador (recomendada para técnicos)
 
-1. Descargar la última versión desde [Releases](https://github.com/tulatraes25/CATTECH-OPTIMIZER-PRO/releases)
+1. Descargar `CATTECH-Optimizer-Pro-v0.3.0-Setup.exe` desde [Releases](https://github.com/tulatraes25/CATTECH-OPTIMIZER-PRO/releases)
+2. Ejecutar el asistente y elegir el modo de instalación:
+   - **Solo para mí**: `%LOCALAPPDATA%\Programs\CATTECH OPTIMIZER PRO`. No pide UAC y la carpeta es escribible, por lo que informes y respaldos funcionan sin permisos especiales. **Recomendado**.
+   - **Para todos los usuarios**: `C:\Program Files\CATTECH OPTIMIZER PRO`. Requiere administrador; ejecutá la app como administrador para que pueda escribir informes y respaldos.
+3. El instalador crea el acceso directo en el menú Inicio (y opcionalmente en el escritorio) y la entrada de desinstalación en Windows.
+
+> La desinstalación elimina el programa pero **conserva** `data\`, `reports\` y `backups\` con el historial de trabajo.
+
+### Versión portable (sin instalador)
+
+1. Descargar el ZIP `CATTECH-Optimizer-Pro-v0.3.0-win-x64.zip` desde [Releases](https://github.com/tulatraes25/CATTECH-OPTIMIZER-PRO/releases)
 2. Verificar el SHA-256 publicado junto al ZIP
-3. Extraer el ZIP en una carpeta
+3. Extraer el ZIP en una carpeta escribible (por ejemplo `C:\CATTECH`)
 4. Ejecutar `Cattech.Optimizer.Pro.UI.exe` como administrador
-
-### Versión con instalador
-
-1. Descargar el instalador desde Releases
-2. Ejecutar el instalador
-3. Seguir las instrucciones en pantalla
 
 ---
 

@@ -25,7 +25,7 @@ Basic  Hardware  Repair            USB     Completa
 | v0.3.0 | **Publicada (2026-11-22)** | BSOD, centro de reparaciones con preview, Evidence Engine, Decision Center DEMO, pasaporte técnico, .NET 10 LTS |
 | v0.4 | Planificada | Preservación y continuidad del sistema (backup/restore de configuraciones, migración de perfiles) |
 | v0.5 | Planificada | Rescue USB (entorno de arranque) y diagnóstico fuera de línea |
-| v1.0 | Planificada | Suite completa con instalador, firma de código y soporte extendido |
+| v1.0 | Planificada | Suite completa con instalador firmado, actualizaciones automáticas y soporte extendido |
 
 ---
 
@@ -50,6 +50,7 @@ Basic  Hardware  Repair            USB     Completa
 
 - Build Release sin warnings, 1870 tests xUnit (0 fallas, 0 omitidos) en Windows CI.
 - Paquete con ProductVersion ligada al SHA de origen, SHA-256 y atestación de procedencia.
+- Instalador `CATTECH-Optimizer-Pro-v0.3.0-Setup.exe` (Inno Setup) con instalación por usuario o para todos los usuarios, accesos directos y desinstalador.
 - Protocolo de verificación física en `docs/QA_REAL_SMOKE.md`.
 
 ---
@@ -58,7 +59,7 @@ Basic  Hardware  Repair            USB     Completa
 
 1. **Preservación del sistema**: perfil de configuración exportable, respaldo de ajustes visuales/inicio y restauración guiada.
 2. **Rescue USB**: medio de arranque con diagnóstico read-only (SMART, hardware, logs) sin depender del SO instalado.
-3. **Distribución**: instalador MSI/MSIX y firma de código del ejecutable.
+3. **Distribución**: firma de código del ejecutable y del instalador, actualizaciones automáticas y empaquetado MSIX opcional.
 4. **Hardware**: validación en más familias de equipos (NVMe, Thunderbolt, estaciones de trabajo) y telemetría térmica con umbrales explícitos por fabricante.
 5. **Accesibilidad e internacionalización**: revisión de contraste/teclado y extracción de textos a recursos.
 

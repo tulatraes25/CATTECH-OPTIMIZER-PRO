@@ -1,0 +1,41 @@
+CATTECH OPTIMIZER PRO v0.3.0 — Notas de instalación
+====================================================
+
+INSTALACIÓN
+-----------
+El instalador ofrece dos modos:
+  * "Solo para mí": instala en tu carpeta de usuario
+    (%LOCALAPPDATA%\Programs\CATTECH OPTIMIZER PRO). No pide UAC y la
+    carpeta es escribible, por lo que informes y respaldos funcionan sin
+    permisos especiales. Es el modo recomendado.
+  * "Para todos los usuarios": instala en Program Files y requiere
+    permisos de administrador.
+
+EJECUCIÓN
+---------
+La aplicación escribe sus datos (data\, reports\ y backups\) junto al
+ejecutable. Por eso:
+  * Si instalaste "Solo para mí", ejecutala normalmente.
+  * Si instalaste "Para todos los usuarios", ejecutala como
+    administrador (clic derecho > Ejecutar como administrador) para que
+    pueda escribir informes y respaldos en su carpeta.
+Para el diagnóstico completo, limpieza, optimización, puntos de
+restauración y reparaciones se requieren permisos de administrador.
+
+DEPENDENCIAS EXTERNAS
+---------------------
+* smartctl (smartmontools) NO está incluido. Es opcional y se detecta
+  desde config\herramientas.json o desde el PATH. Sin smartctl la app
+  funciona, pero el análisis SMART queda "No disponible".
+* Microsoft Edge se usa para exportar PDF (preinstalado en Windows).
+
+DESINSTALACIÓN
+--------------
+Panel de control > Programas > CATTECH OPTIMIZER PRO > Desinstalar.
+Se eliminan los archivos del programa, pero NO se borran las carpetas
+data\, reports\ y backups\ con el historial de trabajo. Si querés
+eliminarlas, hacelo manualmente después de desinstalar.
+
+SOPORTE
+-------
+https://github.com/tulatraes25/CATTECH-OPTIMIZER-PRO/issues
