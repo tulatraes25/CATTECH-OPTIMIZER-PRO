@@ -140,12 +140,68 @@ public partial class SmartDiskViewModel : ObservableObject
     public ObservableCollection<SmartDiskReport> Reports { get; } = new();
     public ObservableCollection<SmartAttribute> SelectedAttributes { get; } = new();
 
+    // --- Disponibilidad de acciones ---
+    // Combinan el estado lógico de la pantalla con IsRunning para que ningún
+    // botón permita una segunda ejecución mientras hay una operación en curso.
+
+    public bool CanCheckSmartctl => !IsRunning;
+
+    public bool CanDetectDevices => !IsRunning && SmartctlAvailable;
+
+    public bool CanAnalyzeSmart => !IsRunning && SmartctlAvailable;
+
+    public bool CanSaveAnalysis => !IsRunning && HasResults;
+
+    public bool CanRunShortTest => !IsRunning && CanStartTest;
+
+    public bool CanRunExtendedTest => !IsRunning && CanStartExtendedTest;
+
+    public bool CanCheckTestStatus => !IsRunning && IsTestInProgress;
+
+    partial void OnIsRunningChanged(bool value) => NotifyActionAvailability();
+
+    partial void OnSmartctlAvailableChanged(bool value) => NotifyActionAvailability();
+
+    partial void OnHasResultsChanged(bool value) => NotifyActionAvailability();
+
+    partial void OnCanStartTestChanged(bool value) => NotifyActionAvailability();
+
+    partial void OnCanStartExtendedTestChanged(bool value) => NotifyActionAvailability();
+
+    partial void OnIsTestInProgressChanged(bool value) => NotifyActionAvailability();
+
+    private void NotifyActionAvailability()
+    {
+        OnPropertyChanged(nameof(CanCheckSmartctl));
+        OnPropertyChanged(nameof(CanDetectDevices));
+        OnPropertyChanged(nameof(CanAnalyzeSmart));
+        OnPropertyChanged(nameof(CanSaveAnalysis));
+        OnPropertyChanged(nameof(CanRunShortTest));
+        OnPropertyChanged(nameof(CanRunExtendedTest));
+        OnPropertyChanged(nameof(CanCheckTestStatus));
+    }
+
+    /// <summary>
+    /// Verificación inicial al abrir la sección: si no se ejecuta, los botones
+    /// de detección y análisis quedan deshabilitados en frío y la pantalla
+    /// parece no responder. No repite la verificación si ya hay una operación.
+    /// </summary>
+    public Task EnsureInitializedAsync()
+    {
+        if (IsRunning)
+            return Task.CompletedTask;
+        return CheckSmartctlAsync();
+    }
+
     /// <summary>
     /// Verifica si smartctl está disponible.
     /// </summary>
     [RelayCommand]
     private async Task CheckSmartctlAsync()
     {
+        if (RejectWhileRunning())
+            return;
+
         ClearMessages();
         IsRunning = true;
         StatusText = "Verificando smartctl...";
@@ -182,6 +238,9 @@ public partial class SmartDiskViewModel : ObservableObject
     [RelayCommand]
     private async Task DetectDevicesAsync()
     {
+        if (RejectWhileRunning())
+            return;
+
         if (!SmartctlAvailable)
         {
             ShowError("smartctl no está disponible. Verifique la configuración.");
@@ -227,6 +286,9 @@ public partial class SmartDiskViewModel : ObservableObject
     [RelayCommand]
     private async Task AnalyzeSmartAsync()
     {
+        if (RejectWhileRunning())
+            return;
+
         if (!SmartctlAvailable)
         {
             ShowError("smartctl no está disponible.");
@@ -249,6 +311,12 @@ public partial class SmartDiskViewModel : ObservableObject
             foreach (var report in _allReports)
                 Reports.Add(report);
 
+            // Errores generales del servicio (fallos de listado/análisis, timeout,
+            // permisos). No deben quedar ocultos detrás de un mensaje de éxito.
+            var serviceErrors = result.Errors
+                .Where(e => !string.IsNullOrWhiteSpace(e))
+                .ToList();
+
             // Calcular resumen
             var good = _allReports.Count(r => r.HealthStatus == SmartHealthStatus.Good);
             var warning = _allReports.Count(r => r.HealthStatus == SmartHealthStatus.Warning);
@@ -267,6 +335,30 @@ public partial class SmartDiskViewModel : ObservableObject
 
             // HasResults: existen reportes SMART. HasDevices: existen dispositivos detectados.
             HasResults = Reports.Count > 0;
+
+            // Ningún reporte significa que el análisis no produjo evidencia: se
+            // informan los errores del servicio en lugar de un falso éxito.
+            if (Reports.Count == 0)
+            {
+                StatusText = "Análisis sin resultados";
+                var detail = serviceErrors.Count > 0
+                    ? string.Join(" ", serviceErrors)
+                    : "smartctl no devolvió ningún disco para analizar.";
+                ShowError($"No se pudo completar el análisis SMART. {detail}");
+                return;
+            }
+
+            // Reportes parciales junto a errores: se muestran los errores del
+            // servicio; no se afirma que el análisis haya sido exitoso.
+            if (serviceErrors.Count > 0)
+            {
+                StatusText = "Análisis completado con errores";
+                var criticalPrefix = critical > 0
+                    ? $"⚠️ {critical} disco(s) en estado CRÍTICO. "
+                    : string.Empty;
+                ShowError($"{criticalPrefix}El servicio reportó errores: {string.Join(" ", serviceErrors)}");
+                return;
+            }
 
             // Lógica de estados corregida
             if (critical > 0)
@@ -315,6 +407,9 @@ public partial class SmartDiskViewModel : ObservableObject
     [RelayCommand]
     private async Task SaveAnalysisAsync()
     {
+        if (RejectWhileRunning())
+            return;
+
         if (_lastAnalysisResult == null)
         {
             ShowError("No hay análisis para guardar. Ejecute un análisis primero.");
@@ -407,6 +502,9 @@ public partial class SmartDiskViewModel : ObservableObject
     [RelayCommand]
     private async Task StartShortTestAsync()
     {
+        if (RejectWhileRunning())
+            return;
+
         if (SelectedReport == null)
         {
             ShowError("Seleccione un disco para ejecutar el test.");
@@ -510,6 +608,9 @@ public partial class SmartDiskViewModel : ObservableObject
     [RelayCommand]
     private async Task StartExtendedTestAsync()
     {
+        if (RejectWhileRunning())
+            return;
+
         if (SelectedReport == null)
         {
             ShowError("Seleccione un disco para ejecutar el test.");
@@ -641,6 +742,9 @@ public partial class SmartDiskViewModel : ObservableObject
     [RelayCommand]
     private async Task CheckTestStatusAsync()
     {
+        if (RejectWhileRunning())
+            return;
+
         if (CurrentTestSession == null)
         {
             ShowError("No hay test en ejecución.");
@@ -655,6 +759,18 @@ public partial class SmartDiskViewModel : ObservableObject
         {
             var session = await _smartTestService.CheckStatusAsync(CurrentTestSession);
             CurrentTestSession = session;
+
+            // La consulta de estado puede fallar aunque el test siga existiendo:
+            // en ese caso no se informa éxito con datos posiblemente obsoletos.
+            if (!session.LastCheckSucceeded)
+            {
+                var detail = string.IsNullOrWhiteSpace(session.LastCheckError)
+                    ? "smartctl no pudo leer el estado del test."
+                    : session.LastCheckError;
+                TestStatusText = "No se pudo consultar el estado";
+                ShowError($"No se pudo consultar el estado del test: {detail}");
+                return;
+            }
 
             // Usar mensaje preparado por el servicio (extensión Core, no parser Infrastructure)
             TestResultMessage = session.Status.ToDisplayMessage();
@@ -708,6 +824,19 @@ public partial class SmartDiskViewModel : ObservableObject
         {
             IsRunning = false;
         }
+    }
+
+    /// <summary>
+    /// Si ya hay una operación en curso, informa y rechaza la nueva ejecución.
+    /// Evita que un doble clic dispare dos procesos smartctl en paralelo.
+    /// </summary>
+    private bool RejectWhileRunning()
+    {
+        if (!IsRunning)
+            return false;
+
+        ShowError("Hay una operación en curso. Esperá a que termine e intentá nuevamente.");
+        return true;
     }
 
     private void ShowSuccess(string message)

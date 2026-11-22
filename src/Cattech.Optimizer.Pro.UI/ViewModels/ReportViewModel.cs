@@ -1026,24 +1026,55 @@ public partial class ReportViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Abre el último informe generado.
+    /// Abre el último informe generado. Si el archivo ya no existe (por ejemplo,
+    /// fue movido o eliminado), lo informa en lugar de ignorar el clic.
     /// </summary>
     [RelayCommand]
     private async Task OpenReportAsync()
     {
-        if (HasGeneratedReport && !string.IsNullOrEmpty(LastReportPath))
+        ClearMessages();
+        if (string.IsNullOrEmpty(LastReportPath))
+        {
+            ShowError("Todavía no hay un informe generado. Generá el informe primero.");
+            return;
+        }
+        if (!File.Exists(LastReportPath))
+        {
+            StatusText = "Informe no disponible";
+            ShowError("El archivo del informe ya no existe en la ubicación registrada. Generá el informe nuevamente.");
+            return;
+        }
+
+        try
         {
             await _reportService.OpenReportAsync(LastReportPath);
+        }
+        catch (Exception)
+        {
+            StatusText = "Error al abrir";
+            ShowError("No se pudo abrir el informe. Verificá el archivo e intentá nuevamente.");
         }
     }
 
     /// <summary>
-    /// Abre la carpeta de informes.
+    /// Abre la carpeta de informes. La primera vez el directorio puede no
+    /// existir: se crea para que el botón nunca quede muerto.
     /// </summary>
     [RelayCommand]
     private async Task OpenReportsFolderAsync()
     {
-        await _reportService.OpenReportsFolderAsync();
+        ClearMessages();
+        try
+        {
+            await _reportService.OpenReportsFolderAsync();
+            StatusText = "Carpeta de informes";
+            ShowSuccess("Carpeta de informes abierta en el Explorador.");
+        }
+        catch (Exception)
+        {
+            StatusText = "No se pudo abrir la carpeta";
+            ShowError("No se pudo abrir la carpeta de informes. Verificá los permisos de escritura e intentá nuevamente.");
+        }
     }
 
     /// <summary>
@@ -1166,14 +1197,32 @@ public partial class ReportViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Abre el último PDF generado.
+    /// Abre el último PDF generado. Si el archivo ya no existe, lo informa.
     /// </summary>
     [RelayCommand]
     private async Task OpenPdfAsync()
     {
-        if (HasGeneratedPdf && !string.IsNullOrEmpty(LastPdfPath))
+        ClearMessages();
+        if (string.IsNullOrEmpty(LastPdfPath))
+        {
+            ShowError("Todavía no hay un PDF generado. Exportá el PDF primero.");
+            return;
+        }
+        if (!File.Exists(LastPdfPath))
+        {
+            StatusText = "PDF no disponible";
+            ShowError("El archivo PDF ya no existe en la ubicación registrada. Exportá el PDF nuevamente.");
+            return;
+        }
+
+        try
         {
             await _pdfExportService.OpenPdfAsync(LastPdfPath);
+        }
+        catch (Exception)
+        {
+            StatusText = "Error al abrir";
+            ShowError("No se pudo abrir el PDF. Verificá el archivo e intentá nuevamente.");
         }
     }
 

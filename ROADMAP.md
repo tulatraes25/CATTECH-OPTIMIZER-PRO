@@ -22,7 +22,7 @@ Basic  Hardware  Repair            USB     Completa
 |---------|--------|---------------------|
 | v0.1.1 | Publicada | MVP estabilizado: configuración, cliente/equipo, diagnóstico, inicio, limpieza, optimización visual, restauración, informes HTML/PDF |
 | v0.2.x | Publicada | SMART completo, hardware en tiempo real, inventario WMI/SMBIOS, correcciones de informes y GPU |
-| v0.3.0 | **Publicada (2026-11-22)** | BSOD, centro de reparaciones con preview, Evidence Engine, Decision Center DEMO, pasaporte técnico, .NET 10 LTS |
+| v0.3.x | **Publicada (v0.3.1, 2026-11-22)** | BSOD, centro de reparaciones con preview, Evidence Engine, Decision Center DEMO, pasaporte técnico, .NET 10 LTS |
 | v0.4 | Planificada | Preservación y continuidad del sistema (backup/restore de configuraciones, migración de perfiles) |
 | v0.5 | Planificada | Rescue USB (entorno de arranque) y diagnóstico fuera de línea |
 | v1.0 | Planificada | Suite completa con instalador firmado, actualizaciones automáticas y soporte extendido |
@@ -48,10 +48,26 @@ Basic  Hardware  Repair            USB     Completa
 
 ### Verificación
 
-- Build Release sin warnings, 1870 tests xUnit (0 fallas, 0 omitidos) en Windows CI.
+- Build Release sin warnings, 1946 tests xUnit (0 fallas, 0 omitidos) en Windows CI.
 - Paquete con ProductVersion ligada al SHA de origen, SHA-256 y atestación de procedencia.
-- Instalador `CATTECH-Optimizer-Pro-v0.3.0-Setup.exe` (Inno Setup) con instalación por usuario o para todos los usuarios, accesos directos y desinstalador.
+- Instalador `CATTECH-Optimizer-Pro-v0.3.1-Setup.exe` (Inno Setup) con instalación por usuario o para todos los usuarios, accesos directos y desinstalador.
+- Pruebas E2E por UI Automation: limpieza real, desactivación/restauración de programas de inicio y navegación sin crashes.
 - Protocolo de verificación física en `docs/QA_REAL_SMOKE.md`.
+
+---
+
+## v0.3.1 - Correcciones de funcionalidad (PUBLICADA 2026-11-22)
+
+**Objetivo**: que cada pantalla ejecute de verdad sus acciones.
+
+- [x] Limpieza recursiva de temporales, sin retención de 7 días, con confirmación
+- [x] Vaciado real de la Papelera de reciclaje (Shell API)
+- [x] Desactivación real de programas de inicio (clave de registro escribible)
+- [x] Selección estable en grillas y clasificador Microsoft corregido
+- [x] Restauración de backups de inicio y de optimización visual
+- [x] Punto de restauración sin la sonda `srservice` inexistente
+- [x] SMART con verificación automática y errores reales
+- [x] Informes con auto-carga y apertura de carpeta funcional
 
 ---
 

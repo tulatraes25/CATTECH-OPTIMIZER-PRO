@@ -121,6 +121,12 @@ public partial class StartupAnalysisViewModel : ObservableObject
         _startupService = startupService;
     }
 
+    /// <summary>
+    /// Confirmación explícita provista por la vista (diálogo modal) antes de
+    /// desactivar entradas de inicio.
+    /// </summary>
+    public Func<string, bool>? ConfirmDisableRequest { get; set; }
+
     // =====================
     // ANÁLISIS
     // =====================
@@ -246,11 +252,13 @@ public partial class StartupAnalysisViewModel : ObservableObject
 
     private void RebuildSelectableEntries()
     {
+        foreach (var item in SelectableEntries)
+            item.PropertyChanged -= OnSelectableEntryChanged;
         SelectableEntries.Clear();
         foreach (var entry in _allEntries)
         {
             var canDisable = _startupService.CanDisableStartupEntry(entry);
-            SelectableEntries.Add(new SelectableStartupEntry
+            var selectable = new SelectableStartupEntry
             {
                 Entry = entry,
                 IsSelectable = canDisable,
@@ -259,9 +267,17 @@ public partial class StartupAnalysisViewModel : ObservableObject
                     : !canDisable
                         ? $"Fuente no soportada: {entry.SourceType}"
                         : ""
-            });
+            };
+            selectable.PropertyChanged += OnSelectableEntryChanged;
+            SelectableEntries.Add(selectable);
         }
         HasSelectableEntries = SelectableEntries.Any(s => s.IsSelectable);
+    }
+
+    private void OnSelectableEntryChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(SelectableStartupEntry.IsSelected))
+            UpdateSelectedCount();
     }
 
     [RelayCommand]
@@ -275,9 +291,13 @@ public partial class StartupAnalysisViewModel : ObservableObject
     [RelayCommand]
     private void SelectAllPossibleDisable()
     {
+        // Selecciona todo lo que realmente se puede desactivar. Antes solo se
+        // seleccionaban las entradas clasificadas "PossibleDisable", por lo que
+        // una app de terceros normal (Keep/Review) nunca podía seleccionarse y
+        // el botón de desactivar decía "no hay entradas seleccionadas".
         foreach (var item in SelectableEntries)
         {
-            if (item.IsSelectable && item.Entry.Recommendation == StartupRecommendation.PossibleDisable)
+            if (item.IsSelectable)
                 item.IsSelected = true;
         }
         UpdateSelectedCount();
@@ -302,37 +322,72 @@ public partial class StartupAnalysisViewModel : ObservableObject
         var selected = SelectableEntries.Where(s => s.IsSelected).ToList();
         if (selected.Count == 0)
         {
-            ShowError("No hay entradas seleccionadas para desactivar.");
+            ShowError("No hay entradas seleccionadas para desactivar. Seleccioná una o usá 'Seleccionar todo lo desactivable'.");
             return;
+        }
+
+        if (IsDisabling)
+            return;
+
+        if (ConfirmDisableRequest is not null)
+        {
+            var names = string.Join("\n", selected.Select(s => "• " + s.Entry.Name));
+            var message =
+                $"¿Desactivar {selected.Count} entrada(s) de inicio?\n\n{names}\n\n" +
+                "Se crea un backup y podés restaurarlas desde 'Backups'.";
+            if (!ConfirmDisableRequest(message))
+                return;
         }
 
         ClearMessages();
         IsDisabling = true;
+        StatusText = "Desactivando...";
 
         try
         {
             var entries = selected.Select(s => s.Entry).ToList();
             var summary = await _startupService.DisableSelectedAsync(entries, DisableReason);
 
-            // Refrescar lista
+            // Refrescar lista (no borra los mensajes: se publican después)
             await AnalyzeAsync();
 
-            // Mostrar resultado
-            if (summary.FailedCount == 0 && summary.SkippedMicrosoftCount == 0 && summary.SkippedUnsupportedCount == 0)
+            var failures = summary.Results
+                .Where(r => r.Result == StartupActionResult.Failed)
+                .Select(r => $"• {r.EntryName}: {r.Message}")
+                .ToList();
+            var warnings = summary.Results
+                .Where(r => r.Result is StartupActionResult.SkippedMicrosoft
+                    or StartupActionResult.SkippedUnsupportedSource
+                    or StartupActionResult.AlreadyDisabled)
+                .Select(r => $"• {r.EntryName}: {r.Message}")
+                .ToList();
+
+            if (summary.FailedCount == 0)
             {
-                ShowSuccess($"Desactivadas {summary.SuccessCount} entradas correctamente.");
+                var ok = $"Desactivadas {summary.SuccessCount} entrada(s) de inicio.";
+                if (warnings.Count > 0)
+                    ok += $" Omitidas: {warnings.Count}.";
+                ShowSuccess(ok);
             }
             else
             {
-                var parts = new List<string>();
-                if (summary.SuccessCount > 0) parts.Add($"{summary.SuccessCount} exitosas");
-                if (summary.FailedCount > 0) parts.Add($"{summary.FailedCount} fallidas");
-                if (summary.SkippedMicrosoftCount > 0) parts.Add($"{summary.SkippedMicrosoftCount} omitidas (Microsoft)");
-                if (summary.SkippedUnsupportedCount > 0) parts.Add($"{summary.SkippedUnsupportedCount} omitidas (fuente no soportada)");
+                var parts = new List<string>
+                {
+                    $"Fallaron {summary.FailedCount} de {summary.TotalAttempted}."
+                };
+                if (summary.SuccessCount > 0)
+                    parts.Add($"Exitosas: {summary.SuccessCount}.");
+                ShowError(string.Join(" ", parts) +
+                    (failures.Count > 0 ? "\n" + string.Join("\n", failures) : string.Empty));
+            }
 
-                StatusMessage = string.Join(", ", parts);
-                IsSuccess = summary.SuccessCount > 0;
-                HasError = summary.FailedCount > 0;
+            // Las omisiones deben verse aunque haya éxito parcial.
+            if (warnings.Count > 0)
+            {
+                ErrorMessage = string.IsNullOrEmpty(ErrorMessage)
+                    ? "Omitidas:\n" + string.Join("\n", warnings)
+                    : ErrorMessage + "\nOmitidas:\n" + string.Join("\n", warnings);
+                HasError = true;
             }
 
             DisableReason = string.Empty;
@@ -357,12 +412,15 @@ public partial class StartupAnalysisViewModel : ObservableObject
         ShowBackups = !ShowBackups;
 
         if (ShowBackups)
-        {
-            Backups.Clear();
-            var backups = await _startupService.ListBackupsAsync();
-            foreach (var backup in backups)
-                Backups.Add(backup);
-        }
+            await ReloadBackupsAsync();
+    }
+
+    private async Task ReloadBackupsAsync()
+    {
+        Backups.Clear();
+        var backups = await _startupService.ListBackupsAsync();
+        foreach (var backup in backups)
+            Backups.Add(backup);
     }
 
     partial void OnSelectedBackupChanged(StartupBackupRecord? value)
@@ -370,27 +428,40 @@ public partial class StartupAnalysisViewModel : ObservableObject
         HasSelectedBackup = value != null && value.CanRestore;
     }
 
+    /// <summary>
+    /// Restaura el backup recibido por CommandParameter. Antes el comando no
+    /// tenía parámetro y dependía de SelectedBackup, que la UI nunca asignaba:
+    /// el botón "Restaurar" era un no-op silencioso.
+    /// </summary>
     [RelayCommand]
-    private async Task RestoreBackupAsync()
+    private async Task RestoreBackupAsync(StartupBackupRecord? backup)
     {
-        if (SelectedBackup == null) return;
+        var target = backup ?? SelectedBackup;
+        if (target == null)
+        {
+            ShowError("Elegí un backup para restaurar.");
+            return;
+        }
+
+        if (IsRestoring)
+            return;
 
         ClearMessages();
         IsRestoring = true;
 
         try
         {
-            var result = await _startupService.RestoreAsync(SelectedBackup);
+            var result = await _startupService.RestoreAsync(target);
 
             if (result == StartupActionResult.Success)
             {
-                ShowSuccess($"Entrada '{SelectedBackup.EntryName}' restaurada correctamente.");
-                await LoadBackupsAsync();
+                ShowSuccess($"Entrada '{target.EntryName}' restaurada correctamente.");
+                await ReloadBackupsAsync();
                 await AnalyzeAsync();
             }
             else
             {
-                ShowError($"Error al restaurar: {result}");
+                ShowError($"No se pudo restaurar '{target.EntryName}': {result}.");
             }
         }
         catch (Exception ex)

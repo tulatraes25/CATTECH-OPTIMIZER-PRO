@@ -101,6 +101,15 @@
                             <Run Text="Instale smartmontools o configure la ruta de smartctl.exe en config/herramientas.json" />
                         </TextBlock>
                     </Border>
+                    <!-- Estado de la operación en curso: feedback durante procesos lentos -->
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <ProgressBar Width="120" Height="6" IsIndeterminate="True"
+                                     VerticalAlignment="Center"
+                                     Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}" />
+                        <TextBlock Text="{Binding StatusText}" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="#0078D4" VerticalAlignment="Center"
+                                   Margin="8,0,0,0" TextWrapping="Wrap" />
+                    </StackPanel>
                 </StackPanel>
             </Border>
 
@@ -109,19 +118,19 @@
                 <Button Content="🔍 Verificar smartctl"
                         Command="{Binding CheckSmartctlCommand}" Padding="14,8" FontSize="12"
                         Background="#0078D4" Foreground="White" BorderThickness="0" Margin="0,0,0,6"
-                        IsEnabled="{Binding IsRunning, Converter={StaticResource InvertBool}}" />
+                        IsEnabled="{Binding CanCheckSmartctl}" />
                 <Button Content="💾 Detectar discos"
                         Command="{Binding DetectDevicesCommand}" Padding="14,8" FontSize="12"
                         Background="#F3F3F3" Foreground="#333" BorderBrush="#CCC" BorderThickness="1" Margin="0,0,0,6"
-                        IsEnabled="{Binding SmartctlAvailable}" />
+                        IsEnabled="{Binding CanDetectDevices}" />
                 <Button Content="🔍 Analizar SMART"
                         Command="{Binding AnalyzeSmartCommand}" Padding="14,8" FontSize="12"
                         Background="#2E7D32" Foreground="White" BorderThickness="0" Margin="0,0,0,6"
-                        IsEnabled="{Binding SmartctlAvailable}" />
+                        IsEnabled="{Binding CanAnalyzeSmart}" />
                 <Button Content="💾 Guardar análisis"
                         Command="{Binding SaveAnalysisCommand}" Padding="14,8" FontSize="12"
                         Background="#F3F3F3" Foreground="#333" BorderBrush="#CCC" BorderThickness="1"
-                        IsEnabled="{Binding HasResults}" />
+                        IsEnabled="{Binding CanSaveAnalysis}" />
             </StackPanel>
         </Grid>
 
@@ -383,15 +392,15 @@
                         <Button Content="▶️ Ejecutar test corto"
                                 Command="{Binding StartShortTestCommand}" Padding="14,8" FontSize="12"
                                 Background="#1976D2" Foreground="White" BorderThickness="0" Margin="0,0,0,6"
-                                IsEnabled="{Binding CanStartTest}" />
+                                IsEnabled="{Binding CanRunShortTest}" />
                         <Button Content="⏱️ Ejecutar test extendido"
                                 Command="{Binding StartExtendedTestCommand}" Padding="14,8" FontSize="12"
                                 Background="#E65100" Foreground="White" BorderThickness="0" Margin="0,0,0,6"
-                                IsEnabled="{Binding CanStartExtendedTest}" />
+                                IsEnabled="{Binding CanRunExtendedTest}" />
                         <Button Content="🔄 Consultar estado"
                                 Command="{Binding CheckTestStatusCommand}" Padding="14,8" FontSize="12"
                                 Background="#F3F3F3" Foreground="#333" BorderBrush="#CCC" BorderThickness="1"
-                                IsEnabled="{Binding IsTestInProgress}" />
+                                IsEnabled="{Binding CanCheckTestStatus}" />
                     </StackPanel>
                 </Grid>
             </StackPanel>

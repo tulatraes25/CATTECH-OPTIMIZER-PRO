@@ -9,13 +9,16 @@ public interface IRestorePointService
 {
     /// <summary>
     /// Verifica el estado actual del sistema de puntos de restauración.
-    /// Detecta permisos, disponibilidad del servicio y estado de protección.
+    /// Detecta permisos y disponibilidad real (VSS/swprv/WMI) e informa el estado probable
+    /// de la protección del sistema como dato advisory: no se usa para bloquear la creación.
     /// </summary>
     Task<RestorePointStatus> CheckStatusAsync();
 
     /// <summary>
-    /// Crea un punto de restauración con el nombre especificado.
-    /// Requiere confirmación previa del técnico.
+    /// Crea un punto de restauración con el nombre especificado ejecutando Checkpoint-Computer.
+    /// Requiere confirmación previa del técnico. El resultado refleja la respuesta real de Windows:
+    /// si falla, <see cref="RestorePointResult.ErrorCode"/> y
+    /// <see cref="RestorePointResult.ErrorMessage"/> describen el error devuelto por el sistema.
     /// </summary>
     Task<RestorePointResult> CreateRestorePointAsync(string name);
 

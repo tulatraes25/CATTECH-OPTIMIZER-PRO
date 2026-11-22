@@ -32,18 +32,19 @@ public sealed class WindowsScopedFileDeleteTests
     }
 
     [Fact]
-    public void RecentSyntheticFile_IsNotDeleted()
+    public void RecentSyntheticFile_IsDeletedByOpenedHandle()
     {
         var root = NewFixture();
         try
         {
             var file = Path.Combine(root, "recent.txt");
-            File.WriteAllText(file, "PRESERVE");
+            File.WriteAllText(file, "DELETE-RECENT");
             File.SetLastWriteTimeUtc(file, DateTime.UtcNow);
+            var expectedBytes = new FileInfo(file).Length;
 
-            Assert.False(WindowsScopedFileDelete.TryDelete(root, file, out var bytes));
-            Assert.Equal(0L, bytes);
-            Assert.Equal("PRESERVE", File.ReadAllText(file));
+            Assert.True(WindowsScopedFileDelete.TryDelete(root, file, out var bytes));
+            Assert.Equal(expectedBytes, bytes);
+            Assert.False(File.Exists(file));
         }
         finally { Directory.Delete(root, recursive: true); }
     }
@@ -160,7 +161,7 @@ public sealed class WindowsScopedFileDeleteTests
 
 
     [Fact]
-    public void NestedOrdinaryFile_IsNeverDeletedEvenWhenOld()
+    public void NestedOrdinaryFile_UnderVerifiedRoot_IsDeleted()
     {
         var root = NewFixture();
         try
@@ -168,13 +169,13 @@ public sealed class WindowsScopedFileDeleteTests
             var nested = Path.Combine(root, "synthetic-subdirectory");
             Directory.CreateDirectory(nested);
             var file = Path.Combine(nested, "old-nested.txt");
-            File.WriteAllText(file, "NESTED-SYNTHETIC-KEEP");
+            File.WriteAllText(file, "NESTED-DELETE");
             File.SetCreationTimeUtc(file, DateTime.UtcNow.AddDays(-8));
             File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddDays(-8));
 
-            Assert.False(WindowsScopedFileDelete.TryDelete(root, file, out var bytes));
-            Assert.Equal(0L, bytes);
-            Assert.Equal("NESTED-SYNTHETIC-KEEP", File.ReadAllText(file));
+            Assert.True(WindowsScopedFileDelete.TryDelete(root, file, out var bytes));
+            Assert.True(bytes > 0);
+            Assert.False(File.Exists(file));
         }
         finally { Directory.Delete(root, recursive: true); }
     }
@@ -238,38 +239,39 @@ public sealed class WindowsScopedFileDeleteTests
 
 
     [Fact]
-    public void RecentlyCreatedFile_WithSpoofedAncientModification_IsPreserved()
+    public void RecentlyCreatedFile_WithSpoofedAncientModification_IsDeleted()
     {
         var root = NewFixture();
         try
         {
             var file = Path.Combine(root, "copied-new.txt");
-            File.WriteAllText(file, "KEEP-COPIED-CONTENT");
+            File.WriteAllText(file, "DELETE-COPIED-CONTENT");
             // Copying or extracting a file may preserve an old modified time.
-            // The actual NTFS creation timestamp must still block deletion.
+            // Timestamps are not a safety signal: the file is unlocked and
+            // inside the verified root, so it is eligible.
             File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddDays(-40));
 
-            Assert.False(WindowsScopedFileDelete.TryDelete(root, file, out var bytes));
-            Assert.Equal(0L, bytes);
-            Assert.Equal("KEEP-COPIED-CONTENT", File.ReadAllText(file));
+            Assert.True(WindowsScopedFileDelete.TryDelete(root, file, out var bytes));
+            Assert.True(bytes > 0);
+            Assert.False(File.Exists(file));
         }
         finally { Directory.Delete(root, recursive: true); }
     }
 
     [Fact]
-    public void RecentlyModifiedFile_WithAncientCreation_IsPreserved()
+    public void RecentlyModifiedFile_WithAncientCreation_IsDeleted()
     {
         var root = NewFixture();
         try
         {
             var file = Path.Combine(root, "changed-today.txt");
-            File.WriteAllText(file, "KEEP-RECENT-UPDATE");
+            File.WriteAllText(file, "DELETE-RECENT-UPDATE");
             File.SetCreationTimeUtc(file, DateTime.UtcNow.AddDays(-40));
             File.SetLastWriteTimeUtc(file, DateTime.UtcNow);
 
-            Assert.False(WindowsScopedFileDelete.TryDelete(root, file, out var bytes));
-            Assert.Equal(0L, bytes);
-            Assert.Equal("KEEP-RECENT-UPDATE", File.ReadAllText(file));
+            Assert.True(WindowsScopedFileDelete.TryDelete(root, file, out var bytes));
+            Assert.True(bytes > 0);
+            Assert.False(File.Exists(file));
         }
         finally { Directory.Delete(root, recursive: true); }
     }

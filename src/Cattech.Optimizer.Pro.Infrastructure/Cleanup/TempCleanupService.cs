@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using Cattech.Optimizer.Pro.Core.Interfaces;
 using Cattech.Optimizer.Pro.Core.Models.Cleanup;
@@ -61,14 +62,7 @@ public class TempCleanupService : ITempCleanupService
             // Verificar accesibilidad
             if (target.Id == "RECYCLE_BIN")
             {
-                // Disable until a scoped Shell operation and its explicit
-                // confirmation have passed dedicated safety review.
-                target.IsAccessible = false;
-                target.IsSelected = false;
-                target.IsScanned = true;
-                target.ScanNotes = "No disponible: la limpieza segura de Papelera no está implementada.";
-                target.EstimatedSizeBytes = 0;
-                target.EstimatedFileCount = 0;
+                ScanRecycleBin(target);
             }
             else if (GetTargetRejectionReason(target,
                 requireCompletedScan: false) is { } rejection)
@@ -169,13 +163,12 @@ public class TempCleanupService : ITempCleanupService
 
             foreach (var rejected in rejectedTargets)
             {
-                var unsupported = rejected.Target.Id == "RECYCLE_BIN";
                 result.Errors.Add(new CleanupError
                 {
                     // Do not expose an untrusted absolute path in diagnostics.
-                    FilePath = unsupported ? "RecycleBin" : rejected.Target.Id,
+                    FilePath = rejected.Target.Id,
                     Message = rejected.Reason!,
-                    ErrorType = unsupported ? "UnsupportedOperation" : "UnsafeTarget"
+                    ErrorType = "UnsafeTarget"
                 });
             }
 
@@ -200,15 +193,7 @@ public class TempCleanupService : ITempCleanupService
             {
                 if (target.Id == "RECYCLE_BIN")
                 {
-                    // Defensive server-side check: reject selected targets even
-                    // if a caller bypasses the disabled checkbox in the UI.
-                    // No commands, Shell API, or filesystem mutations.
-                    result.Errors.Add(new CleanupError
-                    {
-                        FilePath = "RecycleBin",
-                        Message = "La limpieza de la Papelera está deshabilitada por seguridad.",
-                        ErrorType = "UnsupportedOperation"
-                    });
+                    EmptyRecycleBin(targetResult, result);
                 }
                 else if (target.Id == "THUMBNAILS")
                 {
@@ -398,7 +383,15 @@ public class TempCleanupService : ITempCleanupService
         TempCleanupTarget target, bool requireCompletedScan = true)
     {
         if (target.Id == "RECYCLE_BIN")
-            return "La limpieza de la Papelera está deshabilitada por seguridad.";
+        {
+            // The recycle bin is a shell namespace, not a filesystem path:
+            // it is emptied through the Shell API, never through file paths.
+            if (!OperatingSystem.IsWindows())
+                return "La Papelera requiere Windows.";
+            if (requireCompletedScan && (!target.IsScanned || !target.IsAccessible))
+                return "Es necesario escanear y verificar la Papelera antes de vaciarla.";
+            return null;
+        }
 
         if (!OperatingSystem.IsWindows())
             return "Esta limpieza requiere Windows.";
@@ -467,7 +460,7 @@ public class TempCleanupService : ITempCleanupService
 
     // Avoid materializing an unbounded directory listing before applying
     // time limits. A failed preflight never returns partial candidates.
-    private const int MaxEnumeratedFilesPerTarget = 10_000;
+    private const int MaxEnumeratedFilesPerTarget = 200_000;
 
     internal static bool TryEnumerateBounded(
         string directory, string pattern, bool recursive,
@@ -480,10 +473,14 @@ public class TempCleanupService : ITempCleanupService
         var options = new EnumerationOptions
         {
             RecurseSubdirectories = recursive,
-            IgnoreInaccessible = false,
+            // Unreadable entries are skipped instead of aborting the whole
+            // target: a single protected file used to make temp cleanup
+            // unusable on real machines. Each skipped entry simply is not
+            // counted and never reaches the deletion gate.
+            IgnoreInaccessible = true,
             AttributesToSkip = FileAttributes.Hidden | FileAttributes.System
                 | FileAttributes.ReparsePoint,
-            MaxRecursionDepth = 3
+            MaxRecursionDepth = recursive ? 16 : 0
         };
         var watch = Stopwatch.StartNew();
         try
@@ -559,6 +556,138 @@ public class TempCleanupService : ITempCleanupService
 
     // --- Métodos de escaneo ---
 
+    /// <summary>
+    /// Reads the recycle bin inventory through the Shell API. Never deletes.
+    /// The recycle bin is a shell namespace, so it is measured and emptied
+    /// with Shell calls instead of filesystem paths.
+    /// </summary>
+    internal static void ScanRecycleBin(TempCleanupTarget target)
+    {
+        target.EstimatedSizeBytes = 0;
+        target.EstimatedFileCount = 0;
+        target.IsAccessible = false;
+        target.IsSelected = false;
+        target.IsScanned = true;
+
+        if (!OperatingSystem.IsWindows())
+        {
+            target.ScanNotes = "No disponible: requiere Windows.";
+            return;
+        }
+
+        var info = new RecycleBinInfo
+        {
+            Size = Marshal.SizeOf<RecycleBinInfo>()
+        };
+        try
+        {
+            if (SHQueryRecycleBin(null, ref info) != 0)
+            {
+                target.ScanNotes = "No disponible: no se pudo consultar la Papelera.";
+                return;
+            }
+        }
+        catch (Exception ex) when (ex is DllNotFoundException
+            or EntryPointNotFoundException or MarshalDirectiveException)
+        {
+            target.ScanNotes = "No disponible: la API de la Papelera no está disponible.";
+            return;
+        }
+
+        if (info.ItemCount < 0 || info.Bytes < 0)
+        {
+            target.ScanNotes = "No disponible: inventario de Papelera inválido.";
+            return;
+        }
+
+        target.EstimatedSizeBytes = info.Bytes;
+        target.EstimatedFileCount = (int)Math.Min(info.ItemCount, int.MaxValue);
+        target.IsAccessible = true;
+        target.ScanNotes = info.ItemCount == 0
+            ? "Papelera vacía"
+            : "Vaciado definitivo: no se puede deshacer.";
+    }
+
+    /// <summary>
+    /// Empties the recycle bin with a silent Shell operation. The inventory is
+    /// read first so the result can account for what was removed. Failures are
+    /// reported as cleanup errors, never as success.
+    /// </summary>
+    internal static void EmptyRecycleBin(
+        TargetResult targetResult, TempCleanupResult result)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            result.Errors.Add(new CleanupError
+            {
+                FilePath = "RECYCLE_BIN",
+                Message = "La Papelera requiere Windows.",
+                ErrorType = "UnsupportedOperation"
+            });
+            targetResult.IsSuccess = false;
+            return;
+        }
+
+        try
+        {
+            var before = new RecycleBinInfo { Size = Marshal.SizeOf<RecycleBinInfo>() };
+            var measured = SHQueryRecycleBin(null, ref before) == 0;
+
+            var hr = SHEmptyRecycleBin(IntPtr.Zero, null,
+                ShellEmptyRecycleBinNoConfirmation | ShellEmptyRecycleBinNoProgressUi
+                | ShellEmptyRecycleBinNoSound);
+            if (hr != 0)
+            {
+                result.Errors.Add(new CleanupError
+                {
+                    FilePath = "RECYCLE_BIN",
+                    Message = $"No se pudo vaciar la Papelera (código 0x{hr:X8}).",
+                    ErrorType = "CleanError"
+                });
+                targetResult.IsSuccess = false;
+                return;
+            }
+
+            if (measured && before.ItemCount > 0)
+            {
+                targetResult.DeletedFiles = (int)Math.Min(before.ItemCount, int.MaxValue);
+                targetResult.DeletedBytes = Math.Max(0, before.Bytes);
+                result.DeletedFiles += targetResult.DeletedFiles;
+                result.DeletedBytes += targetResult.DeletedBytes;
+            }
+        }
+        catch (Exception ex) when (ex is DllNotFoundException
+            or EntryPointNotFoundException or MarshalDirectiveException)
+        {
+            result.Errors.Add(new CleanupError
+            {
+                FilePath = "RECYCLE_BIN",
+                Message = "La API de la Papelera no está disponible.",
+                ErrorType = "UnsupportedOperation"
+            });
+            targetResult.IsSuccess = false;
+        }
+    }
+
+    private const uint ShellEmptyRecycleBinNoConfirmation = 0x00000001;
+    private const uint ShellEmptyRecycleBinNoProgressUi = 0x00000002;
+    private const uint ShellEmptyRecycleBinNoSound = 0x00000004;
+
+    // SHQUERYRBINFO: DWORD cbSize; __int64 i64Size; __int64 i64NumItems;
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RecycleBinInfo
+    {
+        public int Size;
+        public long Bytes;
+        public long ItemCount;
+    }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern int SHQueryRecycleBin(string? rootPath, ref RecycleBinInfo info);
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern int SHEmptyRecycleBin(IntPtr hwnd, string? rootPath, uint flags);
+
     // Internal for read-only, isolated synthetic scan regressions.
     internal static void ScanFolder(TempCleanupTarget target)
     {
@@ -574,11 +703,11 @@ public class TempCleanupService : ITempCleanupService
             return;
         }
 
-        // Refuse incomplete listings instead of calling them a successful scan.
-        // Safe deletion currently supports direct children only. The scan
-        // must estimate exactly that scope, not nested folders.
-        if (!TryEnumerateBounded(target.Path, "*", recursive: false,
-            MaxEnumeratedFilesPerTarget, TimeSpan.FromSeconds(3), out var files))
+        // A partially readable inventory must not look like a successful
+        // complete scan. No deletion occurs while scanning.
+        // The scan walks subfolders, matching exactly what cleanup removes.
+        if (!TryEnumerateBounded(target.Path, "*", recursive: true,
+            MaxEnumeratedFilesPerTarget, TimeSpan.FromSeconds(20), out var files))
         {
             target.ScanNotes = "No disponible: demasiados archivos, tiempo agotado o acceso denegado.";
             return;
@@ -670,10 +799,10 @@ public class TempCleanupService : ITempCleanupService
             var sw = Stopwatch.StartNew();
 
             // Finish a bounded, non-destructive listing BEFORE the first delete.
-            // Do not traverse nested directories until identity-preserving
-            // handle-relative directory enumeration is reviewed.
-            if (!TryEnumerateBounded(target.Path, "*", recursive: false,
-                maxCandidates, TimeSpan.FromSeconds(8), out var files))
+            // Subfolders are included because most temporary garbage lives one
+            // or more levels below %TEMP%; reparse points are never followed.
+            if (!TryEnumerateBounded(target.Path, "*", recursive: true,
+                maxCandidates, TimeSpan.FromSeconds(20), out var files))
             {
                 result.Errors.Add(new CleanupError
                 {
@@ -688,8 +817,8 @@ public class TempCleanupService : ITempCleanupService
             foreach (var filePath in files)
             {
                 var file = new FileInfo(filePath);
-                // Timeout de 30 segundos por ubicación
-                if (sw.ElapsedMilliseconds > 30000)
+                // Límite de tiempo por ubicación
+                if (sw.ElapsedMilliseconds > 60000)
                 {
                     result.Errors.Add(new CleanupError
                     {
@@ -756,7 +885,63 @@ public class TempCleanupService : ITempCleanupService
                     });
                 }
             }
+
+            // Leave the target tree as empty of leftovers as possible without
+            // touching anything that still has content or a reparse point.
+            RemoveEmptySubdirectories(target.Path);
         });
+    }
+
+    /// <summary>
+    /// Removes empty subdirectories (never the target root) deepest-first.
+    /// Only truly empty, ordinary directories are removed; anything that
+    /// still has content, a junction or an access problem is left untouched.
+    /// </summary>
+    internal static void RemoveEmptySubdirectories(string root)
+    {
+        if (!Directory.Exists(root))
+            return;
+
+        try
+        {
+            var options = new EnumerationOptions
+            {
+                RecurseSubdirectories = true,
+                IgnoreInaccessible = true,
+                AttributesToSkip = FileAttributes.Hidden | FileAttributes.System
+                    | FileAttributes.ReparsePoint,
+                MaxRecursionDepth = 16
+            };
+
+            var directories = Directory.EnumerateDirectories(root, "*", options)
+                .OrderByDescending(path => path.Length)
+                .ToArray();
+
+            foreach (var directory in directories)
+            {
+                try
+                {
+                    var info = new DirectoryInfo(directory);
+                    if ((info.Attributes & FileAttributes.ReparsePoint) != 0)
+                        continue;
+                    if (info.EnumerateFileSystemInfos().Any())
+                        continue;
+                    info.Delete(recursive: false);
+                }
+                catch (Exception ex) when (ex is IOException
+                    or UnauthorizedAccessException or System.Security.SecurityException)
+                {
+                    // A directory that cannot be removed is not a cleanup error:
+                    // its files may still have been deleted successfully.
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+            or ArgumentException or NotSupportedException
+            or System.Security.SecurityException)
+        {
+            // Best effort: empty-directory pruning never fails the cleanup.
+        }
     }
 
     internal static void CleanThumbnailsFolder(
@@ -869,14 +1054,10 @@ public class TempCleanupService : ITempCleanupService
         if (CleanupTargets.IsProtectedTemporaryFileName(file.Name))
             return true;
 
-        // A file may have old modification time but a recent NTFS creation
-        // time (e.g., extracted archive). Refuse both cases. Native handle
-        // verification repeats this decision immediately before disposition.
-        var retentionCutoff = DateTime.UtcNow.AddDays(-CleanupTargets.MinimumAgeDays);
-        if (file.LastWriteTimeUtc > retentionCutoff
-            || file.CreationTimeUtc > retentionCutoff)
-            return true;
-
+        // No age retention: temporary files are meant to be disposable and
+        // an unlocked file is safe to remove regardless of its timestamp.
+        // Files an installer still needs are held open and are refused by the
+        // verified-handle deletion gate.
         return false;
     }
 

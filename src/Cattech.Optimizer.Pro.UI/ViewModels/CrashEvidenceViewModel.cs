@@ -71,7 +71,14 @@ public partial class CrashEvidenceViewModel : ObservableObject
         => VerifySelectedDumpCommand.NotifyCanExecuteChanged();
 
     partial void OnIsBusyChanged(bool value)
-        => VerifySelectedDumpCommand.NotifyCanExecuteChanged();
+    {
+        // Sin esta notificación los botones conservan el estado anterior y un
+        // clic durante la consulta se ignora en silencio.
+        VerifySelectedDumpCommand.NotifyCanExecuteChanged();
+        RefreshCommand.NotifyCanExecuteChanged();
+    }
+
+    private bool CanRefresh() => !IsBusy;
 
     private bool CanVerifySelectedDump()
         => !IsBusy
@@ -117,7 +124,7 @@ public partial class CrashEvidenceViewModel : ObservableObject
         }
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanRefresh))]
     private async Task RefreshAsync()
     {
         if (IsBusy)

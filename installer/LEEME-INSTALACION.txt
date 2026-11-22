@@ -1,4 +1,4 @@
-CATTECH OPTIMIZER PRO v0.3.0 — Notas de instalación
+CATTECH OPTIMIZER PRO v0.3.1 — Notas de instalación
 ====================================================
 
 INSTALACIÓN

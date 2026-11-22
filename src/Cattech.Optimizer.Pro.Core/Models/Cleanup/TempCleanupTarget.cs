@@ -78,6 +78,17 @@ public class TempCleanupTarget : INotifyPropertyChanged
     public double EstimatedSizeMB => Math.Round((double)EstimatedSizeBytes / (1024 * 1024), 2);
 
     /// <summary>
+    /// Tamaño legible con la unidad adecuada (B/KB/MB/GB) para la UI.
+    /// </summary>
+    public string EstimatedSizeDisplay => EstimatedSizeBytes switch
+    {
+        >= 1024L * 1024 * 1024 => $"{EstimatedSizeBytes / (1024.0 * 1024 * 1024):F2} GB",
+        >= 1024L * 1024 => $"{EstimatedSizeBytes / (1024.0 * 1024):F2} MB",
+        >= 1024L => $"{EstimatedSizeBytes / 1024.0:F1} KB",
+        _ => $"{EstimatedSizeBytes} B"
+    };
+
+    /// <summary>
     /// Cantidad aproximada de archivos.
     /// </summary>
     public int EstimatedFileCount { get; set; }
@@ -118,10 +129,6 @@ public static class CleanupTargets
         string.IsNullOrWhiteSpace(fileName)
         || ProtectedNameFragments.Any(fragment =>
             fileName.Contains(fragment, StringComparison.OrdinalIgnoreCase));
-
-    // Minimum retention before an explicitly confirmed temporary-file cleanup.
-    // Both NTFS creation and modification times must be older than this limit.
-    public const int MinimumAgeDays = 7;
 
     /// <summary>
     /// TEMP/TMP can redirect Path.GetTempPath. Automatic cleanup requires
@@ -188,7 +195,7 @@ public static class CleanupTargets
                 Id = "USER_TEMP",
                 DisplayName = "Temporales del usuario",
                 Path = userTemp,
-                Description = "Solo archivos directos creados y modificados hace al menos 7 días. Revisá la selección antes de borrar.",
+                Description = "Archivos temporales del usuario, incluidas sus subcarpetas. No se borran archivos en uso ni con nombres protegidos.",
                 IsSystemLocation = false,
                 IsOptional = false,
                 IsSelected = userTempIsTrusted,
@@ -201,7 +208,7 @@ public static class CleanupTargets
                 Id = "WINDOWS_TEMP",
                 DisplayName = "Temporales de Windows",
                 Path = windowsTemp,
-                Description = "Archivos directos con al menos 7 días de antigüedad; puede requerir administrador.",
+                Description = "Archivos temporales de Windows, incluidas subcarpetas; puede requerir administrador.",
                 IsSystemLocation = true,
                 IsOptional = false,
                 IsSelected = false,
@@ -213,12 +220,12 @@ public static class CleanupTargets
                 Id = "RECYCLE_BIN",
                 DisplayName = "Papelera de reciclaje",
                 Path = @"::{645FF040-5081-101B-9F08-00AA002F954E}",
-                Description = "Archivos eliminados que aún están en la papelera. Seleccione solo si está seguro.",
+                Description = "Vacía la Papelera de reciclaje mediante la API de Windows. No se puede deshacer.",
                 IsSystemLocation = false,
                 IsOptional = true,
                 IsSelected = false,
                 RiskLevel = CleanupRiskLevel.Medium,
-                ScanNotes = "Opcional: solo limpiar si está seguro"
+                ScanNotes = "Opcional: vaciado definitivo"
             },
             new TempCleanupTarget
             {
@@ -227,7 +234,7 @@ public static class CleanupTargets
                 Path = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                     @"Microsoft\Windows\Explorer"),
-                Description = "Caché de miniaturas: solo archivos creados y modificados hace más de 7 días.",
+                Description = "Caché de miniaturas de Explorer (thumbcache_*.db).",
                 IsSystemLocation = false,
                 IsOptional = true,
                 IsSelected = false,

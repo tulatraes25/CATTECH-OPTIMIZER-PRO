@@ -4,7 +4,7 @@ Estas instrucciones aplican a cualquier agente o colaborador que modifique este 
 
 ## Estado actual
 
-- Versión publicada: **v0.3.0** (2026-11-22), .NET 10 LTS, paquete `win-x64` autocontenido.
+- Versión publicada: **v0.3.1** (2026-11-22), .NET 10 LTS, paquete `win-x64` autocontenido.
 - Línea de trabajo: `main`. No trabajar directamente sobre `main` para cambios grandes: usar una rama corta y un PR.
 - Única fuente de verdad del estado: `git log`, los workflows de `.github/workflows/` y `CHANGELOG.md`. No asumir cifras de tests o versiones de memoria.
 

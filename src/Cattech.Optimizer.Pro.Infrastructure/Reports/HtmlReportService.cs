@@ -18,6 +18,7 @@ public class HtmlReportService : IReportGenerationService
     private readonly string _reportsDirectory;
     private readonly string _reportsInfoPath;
     private readonly string _reportsIndexLeasePath;
+    private readonly Action<string> _openDirectory;
 
     // The exclusive OS file handle serializes every process using this directory.
     // Unlike deleting a lock file, retaining a small permanent marker avoids
@@ -31,11 +32,22 @@ public class HtmlReportService : IReportGenerationService
     };
 
     public HtmlReportService(string? baseDirectory = null)
+        : this(baseDirectory, OpenDirectoryWithShell)
     {
+    }
+
+    /// <summary>
+    /// Internal seam so tests can verify the created directory without opening
+    /// the real Windows Explorer.
+    /// </summary>
+    internal HtmlReportService(string? baseDirectory, Action<string> openDirectory)
+    {
+        ArgumentNullException.ThrowIfNull(openDirectory);
         _baseDirectory = baseDirectory ?? AppDomain.CurrentDomain.BaseDirectory;
         _reportsDirectory = Path.Combine(_baseDirectory, "reports", "html");
         _reportsInfoPath = Path.Combine(_reportsDirectory, "reports-info.json");
         _reportsIndexLeasePath = Path.Combine(_reportsDirectory, ".cattech-index.lock");
+        _openDirectory = openDirectory;
     }
 
     /// <inheritdoc/>
@@ -231,15 +243,41 @@ public class HtmlReportService : IReportGenerationService
     /// <inheritdoc/>
     public Task OpenReportsFolderAsync()
     {
-        if (Directory.Exists(_reportsDirectory))
+        try
         {
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = _reportsDirectory,
-                UseShellExecute = true
-            });
+            // La primera vez (sin informes generados) la carpeta todavía no
+            // existe: crearla evita que el botón quede muerto para siempre.
+            var directory = EnsureReportsDirectory();
+            _openDirectory(directory);
+            return Task.CompletedTask;
         }
-        return Task.CompletedTask;
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+            or System.Security.SecurityException or ArgumentException
+            or NotSupportedException or System.ComponentModel.Win32Exception)
+        {
+            // Aviso visible para la UI; nunca se propaga una ruta privada.
+            throw new InvalidOperationException(
+                "No se pudo abrir la carpeta de informes. Verificá los permisos de escritura e intentá nuevamente.",
+                ex);
+        }
+    }
+
+    /// <summary>
+    /// Crea la carpeta de informes si no existe y devuelve su ruta.
+    /// </summary>
+    internal string EnsureReportsDirectory()
+    {
+        Directory.CreateDirectory(_reportsDirectory);
+        return _reportsDirectory;
+    }
+
+    private static void OpenDirectoryWithShell(string directory)
+    {
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = directory,
+            UseShellExecute = true
+        });
     }
 
     // =====================
@@ -1008,7 +1046,7 @@ public class HtmlReportService : IReportGenerationService
     {
         return $@"
 <div class='footer'>
-    <p>Informe generado por CATTECH OPTIMIZER PRO v0.3.0 | {DateTime.Now:dd/MM/yyyy HH:mm}</p>
+    <p>Informe generado por CATTECH OPTIMIZER PRO v0.3.1 | {DateTime.Now:dd/MM/yyyy HH:mm}</p>
 </div>";
     }
 

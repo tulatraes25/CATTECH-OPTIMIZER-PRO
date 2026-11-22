@@ -104,7 +104,7 @@
                     <Run Text=" seleccionadas" />
                 </TextBlock>
 
-                <Button Grid.Column="2" Content="Seleccionar posibles desactivar"
+                <Button Grid.Column="2" Content="Seleccionar todo lo desactivable"
                         Command="{Binding SelectAllPossibleDisableCommand}" Padding="10,6" FontSize="11"
                         Background="#FFF3E0" Foreground="#E65100" BorderBrush="#FFCC80" BorderThickness="1" />
 
@@ -169,7 +169,7 @@
                         <DataGridTemplateColumn Header="Sel." Width="45">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate DataType="{x:Type vm:SelectableStartupEntry}">
-                                    <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                    <CheckBox IsChecked="{Binding IsSelected, Mode=OneWay}"
                                               IsEnabled="{Binding IsSelectable}"
                                               Command="{Binding DataContext.ToggleSelectionCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
                                               CommandParameter="{Binding}"

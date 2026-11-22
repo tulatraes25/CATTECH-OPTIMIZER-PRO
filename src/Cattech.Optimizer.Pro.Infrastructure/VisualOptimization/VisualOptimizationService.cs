@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.Win32;
 using Cattech.Optimizer.Pro.Core.Interfaces;
@@ -41,8 +42,7 @@ public class VisualOptimizationService : IVisualOptimizationService
             {
                 setting.CurrentValue = ReadRegistryValue(
                     setting.RegistryPath,
-                    setting.RegistryValueName,
-                    setting.ValueType);
+                    setting.RegistryValueName);
 
                 setting.IsSupported = true;
             }
@@ -65,7 +65,26 @@ public class VisualOptimizationService : IVisualOptimizationService
             StartedAt = DateTime.Now
         };
 
-        var backups = await LoadBackupsInternalAsync();
+        List<VisualOptimizationBackup> backups;
+        try
+        {
+            backups = await LoadBackupsInternalAsync();
+        }
+        catch (InvalidDataException ex)
+        {
+            // No se pisa un historial de backups dañado: se reporta el problema.
+            result.FinishedAt = DateTime.Now;
+            result.FailedCount = 1;
+            result.Errors.Add(new VisualOptimizationError
+            {
+                SettingId = "VISUAL_BACKUPS",
+                SettingName = "Backups de optimización visual",
+                Message = ex.Message,
+                ErrorType = "BackupCorrupt"
+            });
+            return result;
+        }
+
         var technician = await GetTechnicianNameAsync();
 
         foreach (var setting in settings)
@@ -140,6 +159,10 @@ public class VisualOptimizationService : IVisualOptimizationService
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Si el archivo de backups está dañado se propaga <see cref="InvalidDataException"/>
+    /// en lugar de devolver una lista vacía silenciosa: la UI puede informar el problema.
+    /// </remarks>
     public async Task<List<VisualOptimizationBackup>> ListBackupsAsync()
     {
         var backups = await LoadBackupsInternalAsync();
@@ -149,11 +172,42 @@ public class VisualOptimizationService : IVisualOptimizationService
     /// <inheritdoc/>
     public async Task<bool> RestoreAsync(VisualOptimizationBackup backup)
     {
-        var backups = await LoadBackupsInternalAsync();
+        var result = await RestoreWithResultAsync(backup);
+        return result.Success;
+    }
+
+    /// <inheritdoc/>
+    public async Task<VisualOptimizationRestoreResult> RestoreWithResultAsync(VisualOptimizationBackup backup)
+    {
+        ArgumentNullException.ThrowIfNull(backup);
+
+        List<VisualOptimizationBackup> backups;
+        try
+        {
+            backups = await LoadBackupsInternalAsync();
+        }
+        catch (InvalidDataException ex)
+        {
+            return VisualOptimizationRestoreResult.Fail(backup, "BackupCorrupt", ex.Message);
+        }
+
         var existing = backups.FirstOrDefault(b => b.Id == backup.Id);
 
-        if (existing == null || !existing.CanRestore)
-            return false;
+        if (existing is null)
+        {
+            return VisualOptimizationRestoreResult.Fail(
+                backup,
+                "BackupNotFound",
+                $"No se encontró el backup de '{backup.SettingName}'. Es posible que ya haya sido restaurado o eliminado.");
+        }
+
+        if (!existing.CanRestore)
+        {
+            return VisualOptimizationRestoreResult.Fail(
+                existing,
+                "BackupAlreadyRestored",
+                $"El ajuste '{existing.SettingName}' ya fue restaurado anteriormente.");
+        }
 
         try
         {
@@ -177,11 +231,15 @@ public class VisualOptimizationService : IVisualOptimizationService
             existing.RestoredAt = DateTime.Now;
 
             await SaveBackupsInternalAsync(backups);
-            return true;
+            return VisualOptimizationRestoreResult.Ok(existing);
         }
-        catch
+        catch (Exception ex)
         {
-            return false;
+            // No se traga la excepción: se devuelve el motivo real para la UI.
+            return VisualOptimizationRestoreResult.Fail(
+                existing,
+                "RegistryRestoreError",
+                $"No se pudo restaurar '{existing.SettingName}': {ex.Message}");
         }
     }
 
@@ -207,13 +265,23 @@ public class VisualOptimizationService : IVisualOptimizationService
 
     // --- Métodos de registro ---
 
-    private static string? ReadRegistryValue(string path, string valueName, string valueType)
+    /// <summary>
+    /// Lee un valor de HKCU y lo representa como texto.
+    /// Los valores binarios (por ejemplo UserPreferencesMask) se guardan como
+    /// hexadecimal, nunca como "System.Byte[]".
+    /// </summary>
+    private static string? ReadRegistryValue(string path, string valueName)
     {
         using var key = Registry.CurrentUser.OpenSubKey(path, false);
         if (key == null) return null;
 
         var value = key.GetValue(valueName);
-        return value?.ToString();
+        return value switch
+        {
+            null => null,
+            byte[] bytes => Convert.ToHexString(bytes),
+            _ => value.ToString()
+        };
     }
 
     private static void WriteRegistryValue(string path, string valueName, string value, string valueType)
@@ -225,20 +293,44 @@ public class VisualOptimizationService : IVisualOptimizationService
         switch (valueType.ToUpperInvariant())
         {
             case "DWORD":
-                if (int.TryParse(value, out var intValue))
-                    key.SetValue(valueName, intValue, RegistryValueKind.DWord);
-                else
-                    key.SetValue(valueName, value, RegistryValueKind.String);
+                if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var intValue))
+                    throw new InvalidOperationException($"El valor '{value}' no es un DWORD válido.");
+                key.SetValue(valueName, intValue, RegistryValueKind.DWord);
                 break;
 
             case "BINARY":
-                var bytes = Convert.FromHexString(value);
+                var bytes = ParseHexBytes(value);
                 key.SetValue(valueName, bytes, RegistryValueKind.Binary);
                 break;
 
             default:
                 key.SetValue(valueName, value, RegistryValueKind.String);
                 break;
+        }
+    }
+
+    /// <summary>
+    /// Convierte el hexadecimal guardado en el backup a bytes reales.
+    /// Si el backup proviene de una versión anterior que guardó
+    /// "System.Byte[]" (o cualquier texto que no sea hex), se informa un error
+    /// claro en lugar de fallar con FormatException sin contexto.
+    /// </summary>
+    private static byte[] ParseHexBytes(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            throw new InvalidOperationException("El valor binario guardado en el backup está vacío.");
+
+        try
+        {
+            return Convert.FromHexString(value);
+        }
+        catch (FormatException ex)
+        {
+            var detail = value.Length <= 40 ? value : value[..40] + "...";
+            throw new InvalidOperationException(
+                $"El valor binario guardado en el backup no es hexadecimal válido ({detail}). " +
+                "Puede provenir de un backup antiguo corrupto.",
+                ex);
         }
     }
 
@@ -259,11 +351,21 @@ public class VisualOptimizationService : IVisualOptimizationService
         {
             var json = await File.ReadAllTextAsync(_backupsJsonPath);
             return JsonSerializer.Deserialize<List<VisualOptimizationBackup>>(json, SerializerOptions)
-                   ?? new List<VisualOptimizationBackup>();
+                   ?? throw new InvalidDataException(
+                       "El archivo de backups de optimización visual está vacío o no es válido.");
         }
-        catch
+        catch (JsonException ex)
         {
-            return new List<VisualOptimizationBackup>();
+            throw new InvalidDataException(
+                "El archivo de backups de optimización visual está dañado y no se puede leer. " +
+                "No se modificó ningún ajuste del sistema.",
+                ex);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new InvalidDataException(
+                $"No se pudo leer el archivo de backups de optimización visual: {ex.Message}",
+                ex);
         }
     }
 
@@ -271,7 +373,11 @@ public class VisualOptimizationService : IVisualOptimizationService
     {
         EnsureDirectoryExists(_backupsDirectory);
         var json = JsonSerializer.Serialize(backups, SerializerOptions);
-        await File.WriteAllTextAsync(_backupsJsonPath, json);
+
+        // Escritura atómica: un corte a mitad de guardado no debe dejar el JSON corrupto.
+        var tempPath = _backupsJsonPath + ".tmp";
+        await File.WriteAllTextAsync(tempPath, json);
+        File.Move(tempPath, _backupsJsonPath, overwrite: true);
     }
 
     private static async Task<string> GetTechnicianNameAsync()

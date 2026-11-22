@@ -2,12 +2,12 @@
 
 [![CATTECH CI](https://github.com/tulatraes25/CATTECH-OPTIMIZER-PRO/actions/workflows/ci.yml/badge.svg)](https://github.com/tulatraes25/CATTECH-OPTIMIZER-PRO/actions/workflows/ci.yml)
 
-**Versión**: v0.3.0  
+**Versión**: v0.3.1  
 **Licencia**: MIT  
 **Plataforma**: Windows 11 y ediciones Windows 10 LTSC admitidas oficialmente por .NET 10; otras ediciones de Windows 10 requieren verificación propia.  
 **Runtime**: .NET 10 LTS. El paquete publicado es autocontenido (win-x64): no requiere instalar .NET.
 
-> **Descarga**: [v0.3.0](https://github.com/tulatraes25/CATTECH-OPTIMIZER-PRO/releases/tag/v0.3.0) — ZIP autocontenido win-x64 + SHA-256.
+> **Descarga**: [v0.3.1](https://github.com/tulatraes25/CATTECH-OPTIMIZER-PRO/releases/tag/v0.3.1) — ZIP autocontenido win-x64 + SHA-256.
 >
 > Soporte oficial de plataforma .NET 10: https://github.com/dotnet/core/blob/main/release-notes/10.0/supported-os.md .
 
@@ -19,7 +19,7 @@
 
 CATTECH OPTIMIZER PRO es una aplicación de escritorio para Windows diseñada para técnicos informáticos. Ofrece herramientas de diagnóstico, optimización y mantenimiento de equipos, generando informes profesionales en PDF con datos de la empresa y técnico.
 
-### Características principales (v0.3.0)
+### Características principales (v0.3.1)
 
 - **Configuración personalizable**: Logo de empresa, datos del técnico
 - **Gestión de clientes**: Registro de clientes y equipos, con detección WMI
@@ -32,6 +32,18 @@ CATTECH OPTIMIZER PRO es una aplicación de escritorio para Windows diseñada pa
 - **Optimización segura**: limpieza de temporales, ajustes visuales y punto de restauración
 - **Informes profesionales**: HTML y PDF con logo, historial de casos y trazabilidad
 
+### Correcciones v0.3.1 (botones que antes no ejecutaban)
+
+Esta versión corrige la causa raíz de las pantallas que "no hacían nada":
+
+- **Limpieza**: ahora borra temporales de las subcarpetas (antes solo hijos directos), sin exigir 7 días de antigüedad, y pide confirmación con la cantidad real de archivos y MB. Incluye **vaciado de la Papelera de reciclaje** mediante la API de Windows (antes estaba deshabilitado).
+- **Programas de inicio**: la desactivación ahora elimina de verdad el valor del registro (la clave se abría en solo lectura y el borrado fallaba siempre), permite seleccionar cualquier entrada de terceros (el clasificador marcaba todo como "Microsoft"), conserva el tipo de valor (`REG_EXPAND_SZ`) y la restauración desde Backups funciona.
+- **Punto de restauración**: se eliminó la comprobación del servicio `srservice` (no existe en Windows 10/11) que mantenía "Crear" deshabilitado; la protección del sistema es informativa y ya no bloquea el intento.
+- **Optimización visual**: los checkboxes ya quedan seleccionados (se cancelaban solos), "Aplicar" ejecuta y "Restaurar" usa el backup correcto, incluidos valores binarios.
+- **SMART**: al abrir la pantalla se verifica smartctl automáticamente; "Analizar" informa errores reales en lugar de un éxito vacío y muestra el estado de la operación.
+- **Informes**: carga automática de datos al entrar, "Abrir carpeta" crea la carpeta y avisa si el informe o PDF ya no existe.
+- **Diálogos de confirmación** en Limpieza y Programas de inicio, con el detalle exacto de lo que se va a modificar.
+
 ### Novedades v0.3.0
 
 - **Migración a .NET 10 LTS**: runtime soportado, build sin warnings y paquete win-x64 autocontenido
@@ -41,7 +53,7 @@ CATTECH OPTIMIZER PRO es una aplicación de escritorio para Windows diseñada pa
 - **Pasaporte técnico**: exportación redactada en memoria, con checksum y consentimiento revocable por caso (superficie de revisión)
 - **Informes endurecidos**: publicación atómica de bundles, control de exportaciones HTML/PDF, IDs desambiguados e inventario honesto de archivos dañados
 - **Limpieza verificada**: raíces confiables, exclusiones por edad/atributos, auditoría inmutable y feedback que distingue omitidos, errores y fallas
-- **1870 tests** automatizados (0 fallas, 0 omitidos)
+- **1946 tests** automatizados (0 fallas, 0 omitidos)
 
 ### Correcciones v0.2.2
 
@@ -78,7 +90,7 @@ CATTECH OPTIMIZER PRO es una aplicación de escritorio para Windows diseñada pa
 - 100 MB de espacio en disco
 - Permisos de administrador (para diagnóstico completo y operaciones que modifican el sistema)
 
-> **Nota**: .NET 8 alcanzó su fin de soporte el 10-nov-2026, por eso v0.3.0 migra a .NET 10 LTS. Windows 7/8/8.1 no son soportados; para esos sistemas se requeriría una rama legacy con .NET Framework 4.8 (no planificada).
+> **Nota**: .NET 8 alcanzó su fin de soporte el 10-nov-2026, por eso v0.3.x migra a .NET 10 LTS. Windows 7/8/8.1 no son soportados; para esos sistemas se requeriría una rama legacy con .NET Framework 4.8 (no planificada).
 
 ### Para desarrollar
 
@@ -131,7 +143,7 @@ dotnet publish src\Cattech.Optimizer.Pro.UI\Cattech.Optimizer.Pro.UI.csproj `
 
 ### Versión con instalador (recomendada para técnicos)
 
-1. Descargar `CATTECH-Optimizer-Pro-v0.3.0-Setup.exe` desde [Releases](https://github.com/tulatraes25/CATTECH-OPTIMIZER-PRO/releases)
+1. Descargar `CATTECH-Optimizer-Pro-v0.3.1-Setup.exe` desde [Releases](https://github.com/tulatraes25/CATTECH-OPTIMIZER-PRO/releases)
 2. Ejecutar el asistente y elegir el modo de instalación:
    - **Solo para mí**: `%LOCALAPPDATA%\Programs\CATTECH OPTIMIZER PRO`. No pide UAC y la carpeta es escribible, por lo que informes y respaldos funcionan sin permisos especiales. **Recomendado**.
    - **Para todos los usuarios**: `C:\Program Files\CATTECH OPTIMIZER PRO`. Requiere administrador; ejecutá la app como administrador para que pueda escribir informes y respaldos.
@@ -141,7 +153,7 @@ dotnet publish src\Cattech.Optimizer.Pro.UI\Cattech.Optimizer.Pro.UI.csproj `
 
 ### Versión portable (sin instalador)
 
-1. Descargar el ZIP `CATTECH-Optimizer-Pro-v0.3.0-win-x64.zip` desde [Releases](https://github.com/tulatraes25/CATTECH-OPTIMIZER-PRO/releases)
+1. Descargar el ZIP `CATTECH-Optimizer-Pro-v0.3.1-win-x64.zip` desde [Releases](https://github.com/tulatraes25/CATTECH-OPTIMIZER-PRO/releases)
 2. Verificar el SHA-256 publicado junto al ZIP
 3. Extraer el ZIP en una carpeta escribible (por ejemplo `C:\CATTECH`)
 4. Ejecutar `Cattech.Optimizer.Pro.UI.exe` como administrador
@@ -515,7 +527,7 @@ Para más detalles, ver [ARQUITECTURA_INICIAL.md](ARQUITECTURA_INICIAL.md).
 
 ## Documentación
 
-- [Release notes v0.3.0](docs/RELEASE_NOTES_V0_3.md) - Cambios, certificación y descarga
+- [Release notes v0.3.1](docs/RELEASE_NOTES_V0_3_1.md) - Cambios, certificación y descarga
 - [Automatización de releases](docs/RELEASE_AUTOMATION.md) - CI, packaging y publicación controlada
 - [QA real en Windows](docs/QA_REAL_SMOKE.md) - Protocolo de verificación en equipos reales
 - [Seguridad](SEGURIDAD.md) - Reglas de seguridad obligatorias

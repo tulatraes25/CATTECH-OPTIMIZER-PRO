@@ -70,9 +70,10 @@
                     IsEnabled="{Binding IsRunning, Converter={StaticResource InvertBool}}" />
 
             <Button Grid.Column="2" Content="🧹 Limpiar seleccionados"
-                    Command="{Binding CleanupCommand}" Padding="16,8" FontSize="12" FontWeight="SemiBold"
+                    Command="{Binding CleanupWithConfirmationCommand}" Padding="16,8" FontSize="12" FontWeight="SemiBold"
                     Background="#E53935" Foreground="White" BorderThickness="0"
-                    IsEnabled="{Binding CanStartCleanup}" />
+                    ToolTip="Pide confirmación antes de eliminar."
+                    IsEnabled="{Binding IsRunning, Converter={StaticResource InvertBool}}" />
 
             <Button Grid.Column="4" Content="Seleccionar bajos riesgo"
                     Command="{Binding SelectAllLowRiskCommand}" Padding="12,8" FontSize="11"
@@ -93,11 +94,9 @@
 
         <!-- Row 3: Confirmación explícita y progreso -->
         <StackPanel Grid.Row="3" Margin="0,0,0,10">
-            <CheckBox Content="Confirmo que deseo eliminar los archivos temporales seleccionados. Esta acción puede ser irreversible y no crea una copia de seguridad."
-                      IsChecked="{Binding HasCleanupConsent, Mode=TwoWay}"
-                      IsEnabled="{Binding CanReviewCleanupConsent}"
-                      FontSize="12" FontWeight="SemiBold" Foreground="#A13B24"
-                      Margin="0,0,0,8" />
+            <TextBlock Text="🔒 Se pedirá confirmación con la cantidad exacta de archivos antes de eliminar. Esta acción no crea copia de seguridad y no se puede deshacer."
+                       FontSize="11" FontWeight="SemiBold" Foreground="#A13B24"
+                       TextWrapping="Wrap" Margin="0,0,0,8" />
             <ProgressBar Value="{Binding ProgressPercent}" Maximum="100"
                          Height="6" Background="#E0E0E0" Foreground="#0078D4"
                          Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}" />
@@ -181,8 +180,7 @@
                                                     <Run Text=" archivos" Foreground="#888" />
                                                 </TextBlock>
                                                 <TextBlock Grid.Column="2" FontSize="11">
-                                                    <Run Text="{Binding EstimatedSizeMB, Mode=OneWay}" FontWeight="SemiBold" />
-                                                    <Run Text=" MB" Foreground="#888" />
+                                                    <Run Text="{Binding EstimatedSizeDisplay, Mode=OneWay}" FontWeight="SemiBold" />
                                                 </TextBlock>
                                                 <TextBlock Grid.Column="4" FontSize="10" Foreground="#999"
                                                            Visibility="{Binding ScanNotes, Converter={StaticResource StringToVis}}">
@@ -277,7 +275,7 @@
                                            Foreground="#E65100" Margin="0,0,0,4" />
                                 <TextBlock Text="• Solo se autorizan ubicaciones temporales predefinidas y escaneadas." FontSize="10" Foreground="#666" />
                                 <TextBlock Text="• Los archivos temporales pueden contener datos útiles de aplicaciones." FontSize="10" Foreground="#666" />
-                                <TextBlock Text="• La Papelera está deshabilitada por seguridad." FontSize="10" Foreground="#666" />
+                                <TextBlock Text="• La Papelera se vacía con la API de Windows y no se puede deshacer." FontSize="10" Foreground="#666" />
                                 <TextBlock Text="• No se crea respaldo; la validación de enlaces no elimina todos los riesgos." FontSize="10" Foreground="#666" />
                             </StackPanel>
                         </Border>

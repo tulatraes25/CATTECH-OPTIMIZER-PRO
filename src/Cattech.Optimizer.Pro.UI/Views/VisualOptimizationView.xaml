@@ -41,6 +41,10 @@
 
         <!-- Row 1: Mensajes -->
         <StackPanel Grid.Row="1">
+            <TextBlock FontSize="12" Foreground="#555" Margin="0,0,0,8">
+                <Run Text="Estado: " FontWeight="SemiBold" />
+                <Run Text="{Binding StatusText, Mode=OneWay}" />
+            </TextBlock>
             <Border CornerRadius="6" Padding="12,10" Margin="0,0,0,10"
                     Visibility="{Binding IsSuccess, Converter={StaticResource BoolToVis}}"
                     Background="#E6F4EA" BorderBrush="#34A853" BorderThickness="1">
@@ -74,10 +78,11 @@
                     Background="#0078D4" Foreground="White" BorderThickness="0"
                     IsEnabled="{Binding IsRunning, Converter={StaticResource InvertBool}}" />
 
+            <!-- La habilitación la controla ApplyCommand (CanExecute: sin ejecución,
+                 con resultados y con ajustes seleccionados). -->
             <Button Grid.Column="2" Content="✅ Aplicar seleccionados"
                     Command="{Binding ApplyCommand}" Padding="16,8" FontSize="12" FontWeight="SemiBold"
-                    Background="#2E7D32" Foreground="White" BorderThickness="0"
-                    IsEnabled="{Binding HasResults}" />
+                    Background="#2E7D32" Foreground="White" BorderThickness="0" />
 
             <Button Grid.Column="4" Content="Seleccionar seguros"
                     Command="{Binding SelectAllSafeCommand}" Padding="12,8" FontSize="11"
@@ -141,12 +146,12 @@
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
 
+                                        <!-- Sin Command: el binding TwoWay es la única fuente de verdad
+                                             de la selección (evita el doble toggle). -->
                                         <CheckBox Grid.Column="0"
                                                   IsChecked="{Binding IsSelected, Mode=TwoWay}"
                                                   IsEnabled="{Binding IsSupported}"
-                                                  VerticalAlignment="Top" Margin="0,2,10,0"
-                                                  Command="{Binding DataContext.ToggleSettingCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                  CommandParameter="{Binding}" />
+                                                  VerticalAlignment="Top" Margin="0,2,10,0" />
 
                                         <StackPanel Grid.Column="1">
                                             <Grid>
@@ -226,6 +231,22 @@
                                    TextWrapping="Wrap" Margin="0,0,0,10"
                                    Visibility="{Binding HasResult, Converter={StaticResource BoolToVis}}" />
 
+                        <!-- Errores reales devueltos por el servicio al aplicar -->
+                        <ItemsControl ItemsSource="{Binding ResultErrors}" Margin="0,0,0,10"
+                                      Visibility="{Binding HasResultErrors, Converter={StaticResource BoolToVis}}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock FontSize="10" Foreground="#C62828" TextWrapping="Wrap"
+                                               Margin="0,0,0,3">
+                                        <Run Text="• " FontWeight="Bold" />
+                                        <Run Text="{Binding SettingName, Mode=OneWay}" FontWeight="SemiBold" />
+                                        <Run Text=": " />
+                                        <Run Text="{Binding Message, Mode=OneWay}" />
+                                    </TextBlock>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
                         <StackPanel Visibility="{Binding HasResult, Converter={StaticResource BoolToVis}}">
                             <Grid Margin="0,0,0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                 <TextBlock Text="Aplicados:" FontSize="11" Foreground="#555" />
@@ -282,7 +303,6 @@
                                                         BorderThickness="1" HorizontalAlignment="Left"
                                                         Command="{Binding DataContext.RestoreBackupCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                         CommandParameter="{Binding}"
-                                                        IsEnabled="{Binding CanRestore}"
                                                         Visibility="{Binding CanRestore, Converter={StaticResource BoolToVis}}" />
                                             </StackPanel>
                                         </Border>

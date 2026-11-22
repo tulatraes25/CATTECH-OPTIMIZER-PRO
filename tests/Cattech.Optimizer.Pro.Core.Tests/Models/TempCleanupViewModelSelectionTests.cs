@@ -119,7 +119,7 @@ public sealed class TempCleanupViewModelSelectionTests
     }
 
     [Fact]
-    public async Task DisabledRecycleBin_DoesNotDowngradeOtherwiseHealthyScan()
+    public async Task UnavailableTarget_DoesNotDowngradeOtherwiseHealthyScan()
     {
         var temp = Target("USER_TEMP");
         var recycle = Target("RECYCLE_BIN");
@@ -129,7 +129,7 @@ public sealed class TempCleanupViewModelSelectionTests
             new SyntheticCleanupService(temp, recycle));
         await vm.ScanCommand.ExecuteAsync(null);
 
-        Assert.Equal("Listo para limpiar", vm.StatusText);
+        Assert.Equal("Escaneo completado con ubicaciones no disponibles", vm.StatusText);
         Assert.False(vm.HasError);
         Assert.False(vm.CanStartCleanup);
     }
@@ -415,20 +415,23 @@ public sealed class TempCleanupViewModelSelectionTests
     }
 
     [Fact]
-    public void CleanupXaml_UsesBooleanEnabledBinding()
+    public void CleanupXaml_UsesConfirmationDialogFlow()
     {
         var path = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
             "../../../../../src/Cattech.Optimizer.Pro.UI/Views/TempCleanupView.xaml"));
         var xaml = File.ReadAllText(path);
 
-        Assert.Contains("IsEnabled=\"{Binding CanStartCleanup}\"", xaml);
-        Assert.DoesNotContain(
-            "IsEnabled=\"{Binding HasScanned, Converter={StaticResource BoolToVis}}\"", xaml);
+        // Un solo clic abre un diálogo de confirmación con los números reales
+        // de la selección. El botón nunca queda muerto: si no hay escaneo o
+        // selección, el comando muestra el motivo.
+        Assert.Contains("Command=\"{Binding CleanupWithConfirmationCommand}\"", xaml);
+        Assert.Contains("IsEnabled=\"{Binding IsRunning, Converter={StaticResource InvertBool}}\"", xaml);
+        Assert.DoesNotContain("IsEnabled=\"{Binding CanStartCleanup}\"", xaml);
+        Assert.DoesNotContain("HasCleanupConsent, Mode=TwoWay", xaml);
+        Assert.Contains("Se pedirá confirmación", xaml);
+        Assert.Contains("no se puede deshacer", xaml);
         Assert.Contains("IsChecked=\"{Binding IsSelected, Mode=TwoWay}\"", xaml);
         Assert.Contains("DataContext.IsRunning", xaml);
-        Assert.Contains("IsChecked=\"{Binding HasCleanupConsent, Mode=TwoWay}\"", xaml);
-        Assert.Contains("IsEnabled=\"{Binding CanReviewCleanupConsent}\"", xaml);
-        Assert.Contains("no crea una copia de seguridad", xaml);
     }
 
 
@@ -441,7 +444,7 @@ public sealed class TempCleanupViewModelSelectionTests
 
         Assert.NotNull(System.Xml.Linq.XDocument.Parse(xaml).Root);
         Assert.Contains("Text=\"{Binding StatusText}\"", xaml);
-        Assert.Contains("La Papelera está deshabilitada por seguridad", xaml);
+        Assert.Contains("La Papelera se vacía con la API de Windows", xaml);
         Assert.Contains("No se crea respaldo", xaml);
         Assert.DoesNotContain("Se omite Papelera si no fue seleccionada", xaml);
         Assert.DoesNotContain("No se eliminan perfiles de navegador", xaml);

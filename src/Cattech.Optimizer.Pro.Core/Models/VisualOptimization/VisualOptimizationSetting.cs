@@ -1,3 +1,6 @@
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
+
 namespace Cattech.Optimizer.Pro.Core.Models.VisualOptimization;
 
 /// <summary>
@@ -12,73 +15,145 @@ public enum VisualRiskLevel
 /// <summary>
 /// Ajuste visual que puede ser aplicado para mejorar rendimiento.
 /// Solo lectura: no aplica cambios sin confirmación.
+/// Implementa INotifyPropertyChanged para que los CheckBox enlazados en modo
+/// TwoWay y los contadores de selección de la UI se mantengan sincronizados.
 /// </summary>
-public class VisualOptimizationSetting
+public class VisualOptimizationSetting : INotifyPropertyChanged
 {
+    private string _id = string.Empty;
+    private string _displayName = string.Empty;
+    private string _description = string.Empty;
+    private string _registryPath = string.Empty;
+    private string _registryValueName = string.Empty;
+    private string? _currentValue;
+    private string _recommendedValue = string.Empty;
+    private string _valueType = "DWORD";
+    private bool _requiresRestart;
+    private bool _requiresSignOut;
+    private VisualRiskLevel _riskLevel;
+    private bool _isSelected;
+    private bool _isSupported = true;
+    private string _notes = string.Empty;
+
+    /// <inheritdoc/>
+    public event PropertyChangedEventHandler? PropertyChanged;
+
     /// <summary>
     /// ID único del ajuste.
     /// </summary>
-    public string Id { get; set; } = string.Empty;
+    public string Id
+    {
+        get => _id;
+        set => SetProperty(ref _id, value);
+    }
 
     /// <summary>
     /// Nombre para mostrar.
     /// </summary>
-    public string DisplayName { get; set; } = string.Empty;
+    public string DisplayName
+    {
+        get => _displayName;
+        set => SetProperty(ref _displayName, value);
+    }
 
     /// <summary>
     /// Descripción del ajuste.
     /// </summary>
-    public string Description { get; set; } = string.Empty;
+    public string Description
+    {
+        get => _description;
+        set => SetProperty(ref _description, value);
+    }
 
     /// <summary>
     /// Ruta del registro.
     /// </summary>
-    public string RegistryPath { get; set; } = string.Empty;
+    public string RegistryPath
+    {
+        get => _registryPath;
+        set => SetProperty(ref _registryPath, value);
+    }
 
     /// <summary>
     /// Nombre del valor en el registro.
     /// </summary>
-    public string RegistryValueName { get; set; } = string.Empty;
+    public string RegistryValueName
+    {
+        get => _registryValueName;
+        set => SetProperty(ref _registryValueName, value);
+    }
 
     /// <summary>
     /// Valor actual leído del registro.
     /// </summary>
-    public string? CurrentValue { get; set; }
+    public string? CurrentValue
+    {
+        get => _currentValue;
+        set => SetProperty(ref _currentValue, value);
+    }
 
     /// <summary>
     /// Valor recomendado para rendimiento.
     /// </summary>
-    public string RecommendedValue { get; set; } = string.Empty;
+    public string RecommendedValue
+    {
+        get => _recommendedValue;
+        set => SetProperty(ref _recommendedValue, value);
+    }
 
     /// <summary>
     /// Tipo de valor (DWORD, String, etc.).
     /// </summary>
-    public string ValueType { get; set; } = "DWORD";
+    public string ValueType
+    {
+        get => _valueType;
+        set => SetProperty(ref _valueType, value);
+    }
 
     /// <summary>
     /// Si requiere reinicio para aplicarse.
     /// </summary>
-    public bool RequiresRestart { get; set; }
+    public bool RequiresRestart
+    {
+        get => _requiresRestart;
+        set => SetProperty(ref _requiresRestart, value);
+    }
 
     /// <summary>
     /// Si requiere cierre de sesión.
     /// </summary>
-    public bool RequiresSignOut { get; set; }
+    public bool RequiresSignOut
+    {
+        get => _requiresSignOut;
+        set => SetProperty(ref _requiresSignOut, value);
+    }
 
     /// <summary>
     /// Nivel de riesgo.
     /// </summary>
-    public VisualRiskLevel RiskLevel { get; set; }
+    public VisualRiskLevel RiskLevel
+    {
+        get => _riskLevel;
+        set => SetProperty(ref _riskLevel, value);
+    }
 
     /// <summary>
     /// Si está seleccionado para aplicar.
     /// </summary>
-    public bool IsSelected { get; set; }
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set => SetProperty(ref _isSelected, value);
+    }
 
     /// <summary>
     /// Si es compatible con la versión actual de Windows.
     /// </summary>
-    public bool IsSupported { get; set; } = true;
+    public bool IsSupported
+    {
+        get => _isSupported;
+        set => SetProperty(ref _isSupported, value);
+    }
 
     /// <summary>
     /// Si el valor actual ya es el recomendado.
@@ -88,7 +163,24 @@ public class VisualOptimizationSetting
     /// <summary>
     /// Notas adicionales.
     /// </summary>
-    public string Notes { get; set; } = string.Empty;
+    public string Notes
+    {
+        get => _notes;
+        set => SetProperty(ref _notes, value);
+    }
+
+    private void SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
+    {
+        if (EqualityComparer<T>.Default.Equals(field, value))
+            return;
+
+        field = value;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+
+        // Propiedad calculada: cualquier cambio en sus entradas debe notificarse.
+        if (propertyName is nameof(CurrentValue) or nameof(RecommendedValue))
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsAlreadyOptimized)));
+    }
 }
 
 /// <summary>

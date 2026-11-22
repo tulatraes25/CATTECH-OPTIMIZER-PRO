@@ -39,12 +39,35 @@
             <Border CornerRadius="6" Padding="12,10" Margin="0,0,0,10"
                     Visibility="{Binding IsSuccess, Converter={StaticResource BoolToVis}}"
                     Background="#E6F4EA" BorderBrush="#34A853" BorderThickness="1">
-                <TextBlock Text="{Binding StatusMessage}" Foreground="#1E7E34" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding StatusMessage}" Foreground="#1E7E34" FontWeight="SemiBold"
+                           TextWrapping="Wrap" />
             </Border>
             <Border CornerRadius="6" Padding="12,10" Margin="0,0,0,10"
                     Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}"
                     Background="#FDECEA" BorderBrush="#D93025" BorderThickness="1">
-                <TextBlock Text="{Binding ErrorMessage}" Foreground="#C62828" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding ErrorMessage}" Foreground="#C62828" FontWeight="SemiBold"
+                           TextWrapping="Wrap" />
+            </Border>
+            <Border CornerRadius="6" Padding="12,10" Margin="0,0,0,10"
+                    Visibility="{Binding HasInfoMessage, Converter={StaticResource BoolToVis}}"
+                    Background="#E8F1FB" BorderBrush="#0078D4" BorderThickness="1">
+                <TextBlock Text="{Binding StatusMessage}" Foreground="#1B4F82" TextWrapping="Wrap" />
+            </Border>
+            <Border CornerRadius="6" Padding="12,10" Margin="0,0,0,10"
+                    Visibility="{Binding HasWarnings, Converter={StaticResource BoolToVis}}"
+                    Background="#FFF8E1" BorderBrush="#FFB74D" BorderThickness="1">
+                <StackPanel>
+                    <TextBlock Text="⚠️ Advertencias" Foreground="#E65100" FontWeight="SemiBold"
+                               Margin="0,0,0,4" />
+                    <ItemsControl ItemsSource="{Binding WarningMessages}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding}" FontSize="11" Foreground="#7A4F01"
+                                           TextWrapping="Wrap" Margin="0,2,0,0" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
             </Border>
         </StackPanel>
 
@@ -63,16 +86,17 @@
             <Button Grid.Column="0" Content="🔍 Verificar estado"
                     Command="{Binding CheckStatusCommand}" Padding="16,8" FontSize="12" FontWeight="SemiBold"
                     Background="#0078D4" Foreground="White" BorderThickness="0"
-                    IsEnabled="{Binding IsRunning, Converter={StaticResource InvertBool}}" />
+                    IsEnabled="{Binding NotRunning}" />
 
             <Button Grid.Column="2" Content="🛡️ Crear punto de restauración"
                     Command="{Binding CreateRestorePointCommand}" Padding="16,8" FontSize="12" FontWeight="SemiBold"
                     Background="#2E7D32" Foreground="White" BorderThickness="0"
-                    IsEnabled="{Binding CanCreatePoint}" />
+                    IsEnabled="{Binding CreateButtonEnabled}" />
 
             <Button Grid.Column="4" Content="📋 Historial"
                     Command="{Binding LoadHistoryCommand}" Padding="12,8" FontSize="11"
-                    Background="#F3F3F3" Foreground="#333" BorderBrush="#CCC" BorderThickness="1" />
+                    Background="#F3F3F3" Foreground="#333" BorderBrush="#CCC" BorderThickness="1"
+                    IsEnabled="{Binding NotRunning}" />
 
             <TextBlock Grid.Column="6" Text="{Binding StatusText}" FontSize="12" Foreground="#666" VerticalAlignment="Center" />
         </Grid>
@@ -130,8 +154,8 @@
                                     <TextBlock Text="{Binding RestoreServiceText}" FontSize="13" FontWeight="SemiBold" />
                                 </StackPanel>
                                 <Border Grid.Column="1" HorizontalAlignment="Right" CornerRadius="3" Padding="6,2"
-                                        Background="{Binding IsSystemRestoreAvailable, Converter={StaticResource StatusColorConverter}}">
-                                    <TextBlock Text="{Binding IsSystemRestoreAvailable, Converter={StaticResource BoolToVisYesNo}}"
+                                        Background="{Binding AvailabilityBadgeColor}">
+                                    <TextBlock Text="{Binding AvailabilityBadgeText}"
                                                FontSize="11" Foreground="White" />
                                 </Border>
                             </Grid>
@@ -147,22 +171,21 @@
                                     <TextBlock Text="{Binding ProtectionText}" FontSize="13" FontWeight="SemiBold" />
                                 </StackPanel>
                                 <Border Grid.Column="1" HorizontalAlignment="Right" CornerRadius="3" Padding="6,2"
-                                        Background="{Binding IsProtectionEnabled, Converter={StaticResource StatusColorConverter}}">
-                                    <TextBlock Text="{Binding IsProtectionEnabled, Converter={StaticResource BoolToVisYesNo}}"
+                                        Background="{Binding ProtectionBadgeColor}">
+                                    <TextBlock Text="{Binding ProtectionBadgeText}"
                                                FontSize="11" Foreground="White" />
                                 </Border>
                             </Grid>
 
                             <!-- Disponibilidad -->
-                            <Border Background="{Binding CanCreatePoint, Converter={StaticResource CanCreateColorConverter}}"
+                            <Border Background="{Binding AttemptBadgeColor}"
                                     CornerRadius="6" Padding="12,10" Margin="0,5,0,0">
                                 <StackPanel>
-                                    <TextBlock FontSize="13" FontWeight="SemiBold" Foreground="White">
-                                        <Run Text="{Binding CanCreatePoint, Converter={StaticResource CanCreateTextConverter}}" />
-                                    </TextBlock>
-                                    <TextBlock Text="Los puntos de restauración permiten revertir cambios importantes en el sistema."
+                                    <TextBlock Text="{Binding StatusMessage}" FontSize="13" FontWeight="SemiBold"
+                                               Foreground="White" TextWrapping="Wrap" />
+                                    <TextBlock Text="La protección del sistema es informativa: Windows confirma el resultado real al crear el punto."
                                                FontSize="11" Foreground="White" Opacity="0.9"
-                                               Visibility="{Binding CanCreatePoint, Converter={StaticResource BoolToVis}}" />
+                                               TextWrapping="Wrap" Margin="0,4,0,0" />
                                 </StackPanel>
                             </Border>
                         </StackPanel>
@@ -191,7 +214,7 @@
                                    Foreground="#E65100" Margin="0,0,0,6" />
                         <TextBlock Text="• Windows puede limitar la creación de puntos si ya se creó uno recientemente" FontSize="11" Foreground="#555" />
                         <TextBlock Text="• Se requieren permisos de administrador" FontSize="11" Foreground="#555" />
-                        <TextBlock Text="• La protección del sistema debe estar habilitada" FontSize="11" Foreground="#555" />
+                        <TextBlock Text="• La protección del sistema es informativa: Windows confirma el resultado real al crear el punto" FontSize="11" Foreground="#555" TextWrapping="Wrap" />
                         <TextBlock Text="• No se eliminan puntos de restauración existentes" FontSize="11" Foreground="#555" />
                     </StackPanel>
                 </Border>

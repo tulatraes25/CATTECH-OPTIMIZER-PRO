@@ -98,6 +98,12 @@ public partial class TempCleanupViewModel : ObservableObject
     public bool CanStartCleanup => CanReviewCleanupConsent && HasCleanupConsent
         && _approvedScope == CurrentSelectionScope();
 
+    /// <summary>
+    /// Confirmación explícita provista por la vista (diálogo modal). Cuando no
+    /// hay host de UI (tests), se exige la casilla HasCleanupConsent.
+    /// </summary>
+    public Func<string, bool>? ConfirmCleanupRequest { get; set; }
+
     partial void OnHasScannedChanged(bool value) => RefreshConsentAvailability();
     partial void OnIsRunningChanged(bool value) => RefreshConsentAvailability();
     partial void OnSelectedTargetsCountChanged(int value) => RefreshConsentAvailability();
@@ -161,9 +167,7 @@ public partial class TempCleanupViewModel : ObservableObject
 
             UpdateSelectedCount();
             HasScanned = true;
-            // RECYCLE_BIN is intentionally unavailable; don't treat its
-            // mandatory opt-out as a failure of otherwise healthy scans.
-            var candidates = _targets.Where(t => t.Id != "RECYCLE_BIN").ToArray();
+            var candidates = _targets.ToArray();
             StatusText = candidates.All(t => !t.IsAccessible)
                 ? "Escaneo sin ubicaciones disponibles"
                 : candidates.Any(t => !t.IsAccessible)
@@ -190,6 +194,63 @@ public partial class TempCleanupViewModel : ObservableObject
             IsScanning = false;
             IsRunning = false;
         }
+    }
+
+    /// <summary>
+    /// Flujo de un solo clic usado por la UI: valida, pide confirmación con los
+    /// números reales de la selección y recién entonces borra. La confirmación
+    /// del diálogo es el consentimiento explícito para ESA selección exacta.
+    /// </summary>
+    [RelayCommand]
+    private async Task CleanupWithConfirmationAsync()
+    {
+        if (IsRunning)
+            return;
+
+        if (!HasScanned)
+        {
+            ShowError("Primero escaneá las ubicaciones antes de limpiar.");
+            return;
+        }
+
+        var selected = _targets.Where(t => t.IsSelected).ToList();
+        if (selected.Count == 0)
+        {
+            ShowError("No hay ubicaciones seleccionadas para limpiar.");
+            return;
+        }
+
+        var files = selected.Sum(t => (long)t.EstimatedFileCount);
+        var bytes = selected.Sum(t => t.EstimatedSizeBytes);
+        var message =
+            $"¿Eliminar {files} archivos ({FormatSize(bytes)}) de las ubicaciones seleccionadas?\n\n" +
+            string.Join("\n", selected.Select(t => "• " + t.DisplayName)) +
+            "\n\nEsta acción no crea respaldo y no se puede deshacer.";
+
+        if (ConfirmCleanupRequest is not null && !ConfirmCleanupRequest(message))
+            return;
+
+        // The dialog is the explicit approval for the exact current selection.
+        HasCleanupConsent = true;
+        if (_approvedScope != CurrentSelectionScope())
+        {
+            HasCleanupConsent = false;
+            ShowError("La selección cambió antes de confirmar. Volvé a intentar la limpieza.");
+            return;
+        }
+
+        await CleanupAsync();
+    }
+
+    private static string FormatSize(long bytes)
+    {
+        if (bytes >= 1024L * 1024 * 1024)
+            return $"{bytes / (1024.0 * 1024 * 1024):F2} GB";
+        if (bytes >= 1024L * 1024)
+            return $"{bytes / (1024.0 * 1024):F1} MB";
+        if (bytes >= 1024L)
+            return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes} bytes";
     }
 
     /// <summary>
@@ -314,7 +375,7 @@ public partial class TempCleanupViewModel : ObservableObject
         if (target is null || IsRunning)
             return;
 
-        if (!target.IsScanned || !target.IsAccessible || target.Id == "RECYCLE_BIN")
+        if (!target.IsScanned || !target.IsAccessible)
             target.IsSelected = false;
 
         UpdateSelectedCount();

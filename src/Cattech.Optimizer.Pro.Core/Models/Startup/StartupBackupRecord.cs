@@ -57,6 +57,12 @@ public class StartupBackupRecord
     public string? OriginalValue { get; set; }
 
     /// <summary>
+    /// Tipo original del valor de registro (String, ExpandString, Binary...).
+    /// Sin esto, un REG_EXPAND_SZ volvía como string literal al restaurar.
+    /// </summary>
+    public string? OriginalValueKind { get; set; }
+
+    /// <summary>
     /// Valor guardado en backup (si aplica).
     /// </summary>
     public string? BackupValue { get; set; }
@@ -153,5 +159,6 @@ public class StartupDisableSummary
     public int FailedCount { get; set; }
     public int SkippedMicrosoftCount { get; set; }
     public int SkippedUnsupportedCount { get; set; }
+    public int SkippedAlreadyDisabledCount { get; set; }
     public List<StartupDisableResult> Results { get; set; } = new();
 }

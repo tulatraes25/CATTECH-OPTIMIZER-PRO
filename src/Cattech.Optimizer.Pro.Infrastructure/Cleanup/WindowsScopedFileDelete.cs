@@ -30,9 +30,9 @@ internal static class WindowsScopedFileDelete
     private const int FileDispositionInfoClass = 4;
 
     /// <summary>
-    /// Deletes only a handle-verified, old, ordinary DIRECT-CHILD file at its
-    /// exact path in the handle-verified directory. Returns false if
-    /// anything cannot be proven. All caller-supplied paths are untrusted.
+    /// Deletes only a handle-verified, ordinary file below the verified
+    /// allowed root. Returns false if anything cannot be proven.
+    /// All caller-supplied paths are untrusted.
     /// </summary>
     internal static bool TryDelete(
         string allowedDirectory, string candidatePath, out long deletedBytes)
@@ -67,15 +67,16 @@ internal static class WindowsScopedFileDelete
             || !IsSafeAllowedRoot(root))
             return false;
 
-        // Fail closed on nested paths. Intermediate child directories could
-        // be renamed after a pathname check; until handle-relative traversal
-        // is independently reviewed, only delete DIRECT children of a held
-        // allowed-root directory handle. Never recursively delete under it.
+        // Only files below the verified allowed root are eligible. Nested
+        // subdirectories are supported (real %TEMP% keeps most garbage below
+        // the root); the final path of the opened handle must still equal the
+        // textual candidate path, so a junction/symlink parent can never
+        // redirect the deletion outside the root.
         // Also reject alternate data streams, device paths, and volume roots.
         if (candidate.Length < 3 || root.Length < 3
             || candidate.AsSpan(2).Contains(':')
             || root.AsSpan(2).Contains(':')
-            || !string.Equals(Path.GetDirectoryName(candidate), root,
+            || !candidate.StartsWith(root + Path.DirectorySeparatorChar,
                 StringComparison.OrdinalIgnoreCase))
             return false;
 
@@ -107,27 +108,10 @@ internal static class WindowsScopedFileDelete
             || !MatchesFinalPath(fileHandle, candidate))
             return false;
 
-        // A recently created file may carry an ancient LastWriteTime after
-        // extraction or copying. Require BOTH ages from this same file handle
-        // to exceed the retention period. Unknown timestamps fail closed.
-        var lastWriteTicks = ((long)info.LastWriteTime.High << 32)
-            | info.LastWriteTime.Low;
-        var creationTicks = ((long)info.CreationTime.High << 32)
-            | info.CreationTime.Low;
-        if (lastWriteTicks <= 0 || creationTicks <= 0)
-            return false;
-        DateTime lastWriteUtc;
-        DateTime createdUtc;
-        try
-        {
-            lastWriteUtc = DateTime.FromFileTimeUtc(lastWriteTicks);
-            createdUtc = DateTime.FromFileTimeUtc(creationTicks);
-        }
-        catch (ArgumentOutOfRangeException) { return false; }
-        var retentionCutoff = DateTime.UtcNow.AddDays(-CleanupTargets.MinimumAgeDays);
-        if (lastWriteUtc > retentionCutoff || createdUtc > retentionCutoff)
-            return false;
-
+        // No retention/age requirement: a temporary file is disposable and
+        // its timestamps are not a safety signal. What matters is that the
+        // handle-verified object is a single-link, ordinary file inside the
+        // verified root and is not held open by another process.
         var length = ((ulong)info.FileSizeHigh << 32) | info.FileSizeLow;
         if (length > long.MaxValue)
             return false;

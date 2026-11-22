@@ -1,6 +1,6 @@
 # CATTECH Smoke Test Result
 
-**Version**: v0.3.0
+**Version**: v0.3.1
 **Fecha**: YYYY-MM-DD
 **Perfil**: Desktop / Notebook / Otro
 **Windows**: Windows 11 / Windows 10 LTSC (build)
@@ -19,7 +19,7 @@
 | Área | Resultado | Observaciones |
 |------|-----------|---------------|
 | Arranque normal (sin elevar) | | |
-| Footer v0.3.0 / Home | | |
+| Footer v0.3.1 / Home | | |
 | Navegación (secciones abren) | | |
 | Configuración (datos ficticios + persistencia) | | |
 | Cliente/equipo (datos ficticios) | | |

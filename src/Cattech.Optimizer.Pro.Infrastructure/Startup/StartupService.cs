@@ -32,12 +32,20 @@ public class StartupService : IStartupService
         StartupSourceType.StartupFolderCommon
     ];
 
-    // Prefijos y palabras clave para detectar Microsoft
+    private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    private const string RunOnceKeyPath = @"Software\Microsoft\Windows\CurrentVersion\RunOnce";
+    private const string DisabledRunKeyPath = @"Software\CATTECH\OptimizerPro\DisabledStartup\Run";
+    private const string DisabledRunOnceKeyPath = @"Software\CATTECH\OptimizerPro\DisabledStartup\RunOnce";
+
+    // Señales explícitas de Microsoft. No se usan palabras genéricas como
+    // "windows", "office" o "security": bloqueaban aplicaciones legítimas de
+    // terceros (LibreOffice, antivirus, etc.) y volvían inutilizable la
+    // desactivación. Solo nombre de la entrada, ubicación y ruta del ejecutable.
     private static readonly string[] MicrosoftKeywords =
     [
-        "microsoft", "ms-", "windows", "msn", "msedge", "msoffice",
-        "onedrive", "teams", "office", "defender", "security",
-        "cortana", "xbox", "surface", "halo"
+        "microsoft", "windows defender", "windows security", "windows update",
+        "windows explorer", "securityhealth", "msedge", "windowsapps",
+        "windows backup", "windows mobile", "cortana", "xbox game"
     ];
 
     private static readonly string[] HighRiskPatterns =
@@ -104,6 +112,10 @@ public class StartupService : IStartupService
 
         foreach (var entry in entries)
         {
+            // Deterministic identity: the previous random id changed on every
+            // analysis, so "already disabled" and restore correlation could
+            // never match the same entry twice.
+            entry.Id = ComputeEntryId(entry);
             ClassifyEntry(entry);
             var key = $"{entry.Name}|{entry.Command}";
             if (!seenCommands.Add(key))
@@ -268,13 +280,13 @@ public class StartupService : IStartupService
             // Verificar si ya tiene backup
             if (backups.Any(b => b.EntryId == entry.Id && b.CanRestore))
             {
-                summary.FailedCount++;
+                summary.SkippedAlreadyDisabledCount++;
                 summary.Results.Add(new StartupDisableResult
                 {
                     EntryName = entry.Name,
                     EntryId = entry.Id,
                     Result = StartupActionResult.AlreadyDisabled,
-                    Message = "La entrada ya fue desactivada anteriormente"
+                    Message = "La entrada ya fue desactivada anteriormente (hay backup para restaurar)."
                 });
                 continue;
             }
@@ -406,47 +418,60 @@ public class StartupService : IStartupService
 
     private static void DisableRegistryEntry(StartupEntry entry, StartupBackupRecord record)
     {
-        var hive = entry.Location.StartsWith("HKCU") ? RegistryHive.CurrentUser : RegistryHive.LocalMachine;
-        var keyPath = entry.Location.Contains("RunOnce")
-            ? @"Software\Microsoft\Windows\CurrentVersion\RunOnce"
-            : @"Software\Microsoft\Windows\CurrentVersion\Run";
+        var hive = entry.Location.StartsWith("HKCU", StringComparison.OrdinalIgnoreCase)
+            ? RegistryHive.CurrentUser
+            : RegistryHive.LocalMachine;
+        var isRunOnce = entry.SourceType == StartupSourceType.RegistryRunOnce
+            || entry.Location.Contains("RunOnce", StringComparison.OrdinalIgnoreCase);
+        var keyPath = isRunOnce ? RunOnceKeyPath : RunKeyPath;
+        var backupKeyPath = isRunOnce ? DisabledRunOnceKeyPath : DisabledRunKeyPath;
 
-        var backupKeyPath = entry.Location.Contains("RunOnce")
-            ? @"Software\CATTECH\OptimizerPro\DisabledStartup\RunOnce"
-            : @"Software\CATTECH\OptimizerPro\DisabledStartup\Run";
-
-        // Leer valor original
+        // La clave se abre ESCRIBIBLE: la versión anterior la abría solo para
+        // lectura y DeleteValue lanzaba UnauthorizedAccessException siempre,
+        // por lo que ningún programa de inicio se desactivaba jamás.
         using var sourceKey = RegistryKey.OpenBaseKey(hive, RegistryView.Registry64)
-            ?.OpenSubKey(keyPath, false);
+            .OpenSubKey(keyPath, writable: true);
 
         if (sourceKey == null)
-            throw new InvalidOperationException($"No se pudo acceder a la clave: {keyPath}");
+            throw new UnauthorizedAccessException(
+                $"No se pudo abrir {keyPath} para escritura. " +
+                (hive == RegistryHive.LocalMachine
+                    ? "Ejecutá CATTECH como administrador para modificar HKLM."
+                    : "Verificá los permisos del usuario actual."));
 
-        var value = sourceKey.GetValue(entry.Name);
+        var value = sourceKey.GetValue(
+            entry.Name, null, RegistryValueOptions.DoNotExpandEnvironmentNames);
         if (value == null)
             throw new InvalidOperationException($"No se encontró el valor: {entry.Name}");
 
+        var valueKind = sourceKey.GetValueKind(entry.Name);
         record.OriginalValue = value.ToString();
-        record.BackupLocation = $"{(hive == RegistryHive.CurrentUser ? "HKCU" : "HKLM")}\\{backupKeyPath}";
+        record.OriginalValueKind = valueKind.ToString();
+        record.BackupLocation =
+            $"{(hive == RegistryHive.CurrentUser ? "HKCU" : "HKLM")}\\{backupKeyPath}";
 
-        // Copiar a clave de backup
         using var backupKey = RegistryKey.OpenBaseKey(hive, RegistryView.Registry64)
-            ?.CreateSubKey(backupKeyPath, true);
-
+            .CreateSubKey(backupKeyPath, writable: true);
         if (backupKey == null)
             throw new InvalidOperationException("No se pudo crear la clave de backup");
 
-        // Guardar metadata en el nombre del valor
         var backupValueName = $"CATTECH_{entry.Id}_{entry.Name}";
-        backupKey.SetValue(backupValueName, value, RegistryValueKind.String);
-
+        backupKey.SetValue(backupValueName, value, valueKind);
         record.BackupValue = value.ToString();
         record.BackupLocation = $"{record.BackupLocation}\\{backupValueName}";
 
-        // Eliminar valor original
-        sourceKey.DeleteValue(entry.Name, false);
-
-        sourceKey.Close();
+        try
+        {
+            sourceKey.DeleteValue(entry.Name, throwOnMissingValue: false);
+        }
+        catch
+        {
+            // No dejar un backup huérfano si el borrado falló: sin este
+            // rollback la entrada aparecía como "ya desactivada".
+            try { backupKey.DeleteValue(backupValueName, throwOnMissingValue: false); }
+            catch { /* Preservar el error original. */ }
+            throw;
+        }
     }
 
     private async Task DisableFolderEntryAsync(StartupEntry entry, StartupBackupRecord record)
@@ -456,9 +481,11 @@ public class StartupService : IStartupService
         if (!File.Exists(sourcePath))
             throw new FileNotFoundException($"No se encontró el archivo: {sourcePath}");
 
-        // Crear carpeta de backup con timestamp
+        // Crear carpeta de backup única (timestamps con resolución de segundo
+        // colisionaban y sobrescribían respaldos de distintas entradas).
         var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
-        var backupFolder = Path.Combine(_backupsDirectory, timestamp);
+        var backupFolder = Path.Combine(
+            _backupsDirectory, $"{timestamp}-{Guid.NewGuid().ToString("N")[..8]}");
         EnsureDirectoryExists(backupFolder);
 
         var fileName = Path.GetFileName(sourcePath);
@@ -477,39 +504,55 @@ public class StartupService : IStartupService
 
     private static void RestoreRegistryEntry(StartupBackupRecord record)
     {
-        var hive = record.OriginalLocation.StartsWith("HKCU") ? RegistryHive.CurrentUser : RegistryHive.LocalMachine;
-        var keyPath = record.SourceType == StartupSourceType.RegistryRunOnce
-            ? @"Software\Microsoft\Windows\CurrentVersion\RunOnce"
-            : @"Software\Microsoft\Windows\CurrentVersion\Run";
+        var hive = record.OriginalLocation.StartsWith("HKCU", StringComparison.OrdinalIgnoreCase)
+            ? RegistryHive.CurrentUser
+            : RegistryHive.LocalMachine;
+        var isRunOnce = record.SourceType == StartupSourceType.RegistryRunOnce;
+        var keyPath = isRunOnce ? RunOnceKeyPath : RunKeyPath;
+        var backupKeyPath = isRunOnce ? DisabledRunOnceKeyPath : DisabledRunKeyPath;
 
-        // Leer valor del backup
-        var backupKeyPath = record.SourceType == StartupSourceType.RegistryRunOnce
-            ? @"Software\CATTECH\OptimizerPro\DisabledStartup\RunOnce"
-            : @"Software\CATTECH\OptimizerPro\DisabledStartup\Run";
-
+        // La clave de backup también se abre escribible: la versión anterior
+        // la abría solo-lectura y DeleteValue fallaba tras restaurar el valor.
         using var backupKey = RegistryKey.OpenBaseKey(hive, RegistryView.Registry64)
-            ?.OpenSubKey(backupKeyPath, false);
+            .OpenSubKey(backupKeyPath, writable: true);
 
         if (backupKey == null)
             throw new InvalidOperationException("No se encontró la clave de backup");
 
         var backupValueName = $"CATTECH_{record.EntryId}_{record.EntryName}";
-        var value = backupKey.GetValue(backupValueName);
+        var value = backupKey.GetValue(
+            backupValueName, null, RegistryValueOptions.DoNotExpandEnvironmentNames);
 
         if (value == null)
             throw new InvalidOperationException($"No se encontró el backup: {backupValueName}");
 
-        // Restaurar en ubicación original
+        // Restaurar en ubicación original preservando el tipo del valor.
         using var targetKey = RegistryKey.OpenBaseKey(hive, RegistryView.Registry64)
-            ?.CreateSubKey(keyPath, true);
+            .CreateSubKey(keyPath, writable: true);
 
         if (targetKey == null)
             throw new InvalidOperationException("No se pudo crear la clave de restauración");
 
-        targetKey.SetValue(record.EntryName, value, RegistryValueKind.String);
+        targetKey.SetValue(record.EntryName, value, ParseValueKind(record.OriginalValueKind, value));
 
         // Eliminar del backup
-        backupKey.DeleteValue(backupValueName, false);
+        backupKey.DeleteValue(backupValueName, throwOnMissingValue: false);
+    }
+
+    private static RegistryValueKind ParseValueKind(string? storedKind, object value)
+    {
+        if (Enum.TryParse<RegistryValueKind>(storedKind, ignoreCase: true, out var kind)
+            && kind is not RegistryValueKind.Unknown and not RegistryValueKind.None)
+            return kind;
+
+        return value switch
+        {
+            string[] => RegistryValueKind.MultiString,
+            byte[] => RegistryValueKind.Binary,
+            int => RegistryValueKind.DWord,
+            long => RegistryValueKind.QWord,
+            _ => RegistryValueKind.String
+        };
     }
 
     private async Task RestoreFolderEntryAsync(StartupBackupRecord record)
@@ -618,6 +661,19 @@ public class StartupService : IStartupService
         return entries;
     }
 
+    /// <summary>
+    /// Stable 8-char identity: the same source, location and name always
+    /// produce the same id across analyses, so "already disabled" and restore
+    /// correlation keep working.
+    /// </summary>
+    internal static string ComputeEntryId(StartupEntry entry)
+    {
+        var payload = $"{entry.SourceType}|{entry.Location}|{entry.Name}";
+        var hash = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(payload));
+        return Convert.ToHexString(hash)[..8];
+    }
+
     private static async Task<List<StartupEntry>> ReadScheduledTaskEntriesAsync()
     {
         var entries = new List<StartupEntry>();
@@ -625,25 +681,59 @@ public class StartupService : IStartupService
         {
             await Task.Run(() =>
             {
-                var sw = Stopwatch.StartNew();
-                using var searcher = new System.Management.ManagementObjectSearcher(
-                    @"SELECT * FROM Win32_ScheduledTask WHERE Triggers LIKE '%Logon%'");
-                foreach (var obj in searcher.Get())
+                // Win32_ScheduledTask no existe en Windows 10/11. Se enumeran
+                // las tareas con trigger de inicio de sesión/arranque mediante
+                // el cmdlet nativo y se leen como JSON (solo lectura).
+                var script = string.Join(" ",
+                    "try {",
+                    "Get-ScheduledTask -ErrorAction Stop |",
+                    "Where-Object { $_.Triggers | Where-Object { $_.CimClass.CimClassName -in @('MSFT_TaskLogonTrigger','MSFT_TaskBootTrigger') } } |",
+                    "Where-Object { $_.State -ne 'Disabled' } |",
+                    "Select-Object TaskName, TaskPath, State |",
+                    "ConvertTo-Json -Compress",
+                    "} catch { }");
+
+                var psi = new ProcessStartInfo
                 {
-                    if (sw.ElapsedMilliseconds > 5000) break;
-                    var name = obj["Name"]?.ToString();
-                    var path = obj["Path"]?.ToString();
-                    if (!string.IsNullOrWhiteSpace(name))
+                    FileName = "powershell.exe",
+                    Arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"" +
+                        script.Replace("\"", "\\\"") + "\"",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                };
+
+                using var process = Process.Start(psi);
+                if (process is null)
+                    return;
+                var output = process.StandardOutput.ReadToEnd();
+                if (!process.WaitForExit(8000))
+                {
+                    try { process.Kill(entireProcessTree: true); } catch { }
+                    return;
+                }
+                if (string.IsNullOrWhiteSpace(output))
+                    return;
+
+                using var document = JsonDocument.Parse(output);
+                var items = document.RootElement.ValueKind == JsonValueKind.Array
+                    ? document.RootElement.EnumerateArray().ToList()
+                    : [document.RootElement];
+                foreach (var item in items)
+                {
+                    var name = GetJsonString(item, "TaskName");
+                    if (string.IsNullOrWhiteSpace(name))
+                        continue;
+                    var path = GetJsonString(item, "TaskPath") ?? string.Empty;
+                    entries.Add(new StartupEntry
                     {
-                        entries.Add(new StartupEntry
-                        {
-                            Name = name,
-                            Command = path ?? "No disponible",
-                            Location = path ?? "Desconocido",
-                            SourceType = StartupSourceType.ScheduledTask,
-                            Status = StartupEntryStatus.Active
-                        });
-                    }
+                        Name = name,
+                        Command = $"Tarea programada: {path}{name}",
+                        Location = $"TareaProgramada\\{path}{name}",
+                        SourceType = StartupSourceType.ScheduledTask,
+                        Status = StartupEntryStatus.Active
+                    });
                 }
             });
         }
@@ -651,7 +741,16 @@ public class StartupService : IStartupService
         return entries;
     }
 
-    private static void ClassifyEntry(StartupEntry entry)
+    private static string? GetJsonString(JsonElement element, string property)
+    {
+        return element.TryGetProperty(property, out var value)
+            && value.ValueKind == JsonValueKind.String
+            ? value.GetString() : null;
+    }
+
+    // Internal para poder probar la clasificación con entradas sintéticas sin
+    // depender del registro real del equipo.
+    internal static void ClassifyEntry(StartupEntry entry)
     {
         entry.IsMicrosoft = IsMicrosoftEntry(entry);
         entry.Publisher = DetectPublisher(entry);
@@ -674,8 +773,12 @@ public class StartupService : IStartupService
 
     private static bool IsMicrosoftEntry(StartupEntry entry)
     {
-        var nameAndCommand = $"{entry.Name} {entry.Command}".ToLowerInvariant();
-        return MicrosoftKeywords.Any(k => nameAndCommand.Contains(k, StringComparison.OrdinalIgnoreCase));
+        // Solo nombre de la entrada y ruta del ejecutable. La ubicación se
+        // excluye a propósito: toda entrada de Run vive bajo
+        // Software\Microsoft\Windows\... y marcaba TODO como Microsoft.
+        var executable = ExtractPathFromCommand(entry.Command);
+        var signals = $"{entry.Name} {executable}".ToLowerInvariant();
+        return MicrosoftKeywords.Any(k => signals.Contains(k, StringComparison.OrdinalIgnoreCase));
     }
 
     private static string DetectPublisher(StartupEntry entry)

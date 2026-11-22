@@ -121,8 +121,8 @@ public class TempCleanupTests
     [Fact]
     public async Task Scan_BackgroundWorker_DoesNotBlockInvokingThread()
     {
-        // RECYCLE_BIN is intentionally disabled; no filesystem scan, cleanup
-        // or deletion is performed in this threading-only test.
+        // Recycle-bin scan is read-only (Shell inventory query); this test only
+        // exercises the background-thread contract, never cleanup or deletion.
         var target = new TempCleanupTarget
         {
             Id = "RECYCLE_BIN",
@@ -163,7 +163,6 @@ public class TempCleanupTests
         var recycle = Assert.Single(scanned);
         Assert.True(recycle.IsScanned);
         Assert.False(recycle.IsSelected);
-        Assert.False(recycle.IsAccessible);
     }
 
     private sealed class InlineProgress(Action<int> onReport) : IProgress<int>
@@ -186,28 +185,31 @@ public class TempCleanupTests
     }
 
     [Fact]
-    public async Task Scan_RecycleBin_IsExplicitlyUnavailable()
+    public async Task Scan_RecycleBin_ReportsInventoryWithoutEmptyingIt()
     {
-        // Scan-only test: no cleanup is ever requested or performed.
+        // Scan-only test: the recycle bin is measured through the Shell API
+        // and is never emptied or modified.
         var service = new TempCleanupService();
         var targets = await service.ScanAsync();
         var recycleBin = Assert.Single(targets, target => target.Id == "RECYCLE_BIN");
 
         Assert.True(recycleBin.IsScanned);
-        Assert.False(recycleBin.IsAccessible);
         Assert.False(recycleBin.IsSelected);
-        Assert.Equal(0, recycleBin.EstimatedSizeBytes);
-        Assert.Equal(0, recycleBin.EstimatedFileCount);
-        Assert.Contains("No disponible", recycleBin.ScanNotes);
+        Assert.False(string.IsNullOrWhiteSpace(recycleBin.ScanNotes));
+        Assert.InRange(recycleBin.EstimatedFileCount, 0, int.MaxValue);
+        Assert.InRange(recycleBin.EstimatedSizeBytes, 0L, long.MaxValue);
+        if (recycleBin.IsAccessible)
+            Assert.DoesNotContain("No disponible", recycleBin.ScanNotes);
     }
 
     [Fact]
-    public async Task Cleanup_DirectRecycleBinSelection_FailsClosed_WithoutDeletingAnyFile()
+    public async Task Cleanup_RecycleBin_RequiresCompletedScanBeforeAnyShellMutation()
     {
-        // Deliberately bypass UI selection/accessibility state. The service
-        // must reject a selected RECYCLE_BIN target with no OS mutation.
+        // The recycle bin must be scanned (verified) before it can be emptied.
+        // This target was never scanned, so the batch fails closed and the
+        // Shell API is never invoked.
         var root = Path.Combine(Path.GetTempPath(),
-            "cattech-recycle-denied-" + Guid.NewGuid().ToString("N"));
+            "cattech-recycle-unverified-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         var sentinel = Path.Combine(root, "keep-me.txt");
         const string original = "SYNTHETIC-DO-NOT-DELETE";
@@ -221,7 +223,8 @@ public class TempCleanupTests
                 DisplayName = "Papelera sintética",
                 Path = root,
                 IsSelected = true,
-                IsAccessible = true
+                IsAccessible = true,
+                IsScanned = false
             };
 
             var result = await service.CleanupAsync(new[] { target });
@@ -229,10 +232,9 @@ public class TempCleanupTests
             Assert.False(result.IsSuccess);
             Assert.Equal(0, result.DeletedFiles);
             Assert.Equal(0L, result.DeletedBytes);
-            Assert.Equal(0, result.FailedFiles); // Rejected target, not a deleted file.
             var error = Assert.Single(result.Errors);
-            Assert.Equal("UnsupportedOperation", error.ErrorType);
-            Assert.Contains("deshabilitada", error.Message);
+            Assert.Equal("UnsafeTarget", error.ErrorType);
+            Assert.Contains("escanear", error.Message, StringComparison.OrdinalIgnoreCase);
             var details = Assert.Single(result.TargetResults);
             Assert.False(details.IsSuccess);
             Assert.Equal(0, details.DeletedFiles);
@@ -503,7 +505,7 @@ public class TempCleanupTests
     }
 
     [Fact]
-    public async Task FolderCleanup_RecentSyntheticFile_IsNotRemovedOrCounted()
+    public async Task FolderCleanup_RecentSyntheticFile_IsRemovedAndCounted()
     {
         var root = Path.Combine(Path.GetTempPath(),
             "cattech-recent-fixture-" + Guid.NewGuid().ToString("N"));
@@ -511,8 +513,9 @@ public class TempCleanupTests
         try
         {
             var file = Path.Combine(root, "recent-synthetic.txt");
-            File.WriteAllText(file, "PRESERVE-RECENT");
+            File.WriteAllText(file, "DELETE-RECENT");
             File.SetLastWriteTimeUtc(file, DateTime.UtcNow);
+            var expectedBytes = new FileInfo(file).Length;
 
             var target = new TempCleanupTarget { Id = "USER_TEMP", Path = root };
             var summary = new TargetResult { TargetId = target.Id };
@@ -520,12 +523,11 @@ public class TempCleanupTests
 
             await new TempCleanupService(root).CleanFolderAsync(target, summary, result);
 
-            Assert.Equal("PRESERVE-RECENT", File.ReadAllText(file));
-            Assert.Equal(0, summary.DeletedFiles);
-            Assert.Equal(0L, summary.DeletedBytes);
-            Assert.Equal(1, summary.SkippedFiles);
-            Assert.Equal(0, result.DeletedFiles);
-            Assert.Equal(1, result.SkippedFiles);
+            Assert.False(File.Exists(file));
+            Assert.Equal(1, summary.DeletedFiles);
+            Assert.Equal(expectedBytes, summary.DeletedBytes);
+            Assert.Equal(1, result.DeletedFiles);
+            Assert.Equal(expectedBytes, result.DeletedBytes);
             Assert.Empty(result.Errors);
         }
         finally { Directory.Delete(root, recursive: true); }
@@ -805,24 +807,27 @@ public class TempCleanupTests
 
 
     [Fact]
-    public async Task Cleanup_NestedOldFile_IsNotInDeletionScope()
+    public async Task Cleanup_NestedFile_IsDeletedRecursively()
     {
         var root = Path.Combine(Path.GetTempPath(),
-            "cattech-direct-only-" + Guid.NewGuid().ToString("N"));
+            "cattech-recursive-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try
         {
             var nested = Path.Combine(root, "nested");
             Directory.CreateDirectory(nested);
-            var nestedFile = Path.Combine(nested, "old-user-data.txt");
-            File.WriteAllText(nestedFile, "SYNTHETIC-KEEP");
-            File.SetCreationTimeUtc(nestedFile, DateTime.UtcNow.AddDays(-8));
-            File.SetLastWriteTimeUtc(nestedFile, DateTime.UtcNow.AddDays(-8));
+            var deeper = Path.Combine(nested, "deeper");
+            Directory.CreateDirectory(deeper);
+            var nestedFile = Path.Combine(deeper, "user-data.tmp");
+            File.WriteAllText(nestedFile, "DELETE-NESTED");
+            File.SetCreationTimeUtc(nestedFile, DateTime.UtcNow);
+            File.SetLastWriteTimeUtc(nestedFile, DateTime.UtcNow);
+            var expectedBytes = new FileInfo(nestedFile).Length;
 
             Assert.True(TempCleanupService.TryEnumerateBounded(
-                root, "*", recursive: false, maxFiles: 5,
+                root, "*", recursive: true, maxFiles: 20,
                 maxDuration: TimeSpan.FromSeconds(3), out var candidates));
-            Assert.Empty(candidates);
+            Assert.Single(candidates);
 
             var target = new TempCleanupTarget { Id = "USER_TEMP", Path = root };
             var details = new TargetResult { TargetId = target.Id };
@@ -830,10 +835,13 @@ public class TempCleanupTests
             await new TempCleanupService(root).CleanFolderAsync(
                 target, details, result);
 
-            Assert.Equal(0, details.DeletedFiles);
-            Assert.Equal(0L, details.DeletedBytes);
+            Assert.False(File.Exists(nestedFile));
+            Assert.Equal(1, details.DeletedFiles);
+            Assert.Equal(expectedBytes, details.DeletedBytes);
             Assert.Empty(result.Errors);
-            Assert.Equal("SYNTHETIC-KEEP", File.ReadAllText(nestedFile));
+            // Empty subdirectories are pruned; the target root is preserved.
+            Assert.False(Directory.Exists(nested));
+            Assert.True(Directory.Exists(root));
         }
         finally { Directory.Delete(root, recursive: true); }
     }
@@ -907,14 +915,14 @@ public class TempCleanupTests
     }
 
     [Fact]
-    public void ScanFolder_OnlyEstimatesFilesOlderThanRetention()
+    public async Task ScanFolder_EstimatesAllRegularFiles()
     {
         var root = Path.Combine(Path.GetTempPath(),
             "cattech-age-scan-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try
         {
-            var eligible = Path.Combine(root, "older-than-seven-days.tmp");
+            var eligible = Path.Combine(root, "regular.tmp");
             var justCopied = Path.Combine(root, "copied-with-old-modified.tmp");
             var editedToday = Path.Combine(root, "recently-updated.tmp");
             File.WriteAllBytes(eligible, new byte[719]);
@@ -937,11 +945,17 @@ public class TempCleanupTests
             Assert.True(target.IsAccessible);
             Assert.True(target.IsScanned);
             Assert.True(target.IsSelected);
-            Assert.Equal(1, target.EstimatedFileCount);
-            Assert.Equal(719L, target.EstimatedSizeBytes);
-            Assert.True(File.Exists(eligible));
-            Assert.True(File.Exists(justCopied));
-            Assert.True(File.Exists(editedToday));
+            Assert.Equal(3, target.EstimatedFileCount);
+            Assert.Equal(719L + 481L + 347L, target.EstimatedSizeBytes);
+
+            var summary = new TargetResult { TargetId = target.Id };
+            var audit = new TempCleanupResult();
+            await new TempCleanupService(root)
+                .CleanFolderAsync(target, summary, audit);
+            Assert.False(File.Exists(eligible));
+            Assert.False(File.Exists(justCopied));
+            Assert.False(File.Exists(editedToday));
+            Assert.Equal(3, summary.DeletedFiles);
         }
         finally { Directory.Delete(root, recursive: true); }
     }

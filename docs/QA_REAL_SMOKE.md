@@ -31,7 +31,7 @@ El smoke NO es una sesión de trabajo real: es validación de la aplicación pub
 
 ## Diferencia entre tests automatizados y smoke real
 
-- Tests automatizados: 1870 unit/integration con fakes, ejecutados por CI en runners efímeros.
+- Tests automatizados: 1946 unit/integration con fakes, ejecutados por CI en runners efímeros.
 - Smoke real: observación manual de la aplicación publicada en una máquina real, con hardware real o ausencia del mismo.
 
 No asumir que "los tests pasan" implica que la app funciona en una PC real.
@@ -40,10 +40,10 @@ No asumir que "los tests pasan" implica que la app funciona en una PC real.
 
 ## Paso 0 — Integridad de la Release oficial
 
-Descargar los assets oficiales (GitHub CLI disponible). Reemplazar `$VERSION` por la versión actual (ej. `0.3.0`):
+Descargar los assets oficiales (GitHub CLI disponible). Reemplazar `$VERSION` por la versión actual (ej. `0.3.1`):
 
 ```powershell
-$VERSION = "0.3.0"
+$VERSION = "0.3.1"
 gh release download "v$VERSION" `
   --repo tulatraes25/CATTECH-OPTIMIZER-PRO `
   -p "CATTECH-Optimizer-Pro-v$VERSION-win-x64.zip" `
@@ -178,9 +178,9 @@ Home · Configuración · Cliente/equipo · Diagnóstico · Pantallas azules · 
 ## Estado actual
 
 - P.3.1: ✅ toolkit + verificación de baseline del paquete publicado.
-- P.3.2: ⏳ pendiente — pruebas manuales reales por perfil (Desktop / Notebook) sobre v0.3.0.
+- P.3.2: ⏳ pendiente — pruebas manuales reales por perfil (Desktop / Notebook) sobre v0.3.1.
 
-La release v0.3.0 se publicó con build sin warnings y 1870 tests automatizados en verde sobre el SHA exacto. La verificación física sigue pendiente: no marcar Desktop PASS / Notebook PASS hasta ejecutarla realmente.
+La release v0.3.1 se publicó con build sin warnings y 1870 tests automatizados en verde sobre el SHA exacto. La verificación física sigue pendiente: no marcar Desktop PASS / Notebook PASS hasta ejecutarla realmente.
 
 ## Hallazgos conocidos de v0.2.0
 

@@ -4,7 +4,7 @@
 ; (ver installer\README.md para regenerarlo).
 
 #define MyAppName "CATTECH OPTIMIZER PRO"
-#define MyAppVersion "0.3.0"
+#define MyAppVersion "0.3.1"
 #define MyAppPublisher "CATTECH"
 #define MyAppExeName "Cattech.Optimizer.Pro.UI.exe"
 #define MyAppUrl "https://github.com/tulatraes25/CATTECH-OPTIMIZER-PRO"

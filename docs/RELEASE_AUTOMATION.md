@@ -65,8 +65,8 @@ Evita publicar un binario construido desde un commit distinto del source/tag pre
 
 ```bash
 gh workflow run release-package.yml \
-  -f version=0.3.0 \
-  -f source_ref=v0.3.0 \
+  -f version=0.3.1 \
+  -f source_ref=v0.3.1 \
   --ref main
 ```
 
@@ -100,9 +100,9 @@ Publicación manual CONTROLADA de una versión futura. **Solo `workflow_dispatch
 
 ```bash
 gh workflow run release.yml \
-  -f version=0.3.0 \
+  -f version=0.3.1 \
   -f source_sha=<SHA de main> \
-  -f release_notes_path=docs/RELEASE_NOTES_V0_3.md \
+  -f release_notes_path=docs/RELEASE_NOTES_V0_3_1.md \
   -f dry_run=true \
   --ref main
 ```

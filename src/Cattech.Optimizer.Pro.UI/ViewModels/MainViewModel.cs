@@ -253,10 +253,17 @@ public partial class MainViewModel : ObservableObject
     {
         _restorePointViewModel ??= new RestorePointViewModel(_restorePointService);
 
-        return new RestorePointView
+        var view = new RestorePointView
         {
             DataContext = _restorePointViewModel
         };
+
+        // Auto-verificación al abrir la sección: el botón de crear ya no depende de una sonda
+        // obsoleta, pero conviene mostrar el estado real sin exigir un clic extra. La verificación
+        // es asíncrona y no bloquea el hilo de UI; la propia VM evita la reentrancia.
+        _ = _restorePointViewModel.CheckStatusCommand.ExecuteAsync(null);
+
+        return view;
     }
 
     private object CreateReportView()
@@ -275,10 +282,15 @@ public partial class MainViewModel : ObservableObject
             _smartTestService,
             new ReportSourceReviewCoordinator(_reportService));
 
-        return new ReportView
+        var view = new ReportView
         {
             DataContext = _reportViewModel
         };
+
+        // Auto-carga al abrir la sección: sin esto "Generar informe" y
+        // "Exportar PDF" fallan porque la pantalla nunca cargó datos.
+        _ = _reportViewModel.LoadDataCommand.ExecuteAsync(null);
+        return view;
     }
 
     private object CreateSmartDiskView()
@@ -288,10 +300,15 @@ public partial class MainViewModel : ObservableObject
             _smartDiskService,
             _smartTestService);
 
-        return new SmartDiskView
+        var view = new SmartDiskView
         {
             DataContext = _smartDiskViewModel
         };
+
+        // Verificación inicial al abrir la sección: habilita "Detectar discos"
+        // y "Analizar SMART" sin requerir un clic previo en "Verificar smartctl".
+        _ = _smartDiskViewModel.EnsureInitializedAsync();
+        return view;
     }
 
     private object CreateHardwareView()
@@ -364,7 +381,7 @@ public partial class MainViewModel : ObservableObject
         {
             stackPanel.Children.Add(new TextBlock
             {
-                Text = "CATTECH OPTIMIZER PRO v0.3.0",
+                Text = "CATTECH OPTIMIZER PRO v0.3.1",
                 FontSize = 12,
                 Foreground = new System.Windows.Media.SolidColorBrush(
                     System.Windows.Media.Color.FromRgb(0x99, 0x99, 0x99))

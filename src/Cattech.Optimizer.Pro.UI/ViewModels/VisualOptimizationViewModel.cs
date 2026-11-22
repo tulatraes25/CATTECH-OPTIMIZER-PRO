@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Cattech.Optimizer.Pro.Core.Interfaces;
@@ -72,10 +73,27 @@ public partial class VisualOptimizationViewModel : ObservableObject
     private string _resultDetails = string.Empty;
 
     [ObservableProperty]
+    private bool _hasResultErrors;
+
+    [ObservableProperty]
     private bool _requiresRestart;
 
     [ObservableProperty]
     private bool _requiresSignOut;
+
+    [ObservableProperty]
+    private int _resultAppliedCount;
+
+    [ObservableProperty]
+    private int _resultSkippedCount;
+
+    [ObservableProperty]
+    private int _resultFailedCount;
+
+    /// <summary>
+    /// Errores reales devueltos por el servicio al aplicar los ajustes.
+    /// </summary>
+    public ObservableCollection<VisualOptimizationError> ResultErrors { get; } = new();
 
     public VisualOptimizationViewModel(IVisualOptimizationService optimizationService)
     {
@@ -85,9 +103,11 @@ public partial class VisualOptimizationViewModel : ObservableObject
     /// <summary>
     /// Analiza el estado actual de los ajustes visuales.
     /// </summary>
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanAnalyze))]
     private async Task AnalyzeAsync()
     {
+        if (IsRunning) return;
+
         ClearMessages();
         IsRunning = true;
         HasResults = false;
@@ -95,15 +115,7 @@ public partial class VisualOptimizationViewModel : ObservableObject
 
         try
         {
-            _settings = await _optimizationService.AnalyzeAsync();
-
-            Settings.Clear();
-            foreach (var setting in _settings)
-                Settings.Add(setting);
-
-            AlreadyOptimizedCount = _settings.Count(s => s.IsAlreadyOptimized);
-            UpdateSelectedCount();
-            HasResults = true;
+            await AnalyzeCoreAsync();
             StatusText = "Listo para aplicar";
         }
         catch (Exception ex)
@@ -117,13 +129,20 @@ public partial class VisualOptimizationViewModel : ObservableObject
         }
     }
 
+    private bool CanAnalyze() => !IsRunning;
+
     /// <summary>
     /// Aplica los ajustes seleccionados.
     /// </summary>
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanApply))]
     private async Task ApplyAsync()
     {
-        var selected = _settings.Where(s => s.IsSelected && !s.IsAlreadyOptimized).ToList();
+        if (IsRunning) return;
+
+        var selected = _settings
+            .Where(s => s.IsSelected && !s.IsAlreadyOptimized && s.IsSupported)
+            .ToList();
+
         if (selected.Count == 0)
         {
             ShowError("No hay ajustes seleccionados para aplicar.");
@@ -132,11 +151,27 @@ public partial class VisualOptimizationViewModel : ObservableObject
 
         ClearMessages();
         IsRunning = true;
+        HasResult = false;
+        HasResultErrors = false;
+        ResultErrors.Clear();
         StatusText = "Aplicando...";
 
         try
         {
             var result = await _optimizationService.ApplyAsync(selected);
+
+            // Re-analizar ANTES de publicar mensajes: el análisis reinicia el
+            // estado de la vista y no debe borrar el resultado recién aplicado.
+            string? reanalyzeError = null;
+            try
+            {
+                await AnalyzeCoreAsync();
+            }
+            catch (Exception analyzeEx)
+            {
+                reanalyzeError = analyzeEx.Message;
+                HasResults = false;
+            }
 
             ResultAppliedCount = result.AppliedCount;
             ResultSkippedCount = result.SkippedCount;
@@ -144,35 +179,45 @@ public partial class VisualOptimizationViewModel : ObservableObject
             RequiresRestart = result.RequiresRestart;
             RequiresSignOut = result.RequiresSignOut;
 
+            ResultErrors.Clear();
+            foreach (var error in result.Errors)
+                ResultErrors.Add(error);
+            HasResultErrors = ResultErrors.Count > 0;
+
             if (result.IsSuccess)
             {
                 ResultSummary = $"Optimización completada: {result.AppliedCount} ajustes aplicados";
+                ResultDetails = reanalyzeError is not null
+                    ? $"Los cambios se aplicaron, pero no se pudo re-analizar el estado actual: {reanalyzeError}"
+                    : result.RequiresRestart
+                        ? "⚠️ Se requiere reinicio para que algunos cambios surtan efecto."
+                        : result.RequiresSignOut
+                            ? "⚠️ Se requiere cerrar sesión para que algunos cambios surtan efecto."
+                            : "Los cambios ya deberían estar activos.";
                 StatusText = "Optimización completada";
+                ShowSuccess($"Optimización completada: {result.AppliedCount} ajustes aplicados.");
             }
             else
             {
                 ResultSummary = $"Optimización con advertencias: {result.AppliedCount} aplicados, {result.FailedCount} fallidos";
+                ResultDetails = reanalyzeError is not null
+                    ? $"Advertencias durante la aplicación y falló el re-análisis: {reanalyzeError}"
+                    : $"Fallaron {result.FailedCount} de {selected.Count} ajustes seleccionados.";
+                var detalle = string.Join(
+                    Environment.NewLine,
+                    ResultErrors.Take(5).Select(e => $"• {e.SettingName}: {e.Message}"));
+                ShowError(string.IsNullOrWhiteSpace(detalle)
+                    ? "La optimización terminó con advertencias."
+                    : $"La optimización terminó con advertencias:{Environment.NewLine}{detalle}");
                 StatusText = "Optimización completada con advertencias";
             }
 
-            if (result.RequiresRestart)
-                ResultDetails = "⚠️ Se requiere reinicio para que algunos cambios surtan efecto.";
-            else if (result.RequiresSignOut)
-                ResultDetails = "⚠️ Se requiere cerrar sesión para que algunos cambios surtan efecto.";
-            else
-                ResultDetails = "Los cambios ya deberían estar activos.";
-
             HasResult = true;
-            IsSuccess = result.IsSuccess;
-            HasError = !result.IsSuccess;
-
-            // Re-analizar para ver valores actualizados
-            await AnalyzeAsync();
         }
         catch (Exception ex)
         {
             StatusText = "Error al aplicar";
-            ShowError($"Error: {ex.Message}");
+            ShowError($"Error al aplicar los ajustes: {ex.Message}");
         }
         finally
         {
@@ -180,16 +225,10 @@ public partial class VisualOptimizationViewModel : ObservableObject
         }
     }
 
-    /// <summary>
-    /// Selecciona/deselecciona un ajuste.
-    /// </summary>
-    [RelayCommand]
-    private void ToggleSetting(VisualOptimizationSetting? setting)
-    {
-        if (setting == null || setting.IsAlreadyOptimized) return;
-        setting.IsSelected = !setting.IsSelected;
-        UpdateSelectedCount();
-    }
+    private bool CanApply()
+        => !IsRunning
+           && HasResults
+           && _settings.Any(s => s.IsSelected && !s.IsAlreadyOptimized && s.IsSupported);
 
     /// <summary>
     /// Selecciona todos los ajustes de bajo riesgo no optimizados.
@@ -217,55 +256,80 @@ public partial class VisualOptimizationViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Muestra/oculta la lista de backups.
+    /// Muestra/oculta la lista de backups y la recarga al abrirla.
     /// </summary>
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanLoadBackups))]
     private async Task LoadBackupsAsync()
     {
-        ShowBackups = !ShowBackups;
+        if (IsRunning) return;
 
         if (ShowBackups)
         {
-            Backups.Clear();
-            var backups = await _optimizationService.ListBackupsAsync();
-            foreach (var backup in backups)
-                Backups.Add(backup);
+            ShowBackups = false;
+            return;
         }
+
+        ShowBackups = true;
+        await RefreshBackupsAsync();
     }
 
-    partial void OnSelectedBackupChanged(VisualOptimizationBackup? value)
-    {
-        HasSelectedBackup = value != null && value.CanRestore;
-    }
+    private bool CanLoadBackups() => !IsRunning;
 
     /// <summary>
-    /// Restaura un backup seleccionado.
+    /// Restaura un backup. El backup llega como parámetro del comando
+    /// (el panel de backups no tiene selección previa obligatoria).
     /// </summary>
-    [RelayCommand]
-    private async Task RestoreBackupAsync()
+    [RelayCommand(CanExecute = nameof(CanRestoreBackup))]
+    private async Task RestoreBackupAsync(VisualOptimizationBackup? backup)
     {
-        if (SelectedBackup == null) return;
+        if (IsRunning) return;
+
+        var target = backup ?? SelectedBackup;
+        if (target is null)
+        {
+            ShowError("Seleccioná un backup para restaurar.");
+            return;
+        }
 
         ClearMessages();
         IsRunning = true;
+        StatusText = $"Restaurando '{target.SettingName}'...";
 
         try
         {
-            var success = await _optimizationService.RestoreAsync(SelectedBackup);
+            var restoreResult = await _optimizationService.RestoreWithResultAsync(target);
 
-            if (success)
+            // Re-analizar y recargar backups ANTES de publicar mensajes.
+            try
             {
-                ShowSuccess($"Ajuste '{SelectedBackup.SettingName}' restaurado correctamente.");
-                await LoadBackupsAsync();
-                await AnalyzeAsync();
+                await AnalyzeCoreAsync();
+            }
+            catch (Exception analyzeEx)
+            {
+                HasResults = false;
+                ResultDetails = $"No se pudo re-analizar el estado actual: {analyzeEx.Message}";
+            }
+
+            await RefreshBackupsAsync();
+
+            if (restoreResult.Success)
+            {
+                StatusText = "Ajuste restaurado";
+                ShowSuccess(string.IsNullOrWhiteSpace(restoreResult.Message)
+                    ? $"Ajuste '{target.SettingName}' restaurado correctamente."
+                    : restoreResult.Message);
             }
             else
             {
-                ShowError("Error al restaurar el ajuste.");
+                StatusText = "Error al restaurar";
+                ShowError(string.IsNullOrWhiteSpace(restoreResult.Message)
+                    ? "No se pudo restaurar el ajuste desde el backup."
+                    : restoreResult.Message);
             }
         }
         catch (Exception ex)
         {
+            StatusText = "Error al restaurar";
             ShowError($"Error durante la restauración: {ex.Message}");
         }
         finally
@@ -274,21 +338,102 @@ public partial class VisualOptimizationViewModel : ObservableObject
         }
     }
 
+    private bool CanRestoreBackup(VisualOptimizationBackup? backup)
+        => !IsRunning && backup is { CanRestore: true };
+
+    partial void OnSelectedBackupChanged(VisualOptimizationBackup? value)
+    {
+        HasSelectedBackup = value != null && value.CanRestore;
+        RestoreBackupCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnSelectedCountChanged(int value)
+    {
+        ApplyCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnHasResultsChanged(bool value)
+    {
+        ApplyCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnIsRunningChanged(bool value)
+    {
+        AnalyzeCommand.NotifyCanExecuteChanged();
+        ApplyCommand.NotifyCanExecuteChanged();
+        LoadBackupsCommand.NotifyCanExecuteChanged();
+        RestoreBackupCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>
+    /// Reemplaza la lista de ajustes manteniendo las suscripciones de selección.
+    /// </summary>
+    private void ReplaceSettings(IEnumerable<VisualOptimizationSetting> settings)
+    {
+        foreach (var previous in _settings)
+            previous.PropertyChanged -= OnSettingPropertyChanged;
+
+        _settings = settings.ToList();
+        Settings.Clear();
+        foreach (var setting in _settings)
+        {
+            setting.PropertyChanged += OnSettingPropertyChanged;
+            Settings.Add(setting);
+        }
+
+        UpdateSelectedCount();
+    }
+
+    private void OnSettingPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        switch (e.PropertyName)
+        {
+            case nameof(VisualOptimizationSetting.IsSelected):
+                UpdateSelectedCount();
+                break;
+
+            case nameof(VisualOptimizationSetting.IsAlreadyOptimized):
+                AlreadyOptimizedCount = _settings.Count(s => s.IsAlreadyOptimized);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Analiza sin publicar mensajes: quien llama decide cuándo mostrarlos.
+    /// </summary>
+    private async Task AnalyzeCoreAsync()
+    {
+        var analyzed = await _optimizationService.AnalyzeAsync();
+        ReplaceSettings(analyzed);
+        AlreadyOptimizedCount = _settings.Count(s => s.IsAlreadyOptimized);
+        HasResults = true;
+    }
+
     private void UpdateSelectedCount()
     {
         SelectedCount = _settings.Count(s => s.IsSelected);
     }
 
-    // --- Campos para propiedades de resultado ---
-
-    [ObservableProperty]
-    private int _resultAppliedCount;
-
-    [ObservableProperty]
-    private int _resultSkippedCount;
-
-    [ObservableProperty]
-    private int _resultFailedCount;
+    /// <summary>
+    /// Recarga la lista de backups sin ocultar el panel ni tocar los mensajes.
+    /// </summary>
+    private async Task RefreshBackupsAsync()
+    {
+        try
+        {
+            var backups = await _optimizationService.ListBackupsAsync();
+            Backups.Clear();
+            foreach (var backup in backups)
+                Backups.Add(backup);
+            SelectedBackup = null;
+        }
+        catch (Exception ex)
+        {
+            // No se muestra "No hay backups" en silencio ante un archivo dañado.
+            StatusText = "Error al leer backups";
+            ShowError($"No se pudieron leer los backups: {ex.Message}");
+        }
+    }
 
     private void ShowSuccess(string message)
     {

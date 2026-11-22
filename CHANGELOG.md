@@ -64,6 +64,34 @@ Sin cambios pendientes de publicar.
 
 ---
 
+## [0.3.1] - 2026-11-22
+
+### Fixed
+- **Limpieza de temporales no borraba**: se eliminaron la retención mínima de 7 días y la restricción a hijos directos; ahora recorre subcarpetas, omite reparse points y poda directorios vacíos. Un único archivo inaccesible ya no invalida el escaneo completo.
+- **Papelera de reciclaje implementada**: inventario con `SHQueryRecycleBin` y vaciado con `SHEmptyRecycleBin` (antes figuraba como "no disponible").
+- **Programas de inicio no se desactivaban**: la clave `Run` se abría en solo lectura y `DeleteValue` lanzaba siempre `UnauthorizedAccessException`; ahora se abre escribible, se hace rollback si el borrado falla y se conserva el tipo de valor de registro (`String`, `ExpandString`, `Binary`...).
+- **Selección de programas de inicio**: el `CheckBox` con `TwoWay` + `Command` se auto-invertía en cada clic; ahora la selección queda estable. "Seleccionar todo lo desactivable" cubre cualquier entrada de terceros.
+- **Clasificador Microsoft demasiado amplio**: marcaba como Microsoft a LibreOffice, antivirus y otras apps por palabras genéricas ("windows", "office", "security"); ahora solo usa el nombre de la entrada y la ruta del ejecutable.
+- **Restauración de inicio**: el botón "Restaurar" pasaba un `CommandParameter` a un comando sin parámetro y dependía de `SelectedBackup`, que nunca se asignaba; ahora restaura el backup seleccionado y la clave de backup se abre escribible.
+- **Punto de restauración**: se eliminó la sonda del servicio `srservice` (inexistente en Windows 10/11) y la pre-consulta que confundía "no hay puntos" con "protección deshabilitada"; la creación intenta `Checkpoint-Computer` y mapea el error real. Mensajería visible en éxito, advertencias y fallos.
+- **Optimización visual**: checkboxes estables con notificación de cambios, "Aplicar" con guardas y errores visibles, "Restaurar" por backup con binarios en hexadecimal (antes `"System.Byte[]"`).
+- **SMART**: verificación automática de smartctl al abrir, errores reales al analizar (0 discos ya no reporta éxito), estado visible y guardas de reentrancia.
+- **Informes**: auto-carga al abrir, "Abrir carpeta" crea el directorio y reporta si falla, avisos cuando el informe/PDF ya no existe.
+- **Pantallas azules**: `CanExecute` en el refresco para no ignorar clics en silencio.
+- **Confirmaciones UX**: diálogos modales con la cantidad exacta de archivos/MB (Limpieza) y de entradas (Programas de inicio).
+
+### Changed
+- `StartupEntry.Id` ahora es determinístico (hash de origen+ubicación+nombre), lo que permite detectar entradas ya desactivadas entre análisis.
+- Los backups de inicio se guardan en carpetas únicas por entrada; las tareas programadas se enumeran con `Get-ScheduledTask` (la consulta WMI anterior usaba una clase inexistente).
+- El tamaño de la Papelera y de cada ubicación se muestra con unidad adaptativa (B/KB/MB/GB).
+
+### Quality / QA
+- **1946 tests** xUnit (nuevos: desactivación/restauración real sobre HKCU, clasificador, selección, punto de restauración, optimización visual, SMART/informes y limpieza recursiva).
+- Build Release sin warnings.
+- Verificación E2E con UI Automation sobre la app publicada: limpieza real (16.845 archivos / 260 MB escaneados, 162 MB liberados, protegidos conservados), desactivación real de una entrada de inicio (valor borrado + backup) y restauración desde la UI; navegación sin crashes por las 14 pantallas.
+
+---
+
 ## [0.3.0] - 2026-11-22
 
 ### Added
