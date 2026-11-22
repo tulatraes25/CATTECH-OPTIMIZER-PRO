@@ -31,7 +31,7 @@ El smoke NO es una sesión de trabajo real: es validación de la aplicación pub
 
 ## Diferencia entre tests automatizados y smoke real
 
-- Tests automatizados: 1946 unit/integration con fakes, ejecutados por CI en runners efímeros.
+- Tests automatizados: 2055 unit/integration con fakes, ejecutados por CI en runners efímeros.
 - Smoke real: observación manual de la aplicación publicada en una máquina real, con hardware real o ausencia del mismo.
 
 No asumir que "los tests pasan" implica que la app funciona en una PC real.

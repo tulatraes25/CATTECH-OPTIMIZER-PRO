@@ -14,6 +14,7 @@ using Cattech.Optimizer.Pro.Core.Models.Cleanup;
 using Cattech.Optimizer.Pro.Core.Models.VisualOptimization;
 using Cattech.Optimizer.Pro.Core.Models.RestorePoint;
 using Cattech.Optimizer.Pro.Core.Models.Smart;
+using Cattech.Optimizer.Pro.Infrastructure.Data;
 using Cattech.Optimizer.Pro.Infrastructure.Reports;
 
 namespace Cattech.Optimizer.Pro.UI.ViewModels;
@@ -64,6 +65,71 @@ public partial class ReportViewModel : ObservableObject
 
     [ObservableProperty]
     private string _reportInventoryMessage = string.Empty;
+
+    // --- Estado técnico visible (conteos y almacenamiento) ---
+
+    [ObservableProperty]
+    private int _clientCount;
+
+    [ObservableProperty]
+    private int _diagnosticCount;
+
+    [ObservableProperty]
+    private int _inventoryReportCount;
+
+    [ObservableProperty]
+    private int _includedSectionsCount;
+
+    [ObservableProperty]
+    private string _includedSectionsSummary = "—";
+
+    /// <summary>Ruta efectiva del directorio de informes HTML.</summary>
+    public string ReportsFolderPath { get; }
+
+    // --- Inventario: archivos dañados visibles (no se eliminan) ---
+
+    [ObservableProperty]
+    private bool _hasDamagedReportFiles;
+
+    [ObservableProperty]
+    private string _damagedReportFilesSummary = string.Empty;
+
+    /// <summary>Nombres de archivo dañados (solo nombre, nunca ruta completa).</summary>
+    public ObservableCollection<string> DamagedReportFiles { get; } = new();
+
+    // --- Historiales resumidos (limpieza / optimización visual / restauración) ---
+
+    [ObservableProperty]
+    private bool _hasCleanupHistory;
+
+    [ObservableProperty]
+    private string _lastCleanupRecordText = "sin registros";
+
+    [ObservableProperty]
+    private string _cleanupSectionToolTip = "sin registros";
+
+    [ObservableProperty]
+    private string _lastVisualOptimizationRecordText = "sin registros";
+
+    [ObservableProperty]
+    private string _visualOptimizationSectionToolTip = "sin registros";
+
+    [ObservableProperty]
+    private bool _hasRestorePointHistory;
+
+    [ObservableProperty]
+    private string _lastRestorePointRecordText = "sin registros";
+
+    [ObservableProperty]
+    private string _restorePointSectionToolTip = "sin registros";
+
+    // --- Revisión de evidencia: motivo técnico del último fallo ---
+
+    [ObservableProperty]
+    private string _reviewFailureCategory = string.Empty;
+
+    /// <summary>Filas compactas de la tabla técnica de fuentes disponibles.</summary>
+    public ObservableCollection<ReportSectionRow> SectionRows { get; } = new();
 
     // --- Datos cargados ---
 
@@ -231,6 +297,8 @@ public partial class ReportViewModel : ObservableObject
         _smartDiskService = smartDiskService;
         _smartTestService = smartTestService;
         _sourceReviewCoordinator = sourceReviewCoordinator;
+        ReportsFolderPath = Path.Combine(
+            AppDomain.CurrentDomain.BaseDirectory, "reports", "html");
         AvailableSmartTestSessions.CollectionChanged += OnSmartTestCollectionChanged;
     }
 
@@ -270,6 +338,9 @@ public partial class ReportViewModel : ObservableObject
     /// <summary>
     /// Advisory read-only check. Never use the snapshot as authorization to
     /// load, delete or export a specific file without revalidation.
+    /// A damaged or unreadable file is reported by name and skipped: it does
+    /// NOT hide the remaining valid records. Only a failed scan or an
+    /// ambiguous logical ID suspends the customer selection.
     /// </summary>
     private async Task<bool> CheckReportInventoryAsync(Func<bool>? stillCurrent = null)
     {
@@ -283,12 +354,30 @@ public partial class ReportViewModel : ObservableObject
 
         try
         {
-            var health = await reader.InspectReportInventoryAsync();
-            // Inventory checks are also called by exports; only a reload
-            // supplies its own epoch. An older read cannot overwrite the
-            // warning/message of a newer report form after its await.
-            if (stillCurrent is not null && !stillCurrent())
-                return false;
+            ServiceReportInventory health;
+            IReadOnlyList<string> damagedFiles = Array.Empty<string>();
+            if (_serviceReportService is IServiceReportInventoryDetailReader detailed)
+            {
+                // Detailed capability: valid counts + names of damaged files.
+                var detail = await detailed.InspectReportInventoryDetailedAsync();
+                if (stillCurrent is not null && !stillCurrent())
+                    return false;
+                health = detail.Inventory;
+                damagedFiles = detail.DamagedFiles;
+            }
+            else
+            {
+                health = await reader.InspectReportInventoryAsync();
+                // Inventory checks are also called by exports; only a reload
+                // supplies its own epoch. An older read cannot overwrite the
+                // warning/message of a newer report form after its await.
+                if (stillCurrent is not null && !stillCurrent())
+                    return false;
+            }
+
+            InventoryReportCount = health.UniqueEntries;
+            UpdateDamagedReportFiles(health.InvalidEntries, damagedFiles);
+
             if (health.ScanFailed)
             {
                 HasReportInventoryWarning = true;
@@ -297,7 +386,7 @@ public partial class ReportViewModel : ObservableObject
                 return false;
             }
 
-            if (health.RequiresReview)
+            if (health.AmbiguousEntries > 0)
             {
                 HasReportInventoryWarning = true;
                 ReportInventoryMessage =
@@ -305,6 +394,20 @@ public partial class ReportViewModel : ObservableObject
                     $"{health.AmbiguousEntries} registros con identificador duplicado. " +
                     "Se suspendió la selección de clientes; ningún archivo fue eliminado.";
                 return false;
+            }
+
+            if (health.InvalidEntries > 0)
+            {
+                // Damaged sibling(s): skipped and listed, but the valid
+                // records remain selectable. Nothing was deleted or repaired.
+                HasReportInventoryWarning = true;
+                ReportInventoryMessage =
+                    $"Almacenamiento con archivos inválidos: {health.UniqueEntries} informes válidos, " +
+                    $"{health.InvalidEntries} archivos inválidos omitidos. Ningún archivo fue eliminado." +
+                    (damagedFiles.Count > 0
+                        ? " Dañados: " + string.Join(", ", damagedFiles) + "."
+                        : string.Empty);
+                return true;
             }
 
             HasReportInventoryWarning = false;
@@ -327,6 +430,26 @@ public partial class ReportViewModel : ObservableObject
                 "Se suspendió la selección de clientes sin modificar archivos.";
             return false;
         }
+    }
+
+    /// <summary>
+    /// Publica la lista de archivos dañados (solo nombres) sin eliminar nada.
+    /// </summary>
+    private void UpdateDamagedReportFiles(
+        int invalidEntries, IReadOnlyList<string> damagedFiles)
+    {
+        DamagedReportFiles.Clear();
+        foreach (var name in damagedFiles)
+            DamagedReportFiles.Add(name);
+
+        HasDamagedReportFiles = invalidEntries > 0 || damagedFiles.Count > 0;
+        DamagedReportFilesSummary = !HasDamagedReportFiles
+            ? string.Empty
+            : damagedFiles.Count > 0
+                ? $"{invalidEntries} archivo(s) dañado(s) omitido(s): " +
+                    string.Join(", ", damagedFiles)
+                : $"{invalidEntries} archivo(s) dañado(s) omitido(s) " +
+                    "(lista de nombres no disponible en este almacenamiento).";
     }
 
     // Selecting another report or changing the customer checkbox invalidates
@@ -374,16 +497,22 @@ public partial class ReportViewModel : ObservableObject
         _customerSelectionRevision++;
         RevokeSourceReview();
         InvalidateGeneratedArtifacts();
+        RefreshIncludedSections();
     }
 
     // An artifact represents the previously selected options, not the current
     // form. On an edit, revoke its "latest report" buttons. Historical files
     // stay untouched and are still accessible through the report history.
-    partial void OnIncludeCompanyChanged(bool value) => InvalidateGeneratedArtifacts();
+    partial void OnIncludeCompanyChanged(bool value)
+    {
+        InvalidateGeneratedArtifacts();
+        RefreshIncludedSections();
+    }
     partial void OnIncludeDiagnosticChanged(bool value)
     {
         RevokeSourceReview();
         InvalidateGeneratedArtifacts();
+        RefreshIncludedSections();
     }
     partial void OnReviewerAliasChanged(string value)
     {
@@ -400,13 +529,41 @@ public partial class ReportViewModel : ObservableObject
         if (!value && _isReviewCommandRunning && HasPendingSourceReview)
             RevokeSourceReview();
     }
-    partial void OnIncludeStartupChanged(bool value) => InvalidateGeneratedArtifacts();
-    partial void OnIncludeCleanupChanged(bool value) => InvalidateGeneratedArtifacts();
-    partial void OnIncludeVisualOptimizationChanged(bool value) => InvalidateGeneratedArtifacts();
-    partial void OnIncludeRestorePointChanged(bool value) => InvalidateGeneratedArtifacts();
-    partial void OnIncludeSmartChanged(bool value) => InvalidateGeneratedArtifacts();
-    partial void OnIncludeSmartTestsChanged(bool value) => InvalidateGeneratedArtifacts();
-    partial void OnIncludeRecommendationsChanged(bool value) => InvalidateGeneratedArtifacts();
+    partial void OnIncludeStartupChanged(bool value)
+    {
+        InvalidateGeneratedArtifacts();
+        RefreshIncludedSections();
+    }
+    partial void OnIncludeCleanupChanged(bool value)
+    {
+        InvalidateGeneratedArtifacts();
+        RefreshIncludedSections();
+    }
+    partial void OnIncludeVisualOptimizationChanged(bool value)
+    {
+        InvalidateGeneratedArtifacts();
+        RefreshIncludedSections();
+    }
+    partial void OnIncludeRestorePointChanged(bool value)
+    {
+        InvalidateGeneratedArtifacts();
+        RefreshIncludedSections();
+    }
+    partial void OnIncludeSmartChanged(bool value)
+    {
+        InvalidateGeneratedArtifacts();
+        RefreshIncludedSections();
+    }
+    partial void OnIncludeSmartTestsChanged(bool value)
+    {
+        InvalidateGeneratedArtifacts();
+        RefreshIncludedSections();
+    }
+    partial void OnIncludeRecommendationsChanged(bool value)
+    {
+        InvalidateGeneratedArtifacts();
+        RefreshIncludedSections();
+    }
     partial void OnSelectedDiagnosticReportChanged(DiagnosticReport? value)
     {
         RevokeSourceReview();
@@ -584,7 +741,27 @@ public partial class ReportViewModel : ObservableObject
         HasSmartTestData = false;
         IncludeSmartTests = false;
 
+        // Estado técnico e historiales resumidos: también se revocan para no
+        // presentar registros de una carga anterior como si fueran actuales.
+        HasCleanupHistory = false;
+        LastCleanupRecordText = "sin registros";
+        CleanupSectionToolTip = "sin registros";
+        LastVisualOptimizationRecordText = "sin registros";
+        VisualOptimizationSectionToolTip = "sin registros";
+        HasRestorePointHistory = false;
+        LastRestorePointRecordText = "sin registros";
+        RestorePointSectionToolTip = "sin registros";
+        ReviewFailureCategory = string.Empty;
+        ClientCount = 0;
+        DiagnosticCount = 0;
+        InventoryReportCount = 0;
+        DamagedReportFiles.Clear();
+        HasDamagedReportFiles = false;
+        DamagedReportFilesSummary = string.Empty;
+        SectionRows.Clear();
+
         FinalObservations = string.Empty;
+        RefreshIncludedSections();
         InvalidateGeneratedArtifacts();
     }
 
@@ -662,7 +839,8 @@ public partial class ReportViewModel : ObservableObject
                 }
             }
 
-            HasClientData = !HasReportInventoryWarning && AvailableServiceReports.Count > 0;
+            HasClientData = inventoryReady && AvailableServiceReports.Count > 0;
+            ClientCount = AvailableServiceReports.Count;
             SelectedServiceReport = HasClientData ? AvailableServiceReports.First() : null;
             IncludeClient = HasClientData;
 
@@ -677,6 +855,7 @@ public partial class ReportViewModel : ObservableObject
                 if (fullDiag != null) AvailableDiagnosticReports.Add(fullDiag);
             }
             HasDiagnosticData = AvailableDiagnosticReports.Count > 0;
+            DiagnosticCount = AvailableDiagnosticReports.Count;
             if (HasDiagnosticData) SelectedDiagnosticReport = AvailableDiagnosticReports.First();
             // An equal mutable GUID is not the audited C2 source binding.
             IncludeDiagnostic = HasDiagnosticData && !IncludeClient;
@@ -695,27 +874,65 @@ public partial class ReportViewModel : ObservableObject
             if (HasStartupData) SelectedStartupAnalysis = AvailableStartupAnalyses.First();
             IncludeStartup = HasStartupData && !IncludeClient;
 
-            // History entries are SUMMARIES, not selectable full results.
-            // No audited LoadResultAsync exists; never invent missing details.
+            // Limpieza: solo existen RESÚMENES persistidos (Id/fecha/MB/archivos/
+            // advertencias). Se habilitan como sección con su resumen real y un
+            // tooltip que documenta la limitación del modelo de informe: nunca
+            // se inventa un resultado completo ni se escribe HTML con él.
             var cleanupSummaries = await _cleanupService.ListResultsAsync(5);
             if (!IsCurrentLoad(loadAttempt)) return;
             AvailableCleanupResults.Clear();
             SelectedCleanupResult = null;
-            HasCleanupData = false;
-            IncludeCleanup = false;
+            HasCleanupData = false; // no hay resultado completo exportable
+            IncludeCleanup = false; // se re-evalúa en la preselección final
+            var latestCleanup = cleanupSummaries.FirstOrDefault();
+            HasCleanupHistory = latestCleanup is not null;
+            LastCleanupRecordText = latestCleanup is null
+                ? "sin registros"
+                : DescribeCleanupSummary(latestCleanup);
+            CleanupSectionToolTip = latestCleanup is null
+                ? "sin registros"
+                : "Último registro persistido: " + DescribeCleanupSummary(latestCleanup)
+                  + " · Limitación: el servicio solo expone el historial resumido; "
+                  + "el HTML no incluye el detalle completo (no se inventan datos).";
 
-            // Optimización visual
-            HasVisualOptimizationData = false;
-            IncludeVisualOptimization = false;
+            // Optimización visual: resultados completos persistidos. El VM de
+            // optimización ahora guarda cada aplicación con SaveResultAsync.
+            var visualResults = await _visualOptimizationService.ListResultsAsync(5);
+            if (!IsCurrentLoad(loadAttempt)) return;
+            AvailableVisualOptResults.Clear();
+            foreach (var visual in visualResults)
+                AvailableVisualOptResults.Add(visual);
+            HasVisualOptimizationData = AvailableVisualOptResults.Count > 0;
+            SelectedVisualOptimizationResult = HasVisualOptimizationData
+                ? AvailableVisualOptResults.First() : null;
+            IncludeVisualOptimization = false; // se re-evalúa en la preselección final
+            var latestVisual = AvailableVisualOptResults.FirstOrDefault();
+            LastVisualOptimizationRecordText = latestVisual is null
+                ? "sin registros"
+                : DescribeVisualOptimizationResult(latestVisual);
+            VisualOptimizationSectionToolTip = latestVisual is null
+                ? "sin registros"
+                : "Último resultado persistido: " + DescribeVisualOptimizationResult(latestVisual)
+                  + " · Solo se incluye en informes sin cliente (política de atribución).";
 
-            // Restore history is likewise summary-only. A future full
-            // loader needs stable IDs, schema validation and permission gates.
+            // Restauración: historial igualmente resumido. Se habilita la
+            // sección con el último resultado real y se documenta la limitación.
             var restoreSummaries = await _restorePointService.ListResultsAsync(5);
             if (!IsCurrentLoad(loadAttempt)) return;
             AvailableRestorePointResults.Clear();
             SelectedRestorePointResult = null;
-            HasRestorePointData = false;
-            IncludeRestorePoint = false;
+            HasRestorePointData = false; // solo resumen, sin modelo completo
+            IncludeRestorePoint = false; // se re-evalúa en la preselección final
+            var latestRestore = restoreSummaries.FirstOrDefault();
+            HasRestorePointHistory = latestRestore is not null;
+            LastRestorePointRecordText = latestRestore is null
+                ? "sin registros"
+                : DescribeRestorePointSummary(latestRestore);
+            RestorePointSectionToolTip = latestRestore is null
+                ? "sin registros"
+                : "Último registro persistido: " + DescribeRestorePointSummary(latestRestore)
+                  + " · Limitación: el servicio solo expone el historial resumido; "
+                  + "el HTML no incluye el detalle completo (no se inventan datos).";
 
             // SMART (solo datos persistidos, NO se ejecuta smartctl)
             var smartAnalyses = await _smartDiskService.ListResultsAsync(10);
@@ -750,12 +967,27 @@ public partial class ReportViewModel : ObservableObject
             HasSmartTestData = AvailableSmartTestSessions.Count > 0;
             IncludeSmartTests = false; // Selección manual intencional
 
+            // Preselección final: solo secciones con datos REALES persistidos.
+            // Las secciones que el modelo de informe no puede exportar desde un
+            // resumen (limpieza/restauración) quedan habilitadas pero sin tildar.
+            IncludeCompany = HasCompanyData;
+            IncludeClient = HasClientData;
+            IncludeDiagnostic = HasDiagnosticData && !IncludeClient;
+            IncludeStartup = HasStartupData && !IncludeClient;
+            IncludeCleanup = false;
+            IncludeVisualOptimization = HasVisualOptimizationData && !IncludeClient;
+            IncludeRestorePoint = false;
+            IncludeSmart = HasSmartData && !IncludeClient;
+            IncludeSmartTests = false;
+            IncludeRecommendations = true;
+
             var hasUnboundHistory = HasClientData
                 && ((HasDiagnosticData && !IncludeDiagnostic)
                     || (HasStartupData && !IncludeStartup)
-                    || (HasSmartData && !IncludeSmart));
+                    || (HasSmartData && !IncludeSmart)
+                    || (HasVisualOptimizationData && !IncludeVisualOptimization));
             var hasHistoryOnly = cleanupSummaries.Count > 0 || restoreSummaries.Count > 0;
-            StatusText = HasReportInventoryWarning
+            StatusText = HasReportInventoryWarning && !HasDamagedReportFiles
                 ? "Informes requieren revisión"
                 : hasUnboundHistory && hasHistoryOnly
                     ? "Datos cargados; fuentes sin asociar; limpieza/restauración no exportables"
@@ -764,6 +996,8 @@ public partial class ReportViewModel : ObservableObject
                         : hasHistoryOnly
                             ? "Datos cargados; historiales de limpieza/restauración no exportables"
                             : "Datos cargados";
+
+            RefreshTechnicalSummary();
 
             // Invalidar artifacts generados previamente para forzar regeneración
             // con los datos actualmente cargados (fix SMOKE-B1R-006)
@@ -833,13 +1067,17 @@ public partial class ReportViewModel : ObservableObject
             if (prepared.Status != SourceReviewCoordinationStatus.Prepared
                 || prepared.Preview is null)
             {
-                ShowError(prepared.Status == SourceReviewCoordinationStatus.AmbiguousSource
-                    ? "Hay diagnósticos duplicados. Revisá el historial antes de vincular."
-                    : "No se pudo comprobar un único caso y diagnóstico íntegros.");
+                // Motivo técnico concreto (sin caso / ambiguo / lectura /
+                // JSON inválido / almacenamiento) en lugar de un genérico.
+                var (category, message) = DescribeSourceReviewFailure(
+                    prepared.Status, "Diagnostic", selectedDiagnostic.Id);
+                ReviewFailureCategory = category;
+                ShowError(message);
                 StatusText = "Revisión no disponible";
                 return;
             }
 
+            ReviewFailureCategory = string.Empty;
             _pendingSourceReview = prepared.Preview;
             HasPendingSourceReview = true;
             ReviewConsent = false;
@@ -854,7 +1092,11 @@ public partial class ReportViewModel : ObservableObject
         catch (Exception)
         {
             if (attempt == Interlocked.Read(ref _activeReviewAttempt))
-                ShowError("La revisión no pudo completarse. Revisá el almacenamiento.");
+            {
+                ReviewFailureCategory = "excepción inesperada";
+                ShowError("Motivo (excepción inesperada): la revisión no pudo completarse. " +
+                    "Revisá el almacenamiento y volvé a intentar.");
+            }
         }
         finally
         {
@@ -1313,6 +1555,9 @@ public partial class ReportViewModel : ObservableObject
         var selectedRestore = IncludeRestorePoint && HasRestorePointData
             && SelectedRestorePointResult is { } restore
             && AvailableRestorePointResults.Contains(restore) ? restore : null;
+        var selectedVisual = IncludeVisualOptimization && HasVisualOptimizationData
+            && SelectedVisualOptimizationResult is { } visual
+            && AvailableVisualOptResults.Contains(visual) ? visual : null;
 
         return new ReportGenerationOptions
         {
@@ -1324,8 +1569,7 @@ public partial class ReportViewModel : ObservableObject
             DiagnosticReport = IncludeDiagnostic ? SelectedDiagnosticReport : null,
             StartupAnalysis = IncludeStartup ? SelectedStartupAnalysis : null,
             CleanupResult = selectedCleanup,
-            VisualOptimizationResult = IncludeVisualOptimization
-                ? SelectedVisualOptimizationResult : null,
+            VisualOptimizationResult = selectedVisual,
             RestorePointResult = selectedRestore,
             SmartAnalysis = IncludeSmart ? SelectedSmartAnalysis : null,
             SmartTestSessions = IncludeSmartTests ? selectedTests : new(),
@@ -1335,11 +1579,201 @@ public partial class ReportViewModel : ObservableObject
             IncludeDiagnostic = IncludeDiagnostic,
             IncludeStartup = IncludeStartup,
             IncludeCleanup = selectedCleanup is not null,
-            IncludeVisualOptimization = IncludeVisualOptimization,
+            IncludeVisualOptimization = selectedVisual is not null,
             IncludeRestorePoint = selectedRestore is not null,
             IncludeSmart = IncludeSmart,
             IncludeSmartTests = IncludeSmartTests && selectedTests.Count > 0,
             IncludeRecommendations = IncludeRecommendations
+        };
+    }
+
+    /// <summary>
+    /// Secciones que realmente se exportarán (checkbox tildado + datos reales).
+    /// Los historiales resumidos de limpieza/restauración NO cuentan porque no
+    /// se escriben en el HTML (el modelo de informe exige el resultado completo).
+    /// </summary>
+    private void RefreshIncludedSections()
+    {
+        var included = new List<string>(8);
+        if (IncludeCompany && HasCompanyData) included.Add("Empresa");
+        if (IncludeClient && HasClientData) included.Add("Cliente");
+        if (IncludeDiagnostic && HasDiagnosticData) included.Add("Diagnóstico");
+        if (IncludeStartup && HasStartupData) included.Add("Inicio");
+        if (IncludeVisualOptimization && HasVisualOptimizationData) included.Add("Optimización visual");
+        if (IncludeSmart && HasSmartData) included.Add("SMART");
+        if (IncludeSmartTests && HasSmartTestData) included.Add("Self-tests SMART");
+        if (IncludeRecommendations) included.Add("Recomendaciones");
+
+        IncludedSectionsCount = included.Count;
+        IncludedSectionsSummary = included.Count == 0
+            ? "ninguna"
+            : string.Join(" · ", included);
+    }
+
+    /// <summary>
+    /// Arma el panel de estado técnico y la tabla compacta de fuentes. Los
+    /// conteos y textos provienen exclusivamente de registros ya persistidos.
+    /// </summary>
+    private void RefreshTechnicalSummary()
+    {
+        ClientCount = AvailableServiceReports.Count;
+        DiagnosticCount = AvailableDiagnosticReports.Count;
+        RefreshIncludedSections();
+
+        SectionRows.Clear();
+        SectionRows.Add(new ReportSectionRow
+        {
+            Fuente = "Cliente/equipo",
+            Registros = AvailableServiceReports.Count,
+            Ultimo = AvailableServiceReports.FirstOrDefault() is { } firstReport
+                ? $"{firstReport.CreatedAt:dd/MM/yyyy HH:mm} · {firstReport.Client?.Name}"
+                : "—",
+            Estado = HasClientData ? "disponible" : "sin datos",
+            Detalle = "Casos de servicio persistidos en data/service-reports."
+        });
+        SectionRows.Add(new ReportSectionRow
+        {
+            Fuente = "Diagnóstico",
+            Registros = AvailableDiagnosticReports.Count,
+            Ultimo = AvailableDiagnosticReports.FirstOrDefault() is { } firstDiag
+                ? $"{firstDiag.DiagnosisDate:dd/MM/yyyy HH:mm} · {firstDiag.OsName}"
+                : "—",
+            Estado = HasDiagnosticData ? "disponible" : "sin datos",
+            Detalle = "Diagnósticos persistidos en data/diagnostics (solo lectura)."
+        });
+        SectionRows.Add(new ReportSectionRow
+        {
+            Fuente = "Inicio",
+            Registros = AvailableStartupAnalyses.Count,
+            Ultimo = AvailableStartupAnalyses.FirstOrDefault() is { } firstStartup
+                ? $"{firstStartup.AnalysisDate:dd/MM/yyyy HH:mm}"
+                : "—",
+            Estado = HasStartupData ? "disponible" : "sin datos",
+            Detalle = "Análisis de programas de inicio persistidos."
+        });
+        SectionRows.Add(new ReportSectionRow
+        {
+            Fuente = "Limpieza (historial)",
+            Registros = HasCleanupHistory ? 1 : 0,
+            Ultimo = LastCleanupRecordText,
+            Estado = HasCleanupHistory ? "resumen" : "sin datos",
+            Detalle = CleanupSectionToolTip
+        });
+        SectionRows.Add(new ReportSectionRow
+        {
+            Fuente = "Optimización visual",
+            Registros = AvailableVisualOptResults.Count,
+            Ultimo = LastVisualOptimizationRecordText,
+            Estado = HasVisualOptimizationData ? "disponible" : "sin datos",
+            Detalle = VisualOptimizationSectionToolTip
+        });
+        SectionRows.Add(new ReportSectionRow
+        {
+            Fuente = "Punto de restauración",
+            Registros = HasRestorePointHistory ? 1 : 0,
+            Ultimo = LastRestorePointRecordText,
+            Estado = HasRestorePointHistory ? "resumen" : "sin datos",
+            Detalle = RestorePointSectionToolTip
+        });
+        SectionRows.Add(new ReportSectionRow
+        {
+            Fuente = "SMART",
+            Registros = AvailableSmartAnalyses.Count,
+            Ultimo = AvailableSmartAnalyses.FirstOrDefault() is { } firstSmart
+                ? firstSmart.DisplayName
+                : "—",
+            Estado = HasSmartData ? "disponible" : "sin datos",
+            Detalle = "Análisis SMART persistidos (no se ejecuta smartctl)."
+        });
+        SectionRows.Add(new ReportSectionRow
+        {
+            Fuente = "Self-tests SMART",
+            Registros = AvailableSmartTestSessions.Count,
+            Ultimo = AvailableSmartTestSessions.FirstOrDefault() is { } firstTest
+                ? firstTest.DisplayName
+                : "—",
+            Estado = HasSmartTestData ? "disponible" : "sin datos",
+            Detalle = "Sesiones de self-test persistidas; selección manual."
+        });
+        SectionRows.Add(new ReportSectionRow
+        {
+            Fuente = "Inventario de informes",
+            Registros = InventoryReportCount,
+            Ultimo = ReportInventoryMessage,
+            Estado = HasDamagedReportFiles
+                ? "con dañados"
+                : HasReportInventoryWarning ? "revisar" : "OK",
+            Detalle = DamagedReportFilesSummary is { Length: > 0 }
+                ? DamagedReportFilesSummary
+                : ReportInventoryMessage
+        });
+    }
+
+    private static string DescribeCleanupSummary(TempCleanupResultSummary summary) =>
+        $"{summary.StartedAt:dd/MM/yyyy HH:mm} · {summary.DeletedMB:0.##} MB liberados · "
+        + $"{summary.DeletedFiles} archivos"
+        + (summary.HasWarnings ? " · con advertencias" : string.Empty)
+        + (string.IsNullOrWhiteSpace(summary.FileName)
+            ? string.Empty : " · " + summary.FileName);
+
+    private static string DescribeVisualOptimizationResult(
+        VisualOptimizationResult result) =>
+        $"{result.StartedAt:dd/MM/yyyy HH:mm} · {result.AppliedCount} aplicados · "
+        + $"{result.FailedCount} fallidos · {result.SkippedCount} omitidos"
+        + (result.RequiresRestart
+            ? " · requiere reinicio"
+            : result.RequiresSignOut ? " · requiere cerrar sesión" : string.Empty)
+        + (string.IsNullOrWhiteSpace(result.TechnicianName)
+            ? string.Empty : " · técnico: " + result.TechnicianName);
+
+    private static string DescribeRestorePointSummary(
+        RestorePointResultSummary summary) =>
+        $"{summary.RequestedAt:dd/MM/yyyy HH:mm} · "
+        + (string.IsNullOrWhiteSpace(summary.RestorePointName)
+            ? "punto sin nombre" : summary.RestorePointName)
+        + (summary.Success ? " · creado" : " · falló")
+        + (string.IsNullOrWhiteSpace(summary.ErrorMessage)
+            ? string.Empty : " · " + summary.ErrorMessage)
+        + (string.IsNullOrWhiteSpace(summary.FileName)
+            ? string.Empty : " · " + summary.FileName);
+
+    /// <summary>
+    /// Traduce el estado del coordinador a un motivo técnico concreto
+    /// (categorías: sin caso, ambiguo, lectura, JSON inválido, almacenamiento).
+    /// Nunca expone rutas privadas ni el contenido del origen.
+    /// </summary>
+    private static (string Category, string Message) DescribeSourceReviewFailure(
+        SourceReviewCoordinationStatus status, string sourceKind,
+        string sourceRecordId)
+    {
+        var kind = sourceKind == "Diagnostic" ? "diagnóstico" : sourceKind;
+        return status switch
+        {
+            SourceReviewCoordinationStatus.CaseUnavailable => (
+                "sin caso",
+                "Motivo (sin caso): el caso del cliente ya no está disponible o cambió en el almacenamiento. Volvé a cargar los datos antes de revisar."),
+            SourceReviewCoordinationStatus.AmbiguousSource => (
+                "ambiguo",
+                $"Motivo (ambiguo): hay más de un archivo de {kind} legible con el identificador {sourceRecordId}. Revisá el historial y resolvé el duplicado antes de vincular."),
+            SourceReviewCoordinationStatus.SourceChanged => (
+                "origen cambiado",
+                $"Motivo (origen cambiado): el archivo de {kind} cambió desde la verificación. Volvé a revisar la evidencia."),
+            SourceReviewCoordinationStatus.ExpiredPreview => (
+                "revisión vencida",
+                "Motivo (revisión vencida): la verificación superó su tiempo de validez. Volvé a verificar el diagnóstico."),
+            SourceReviewCoordinationStatus.StorageFailure => (
+                "lectura/almacenamiento",
+                "Motivo (lectura): no se pudo leer el almacenamiento del caso o del origen (bloqueo de archivo o permisos). Revisá los archivos e intentá nuevamente."),
+            SourceReviewCoordinationStatus.SourceUnavailable => (
+                "lectura/JSON inválido",
+                $"Motivo (lectura/JSON inválido): no existe un único archivo de {kind} legible con el identificador {sourceRecordId}. "
+                + "El archivo puede faltar, estar bloqueado o tener JSON inválido; no se registró ninguna asociación."),
+            SourceReviewCoordinationStatus.ReviewRequired => (
+                "revisión requerida",
+                "Motivo (revisión requerida): la evidencia debe verificarse de nuevo antes de confirmar."),
+            _ => (
+                "no disponible",
+                "No se pudo comprobar un único caso y diagnóstico íntegros.")
         };
     }
 
@@ -1381,6 +1815,29 @@ public partial class ReportViewModel : ObservableObject
         HasGeneratedPdf = false;
         PdfStatusText = string.Empty;
     }
+}
+
+/// <summary>
+/// Fila compacta de la tabla técnica de fuentes del informe (solo lectura).
+/// No contiene rutas privadas ni datos de cliente más allá del nombre ya
+/// visible en el selector; el detalle completo va en el ToolTip de la fila.
+/// </summary>
+public sealed class ReportSectionRow
+{
+    /// <summary>Nombre de la fuente/sección.</summary>
+    public string Fuente { get; init; } = string.Empty;
+
+    /// <summary>Cantidad de registros persistidos disponibles.</summary>
+    public int Registros { get; init; }
+
+    /// <summary>Último registro disponible, ya formateado.</summary>
+    public string Ultimo { get; init; } = "—";
+
+    /// <summary>Estado corto: disponible / sin datos / resumen / OK / revisar.</summary>
+    public string Estado { get; init; } = string.Empty;
+
+    /// <summary>Detalle técnico completo mostrado como ToolTip.</summary>
+    public string Detalle { get; init; } = string.Empty;
 }
 
 /// <summary>

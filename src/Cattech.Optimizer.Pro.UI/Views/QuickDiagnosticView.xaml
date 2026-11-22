@@ -10,88 +10,116 @@
     </UserControl.Resources>
 
     <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="30">
-        <StackPanel MaxWidth="750" HorizontalAlignment="Left">
+        <StackPanel MaxWidth="980" HorizontalAlignment="Left">
 
             <!-- Título -->
-            <TextBlock Text="Diagnóstico Rápido"
+            <TextBlock Text="Diagnóstico rápido"
                        FontSize="26" FontWeight="Bold"
-                       Foreground="#1B1B1B" Margin="0,0,0,5" />
-            <TextBlock Text="Análisis no invasivo del estado del equipo. No se modifica nada en Windows."
-                       FontSize="13" Foreground="#666" Margin="0,0,0,20" />
+                       Foreground="#1B1B1B" Margin="0,0,0,4" />
+            <TextBlock Text="Análisis no invasivo. Solo lectura; no modifica Windows. Datos crudos copiables/exportables."
+                       FontSize="12" Foreground="#666" Margin="0,0,0,16" />
 
             <!-- Mensajes de estado -->
-            <Border CornerRadius="6" Padding="12,10" Margin="0,0,0,15"
+            <Border CornerRadius="6" Padding="12,10" Margin="0,0,0,12"
                     Visibility="{Binding IsSuccess, Converter={StaticResource BoolToVis}}"
                     Background="#E6F4EA" BorderBrush="#34A853" BorderThickness="1">
                 <TextBlock Text="{Binding StatusMessage}" Foreground="#1E7E34" FontWeight="SemiBold" />
             </Border>
-            <Border CornerRadius="6" Padding="12,10" Margin="0,0,0,15"
+            <Border CornerRadius="6" Padding="12,10" Margin="0,0,0,12"
                     Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}"
                     Background="#FDECEA" BorderBrush="#D93025" BorderThickness="1">
                 <TextBlock Text="{Binding ErrorMessage}" Foreground="#C62828" FontWeight="SemiBold" />
             </Border>
 
+            <!-- Aviso de diagnóstico parcial -->
+            <Border CornerRadius="6" Padding="12,10" Margin="0,0,0,12"
+                    Visibility="{Binding IsPartial, Converter={StaticResource BoolToVis}}"
+                    Background="#FFF8E1" BorderBrush="#F9A825" BorderThickness="1">
+                <StackPanel>
+                    <TextBlock Text="DIAGNÓSTICO PARCIAL: una o más fuentes fallaron."
+                               FontWeight="Bold" Foreground="#8A5A00" FontSize="12" />
+                    <TextBlock Text="El reporte conserva las fuentes que respondieron. Revisar los errores por fuente más abajo."
+                               Foreground="#8A5A00" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
+                </StackPanel>
+            </Border>
+
             <!-- Botones de acción -->
-            <Grid Margin="0,0,0,20">
+            <Grid Margin="0,0,0,14">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
                 <Button Grid.Column="0"
-                        Content="🔍 Ejecutar diagnóstico rápido"
+                        Content="Ejecutar diagnóstico"
                         Command="{Binding RunDiagnosticCommand}"
                         Padding="18,10" FontSize="13" FontWeight="SemiBold"
                         Background="#0078D4" Foreground="White"
                         BorderThickness="0" Cursor="Hand"
                         IsEnabled="{Binding IsRunning, Converter={StaticResource InvertBoolConverter}}" />
 
-                <StackPanel Grid.Column="2" Orientation="Horizontal">
+                <WrapPanel Grid.Column="1" Orientation="Horizontal"
+                           HorizontalAlignment="Right" VerticalAlignment="Center"
+                           Margin="16,0,0,0">
                     <TextBlock Text="{Binding StatusText}" FontSize="12"
-                               Foreground="#666" VerticalAlignment="Center" Margin="0,0,15,0" />
-                    <Button Content="💾 Guardar diagnóstico"
-                            Command="{Binding SaveDiagnosticCommand}"
-                            Padding="16,10" FontSize="13"
+                               Foreground="#555" VerticalAlignment="Center" Margin="0,0,14,0" />
+                    <Button Content="Copiar resumen" Padding="12,8" FontSize="12"
+                            Command="{Binding CopySummaryCommand}"
                             Background="#F3F3F3" Foreground="#333"
-                            BorderBrush="#CCC" BorderThickness="1"
-                            Cursor="Hand"
+                            BorderBrush="#CCC" BorderThickness="1" Cursor="Hand"
+                            IsEnabled="{Binding HasResults}" Margin="0,0,8,0" />
+                    <Button Content="Exportar JSON" Padding="12,8" FontSize="12"
+                            Command="{Binding ExportJsonCommand}"
+                            Background="#F3F3F3" Foreground="#333"
+                            BorderBrush="#CCC" BorderThickness="1" Cursor="Hand"
+                            IsEnabled="{Binding HasResults}" Margin="0,0,8,0" />
+                    <Button Content="Abrir carpeta de diagnósticos" Padding="12,8" FontSize="12"
+                            Command="{Binding OpenDiagnosticsFolderCommand}"
+                            Background="#F3F3F3" Foreground="#333"
+                            BorderBrush="#CCC" BorderThickness="1" Cursor="Hand"
+                            ToolTip="{Binding DiagnosticsFolderPath}" Margin="0,0,8,0" />
+                    <Button Content="Guardar diagnóstico" Padding="12,8" FontSize="12"
+                            Command="{Binding SaveDiagnosticCommand}"
+                            Background="#F3F3F3" Foreground="#333"
+                            BorderBrush="#CCC" BorderThickness="1" Cursor="Hand"
                             IsEnabled="{Binding HasResults}" />
-                </StackPanel>
+                </WrapPanel>
             </Grid>
 
             <!-- Barra de progreso -->
             <ProgressBar Value="{Binding ProgressPercent}" Maximum="100"
-                         Height="6" Margin="0,0,0,20"
+                         Height="6" Margin="0,0,0,16"
                          Background="#E0E0E0" Foreground="#0078D4"
                          Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}" />
 
             <!-- Resultados -->
             <Border Visibility="{Binding HasResults, Converter={StaticResource BoolToVis}}"
                     BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="8"
-                    Padding="20" Margin="0,0,0,20" Background="White">
+                    Padding="18" Margin="0,0,0,18" Background="White">
 
                 <StackPanel>
 
                     <!-- Sección: Sistema -->
-                    <TextBlock Text="SISTEMA" FontSize="12" FontWeight="Bold"
-                               Foreground="#0078D4" Margin="0,0,0,10" />
-                    <Grid Margin="0,0,0,15">
+                    <TextBlock Text="SISTEMA" FontSize="11" FontWeight="Bold"
+                               Foreground="#0078D4" Margin="0,0,0,8" />
+                    <Grid Margin="0,0,0,12">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="160" />
+                            <ColumnDefinition Width="150" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="15" />
-                            <ColumnDefinition Width="160" />
+                            <ColumnDefinition Width="150" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
-                            <RowDefinition Height="8" />
+                            <RowDefinition Height="6" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="6" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
                         <TextBlock Grid.Row="0" Grid.Column="0" Text="SO:" FontSize="12" FontWeight="SemiBold" Foreground="#555" />
-                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding OsName}" FontSize="12" Foreground="#333" />
+                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding OsName}" FontSize="12" Foreground="#333" TextTrimming="CharacterEllipsis" />
                         <TextBlock Grid.Row="0" Grid.Column="3" Text="Edición:" FontSize="12" FontWeight="SemiBold" Foreground="#555" />
                         <TextBlock Grid.Row="0" Grid.Column="4" Text="{Binding WindowsEdition}" FontSize="12" Foreground="#333" />
 
@@ -99,24 +127,27 @@
                         <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Architecture}" FontSize="12" Foreground="#333" />
                         <TextBlock Grid.Row="2" Grid.Column="3" Text="Equipo:" FontSize="12" FontWeight="SemiBold" Foreground="#555" />
                         <TextBlock Grid.Row="2" Grid.Column="4" Text="{Binding ComputerName}" FontSize="12" Foreground="#333" />
+
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Usuario:" FontSize="12" FontWeight="SemiBold" Foreground="#555" />
+                        <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding CurrentUser}" FontSize="12" Foreground="#333" />
                     </Grid>
 
-                    <Separator Background="#EEE" Margin="0,0,0,15" />
+                    <Separator Background="#EEE" Margin="0,0,0,12" />
 
                     <!-- Sección: Hardware -->
-                    <TextBlock Text="HARDWARE" FontSize="12" FontWeight="Bold"
-                               Foreground="#0078D4" Margin="0,0,0,10" />
-                    <Grid Margin="0,0,0,15">
+                    <TextBlock Text="HARDWARE" FontSize="11" FontWeight="Bold"
+                               Foreground="#0078D4" Margin="0,0,0,8" />
+                    <Grid Margin="0,0,0,12">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="160" />
+                            <ColumnDefinition Width="150" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="15" />
-                            <ColumnDefinition Width="160" />
+                            <ColumnDefinition Width="150" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
-                            <RowDefinition Height="8" />
+                            <RowDefinition Height="6" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
@@ -129,22 +160,22 @@
                         <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding RamUsage}" FontSize="12" Foreground="#333" />
                     </Grid>
 
-                    <Separator Background="#EEE" Margin="0,0,0,15" />
+                    <Separator Background="#EEE" Margin="0,0,0,12" />
 
                     <!-- Sección: Disco -->
-                    <TextBlock Text="DISCO" FontSize="12" FontWeight="Bold"
-                               Foreground="#0078D4" Margin="0,0,0,10" />
-                    <Grid Margin="0,0,0,15">
+                    <TextBlock Text="DISCO" FontSize="11" FontWeight="Bold"
+                               Foreground="#0078D4" Margin="0,0,0,8" />
+                    <Grid Margin="0,0,0,12">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="160" />
+                            <ColumnDefinition Width="150" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="15" />
-                            <ColumnDefinition Width="160" />
+                            <ColumnDefinition Width="150" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
-                            <RowDefinition Height="8" />
+                            <RowDefinition Height="6" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
@@ -164,47 +195,55 @@
                         </TextBlock>
                     </Grid>
 
-                    <Separator Background="#EEE" Margin="0,0,0,15" />
+                    <Separator Background="#EEE" Margin="0,0,0,12" />
 
-                    <!-- Sección: Inicio -->
-                    <TextBlock Text="INICIO DE WINDOWS" FontSize="12" FontWeight="Bold"
-                               Foreground="#0078D4" Margin="0,0,0,10" />
-                    <Grid Margin="0,0,0,15">
+                    <!-- Sección: Inicio y temporales -->
+                    <TextBlock Text="INICIO / TEMPORALES" FontSize="11" FontWeight="Bold"
+                               Foreground="#0078D4" Margin="0,0,0,8" />
+                    <Grid Margin="0,0,0,12">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="160" />
+                            <ColumnDefinition Width="150" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="15" />
-                            <ColumnDefinition Width="160" />
+                            <ColumnDefinition Width="150" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
 
-                        <TextBlock Grid.Column="0" Text="Total:" FontSize="12" FontWeight="SemiBold" Foreground="#555" />
+                        <TextBlock Grid.Column="0" Text="Programas al inicio:" FontSize="12" FontWeight="SemiBold" Foreground="#555" />
                         <TextBlock Grid.Column="1" Text="{Binding StartupInfo}" FontSize="12" Foreground="#333" />
                         <TextBlock Grid.Column="3" Text="De terceros:" FontSize="12" FontWeight="SemiBold" Foreground="#555" />
                         <TextBlock Grid.Column="4" Text="{Binding StartupThirdParty}" FontSize="12" Foreground="#333" />
                     </Grid>
-
-                    <Separator Background="#EEE" Margin="0,0,0,15" />
-
-                    <!-- Sección: Seguridad -->
-                    <TextBlock Text="SEGURIDAD" FontSize="12" FontWeight="Bold"
-                               Foreground="#0078D4" Margin="0,0,0,10" />
-                    <Grid Margin="0,0,0,15">
+                    <Grid Margin="0,0,0,12">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="160" />
+                            <ColumnDefinition Width="150" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Temporales:" FontSize="12" FontWeight="SemiBold" Foreground="#555" />
+                        <TextBlock Grid.Column="1" Text="{Binding TempFilesInfo}" FontSize="12" Foreground="#333" />
+                    </Grid>
+
+                    <Separator Background="#EEE" Margin="0,0,0,12" />
+
+                    <!-- Sección: Seguridad y memoria virtual -->
+                    <TextBlock Text="SEGURIDAD / MEMORIA VIRTUAL" FontSize="11" FontWeight="Bold"
+                               Foreground="#0078D4" Margin="0,0,0,8" />
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="150" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="15" />
-                            <ColumnDefinition Width="160" />
+                            <ColumnDefinition Width="150" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
-                            <RowDefinition Height="8" />
+                            <RowDefinition Height="6" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
                         <TextBlock Grid.Row="0" Grid.Column="0" Text="Antivirus:" FontSize="12" FontWeight="SemiBold" Foreground="#555" />
-                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding AntivirusInfo}" FontSize="12" Foreground="#333" />
+                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding AntivirusInfo}" FontSize="12" Foreground="#333" TextTrimming="CharacterEllipsis" />
                         <TextBlock Grid.Row="0" Grid.Column="3" Text="Firewall:" FontSize="12" FontWeight="SemiBold" Foreground="#555" />
                         <TextBlock Grid.Row="0" Grid.Column="4" Text="{Binding FirewallInfo}" FontSize="12" Foreground="#333" />
 
@@ -214,22 +253,57 @@
                         <TextBlock Grid.Row="2" Grid.Column="4" Text="{Binding VirtualMemoryInfo}" FontSize="12" Foreground="#333" />
                     </Grid>
 
-                    <Separator Background="#EEE" Margin="0,0,0,15" />
+                    <Separator Background="#EEE" Margin="0,0,0,12" />
 
-                    <!-- Sección: Temporales -->
-                    <TextBlock Text="TEMPORALES" FontSize="12" FontWeight="Bold"
-                               Foreground="#0078D4" Margin="0,0,0,10" />
-                    <TextBlock Text="{Binding TempFilesInfo}" FontSize="13" Foreground="#333" Margin="0,0,0,15" />
+                    <!-- Sección: Errores y advertencias por fuente -->
+                    <TextBlock Text="ERRORES / ADVERTENCIAS POR FUENTE" FontSize="11" FontWeight="Bold"
+                               Foreground="#0078D4" Margin="0,0,0,8" />
 
-                    <Separator Background="#EEE" Margin="0,0,0,15" />
+                    <TextBlock Text="Sin errores ni advertencias de fuente."
+                               FontSize="12" Foreground="#888"
+                               Visibility="{Binding HasSourceIssues, Converter={StaticResource InverseBoolToVis}}"
+                               Margin="0,0,0,10" />
+
+                    <ItemsControl ItemsSource="{Binding SourceIssues}" Margin="0,0,0,10">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border CornerRadius="4" Padding="10,7" Margin="0,0,0,6"
+                                        BorderThickness="1">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Background" Value="#FFF8E1" />
+                                            <Setter Property="BorderBrush" Value="#FFD54F" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Severity}" Value="Error">
+                                                    <Setter Property="Background" Value="#FDECEA" />
+                                                    <Setter Property="BorderBrush" Value="#EF5350" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <StackPanel>
+                                        <TextBlock FontFamily="Consolas" FontSize="11" FontWeight="Bold" Foreground="#333">
+                                            <Run Text="{Binding SeverityText, Mode=OneWay}" />
+                                            <Run Text="  " />
+                                            <Run Text="{Binding Source, Mode=OneWay}" />
+                                        </TextBlock>
+                                        <TextBlock Text="{Binding Message}" FontFamily="Consolas" FontSize="11"
+                                                   Foreground="#444" TextWrapping="Wrap" Margin="0,3,0,0" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <Separator Background="#EEE" Margin="0,0,0,12" />
 
                     <!-- Sección: Alertas -->
-                    <TextBlock Text="ALERTAS Y RECOMENDACIONES" FontSize="12" FontWeight="Bold"
-                               Foreground="#0078D4" Margin="0,0,0,10" />
+                    <TextBlock Text="ALERTAS" FontSize="11" FontWeight="Bold"
+                               Foreground="#0078D4" Margin="0,0,0,8" />
 
                     <TextBlock Text="Sin alertas" FontSize="12" Foreground="#888"
                                Visibility="{Binding HasAlerts, Converter={StaticResource InverseBoolToVis}}"
-                               Margin="0,0,0,10" />
+                               Margin="0,0,0,8" />
 
                     <ItemsControl ItemsSource="{Binding Alerts}">
                         <ItemsControl.ItemTemplate>
@@ -266,6 +340,24 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+
+                    <Separator Background="#EEE" Margin="0,0,0,12" />
+
+                    <!-- Panel de detalle técnico: JSON generado en el VM -->
+                    <TextBlock Text="DETALLE TÉCNICO (JSON)" FontSize="11" FontWeight="Bold"
+                               Foreground="#0078D4" Margin="0,0,0,8" />
+                    <TextBlock Text="Mismo formato que data/diagnostics. Copiable desde el panel."
+                               FontSize="11" Foreground="#888" Margin="0,0,0,6" />
+                    <TextBox Text="{Binding TechnicalDetailText, Mode=OneWay}"
+                             IsReadOnly="True" AcceptsReturn="True"
+                             FontFamily="Consolas" FontSize="11"
+                             Background="#FAFAFA" BorderBrush="#DDD" BorderThickness="1"
+                             VerticalScrollBarVisibility="Auto"
+                             HorizontalScrollBarVisibility="Auto"
+                             TextWrapping="NoWrap"
+                             MinHeight="180" MaxHeight="360"
+                             Padding="8"
+                             Visibility="{Binding HasTechnicalDetail, Converter={StaticResource BoolToVis}}" />
 
                 </StackPanel>
             </Border>

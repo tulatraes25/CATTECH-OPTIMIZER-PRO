@@ -263,6 +263,57 @@ public class VisualOptimizationService : IVisualOptimizationService
         return fileName;
     }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Un archivo de resultados dañado o inaccesible se omite (no se borra ni
+    /// se repara) para que no oculte los resultados válidos restantes. Los
+    /// resultados se devuelven del más reciente al más antiguo.
+    /// </remarks>
+    public async Task<IReadOnlyList<VisualOptimizationResult>> ListResultsAsync(
+        int maxResults = 20)
+    {
+        if (maxResults <= 0 || !Directory.Exists(_resultsDirectory))
+            return Array.Empty<VisualOptimizationResult>();
+
+        string[] files;
+        try
+        {
+            files = Directory.GetFiles(_resultsDirectory,
+                "visual-optimization-result-*.json");
+        }
+        catch (IOException) { return Array.Empty<VisualOptimizationResult>(); }
+        catch (UnauthorizedAccessException) { return Array.Empty<VisualOptimizationResult>(); }
+
+        var results = new List<VisualOptimizationResult>();
+        foreach (var file in files.OrderByDescending(f => File.GetLastWriteTimeUtc(f)))
+        {
+            try
+            {
+                var json = await File.ReadAllTextAsync(file).ConfigureAwait(false);
+                var parsed = JsonSerializer.Deserialize<VisualOptimizationResult>(
+                    json, SerializerOptions);
+                if (parsed is not null)
+                    results.Add(parsed);
+            }
+            catch (IOException) { /* Archivo dañado o bloqueado: se omite. */ }
+            catch (UnauthorizedAccessException) { /* Sin permisos: se omite. */ }
+            catch (JsonException) { /* JSON inválido: se omite sin inventar datos. */ }
+            catch (NotSupportedException) { /* Tipo de JSON no soportado: se omite. */ }
+        }
+
+        return results
+            .OrderByDescending(r => r.StartedAt)
+            .Take(maxResults)
+            .ToList();
+    }
+
+    /// <inheritdoc/>
+    public async Task<VisualOptimizationResult?> LoadLatestResultAsync()
+    {
+        var results = await ListResultsAsync(1).ConfigureAwait(false);
+        return results.Count == 0 ? null : results[0];
+    }
+
     // --- Métodos de registro ---
 
     /// <summary>

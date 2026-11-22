@@ -86,7 +86,7 @@ Sin cambios pendientes de publicar.
 - El tamaño de la Papelera y de cada ubicación se muestra con unidad adaptativa (B/KB/MB/GB).
 
 ### Quality / QA
-- **1946 tests** xUnit (nuevos: desactivación/restauración real sobre HKCU, clasificador, selección, punto de restauración, optimización visual, SMART/informes y limpieza recursiva).
+- **2055 tests** xUnit (nuevos: desactivación/restauración real sobre HKCU, clasificador, selección, punto de restauración, optimización visual, SMART/informes y limpieza recursiva).
 - Build Release sin warnings.
 - Verificación E2E con UI Automation sobre la app publicada: limpieza real (16.845 archivos / 260 MB escaneados, 162 MB liberados, protegidos conservados), desactivación real de una entrada de inicio (valor borrado + backup) y restauración desde la UI; navegación sin crashes por las 14 pantallas.
 

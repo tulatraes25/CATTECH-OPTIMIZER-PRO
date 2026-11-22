@@ -15,11 +15,62 @@
         <converters:SmartHealthStatusToColorConverter x:Key="HealthColorConverter" />
         <converters:SmartHealthStatusToTextConverter x:Key="HealthTextConverter" />
         <converters:SmartSeverityToColorConverter x:Key="SeverityColorConverter" />
+
+        <!-- Grillas técnicas: densidad alta y fuente monoespaciada -->
+        <Style x:Key="TechColHeader" TargetType="DataGridColumnHeader">
+            <Setter Property="Background" Value="#F0F0F0" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="Padding" Value="6,4" />
+            <Setter Property="BorderBrush" Value="#E0E0E0" />
+            <Setter Property="BorderThickness" Value="0,0,1,1" />
+        </Style>
+
+        <Style x:Key="TechGrid" TargetType="DataGrid">
+            <Setter Property="AutoGenerateColumns" Value="False" />
+            <Setter Property="IsReadOnly" Value="True" />
+            <Setter Property="SelectionMode" Value="Single" />
+            <Setter Property="SelectionUnit" Value="FullRow" />
+            <Setter Property="GridLinesVisibility" Value="Horizontal" />
+            <Setter Property="HeadersVisibility" Value="Column" />
+            <Setter Property="AlternatingRowBackground" Value="#FAFAFA" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="RowHeaderWidth" Value="0" />
+            <Setter Property="CanUserAddRows" Value="False" />
+            <Setter Property="CanUserDeleteRows" Value="False" />
+            <Setter Property="FontFamily" Value="Consolas" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="RowHeight" Value="21" />
+            <Setter Property="EnableRowVirtualization" Value="True" />
+            <Setter Property="ColumnHeaderStyle" Value="{StaticResource TechColHeader}" />
+        </Style>
+
+        <Style x:Key="TechCell" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Consolas" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+
+        <Style x:Key="TechButton" TargetType="Button">
+            <Setter Property="Padding" Value="9,4" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Margin" Value="0,0,4,4" />
+            <Setter Property="Background" Value="#F3F3F3" />
+            <Setter Property="Foreground" Value="#333" />
+            <Setter Property="BorderBrush" Value="#CCC" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+
+        <Style x:Key="TechLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#555" />
+        </Style>
     </UserControl.Resources>
 
-    <Grid Margin="30">
+    <Grid Margin="20,14">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -29,381 +80,468 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- Row 0: Título -->
-        <StackPanel Grid.Row="0" Margin="0,0,0,10">
-            <TextBlock Text="Discos SMART" FontSize="26" FontWeight="Bold" Foreground="#1B1B1B" />
-            <TextBlock Text="Análisis de solo lectura de discos mediante smartctl. No se modifican discos."
-                       FontSize="13" Foreground="#666" Margin="0,5,0,0" />
+        <!-- Row 0: Título técnico compacto -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,6">
+            <TextBlock Text="Discos SMART" FontSize="20" FontWeight="Bold" Foreground="#1B1B1B" />
+            <TextBlock Text="  ·  análisis de solo lectura vía smartctl (no modifica discos)"
+                       FontSize="11" Foreground="#777" VerticalAlignment="Bottom" Margin="0,0,0,2" />
         </StackPanel>
 
         <!-- Row 1: Mensajes -->
         <StackPanel Grid.Row="1">
-            <Border CornerRadius="6" Padding="12,10" Margin="0,0,0,10"
+            <Border CornerRadius="4" Padding="10,7" Margin="0,0,0,6"
                     Visibility="{Binding IsSuccess, Converter={StaticResource BoolToVis}}"
                     Background="#E6F4EA" BorderBrush="#34A853" BorderThickness="1">
-                <TextBlock Text="{Binding StatusMessage}" Foreground="#1E7E34" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding StatusMessage}" Foreground="#1E7E34" FontSize="11" FontWeight="SemiBold" TextWrapping="Wrap" />
             </Border>
-            <Border CornerRadius="6" Padding="12,10" Margin="0,0,0,10"
+            <Border CornerRadius="4" Padding="10,7" Margin="0,0,0,6"
                     Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}"
                     Background="#FDECEA" BorderBrush="#D93025" BorderThickness="1">
-                <TextBlock Text="{Binding ErrorMessage}" Foreground="#C62828" FontWeight="SemiBold"
-                           TextWrapping="Wrap" />
+                <TextBlock Text="{Binding ErrorMessage}" Foreground="#C62828" FontSize="11" FontWeight="SemiBold" TextWrapping="Wrap" />
             </Border>
         </StackPanel>
 
-        <!-- Row 2: Estado smartctl + Botones -->
-        <Grid Grid.Row="2" Margin="0,0,0,10">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
+        <!-- Row 2: Barra técnica smartctl + acciones -->
+        <Border Grid.Row="2" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="4"
+                Padding="10,8" Margin="0,0,0,6" Background="White">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
 
-            <!-- Estado smartctl -->
-            <Border Grid.Column="0" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
-                    Padding="12,10" Background="White">
-                <StackPanel>
-                    <TextBlock Text="SMARTCTL" FontSize="11" FontWeight="Bold" Foreground="#0078D4" Margin="0,0,0,6" />
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="120" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="120" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="Disponible:" FontSize="11" Foreground="#555" />
-                        <TextBlock Grid.Column="1" Text="{Binding SmartctlAvailable, Converter={StaticResource BoolToVisYesNo}}"
-                                   FontSize="11" FontWeight="SemiBold"
-                                   Foreground="{Binding SmartctlAvailable, Converter={StaticResource SmartctlAvailColorConverter}}" />
-                        <TextBlock Grid.Column="2" Text="Versión:" FontSize="11" Foreground="#555" />
-                        <TextBlock Grid.Column="3" Text="{Binding SmartctlVersion}" FontSize="11" />
-                    </Grid>
-                    <Grid Margin="0,4,0,0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="120" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="120" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="Soporta JSON:" FontSize="11" Foreground="#555" />
-                        <TextBlock Grid.Column="1" Text="{Binding SmartctlSupportsJson, Converter={StaticResource BoolToVisYesNo}}"
-                                   FontSize="11" FontWeight="SemiBold" />
-                    </Grid>
-                    <TextBlock Text="{Binding SmartctlPath}" FontSize="10" Foreground="#888"
-                               TextTrimming="CharacterEllipsis" Margin="0,4,0,0"
+                <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="SMARTCTL" FontSize="10" FontWeight="Bold" Foreground="#0078D4" Margin="0,0,8,0" />
+                        <TextBlock Text="{Binding SmartctlStatusText}" FontSize="11" FontWeight="Bold">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="#999" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SmartctlStatusText}" Value="Disponible">
+                                            <Setter Property="Foreground" Value="#2E7D32" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding SmartctlStatusText}" Value="No disponible">
+                                            <Setter Property="Foreground" Value="#C62828" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding SmartctlStatusText}" Value="Error al verificar">
+                                            <Setter Property="Foreground" Value="#C62828" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock Text="  ·  " FontSize="10" Foreground="#BBB" />
+                        <TextBlock Text="{Binding SmartctlSummaryLine}" FontFamily="Consolas" FontSize="10"
+                                   Foreground="#555" TextTrimming="CharacterEllipsis" MaxWidth="520"
+                                   ToolTip="{Binding SmartctlSummaryLine}" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding SmartctlPath}" FontFamily="Consolas" FontSize="9" Foreground="#888"
+                               TextTrimming="CharacterEllipsis" Margin="0,2,0,0" ToolTip="{Binding SmartctlPath}"
                                Visibility="{Binding SmartctlChecked, Converter={StaticResource BoolToVis}}" />
                     <TextBlock Text="{Binding SmartctlErrorMessage}" FontSize="10" Foreground="#C62828"
-                               TextWrapping="Wrap" Margin="0,4,0,0"
+                               TextWrapping="Wrap" Margin="0,2,0,0"
                                Visibility="{Binding SmartctlErrorMessage, Converter={StaticResource StringToVis}}" />
-                    <!-- Ayuda si smartctl no disponible -->
-                    <Border Background="#FFF8E1" CornerRadius="4" Padding="8,6" Margin="0,6,0,0"
-                            Visibility="{Binding SmartctlAvailable, Converter={StaticResource InvertBoolToVis}}">
-                        <TextBlock FontSize="10" Foreground="#E65100" TextWrapping="Wrap">
-                            <Run Text="Instale smartmontools o configure la ruta de smartctl.exe en config/herramientas.json" />
-                        </TextBlock>
-                    </Border>
                     <!-- Estado de la operación en curso: feedback durante procesos lentos -->
-                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                        <ProgressBar Width="120" Height="6" IsIndeterminate="True"
-                                     VerticalAlignment="Center"
+                    <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
+                        <ProgressBar Width="100" Height="5" IsIndeterminate="True" VerticalAlignment="Center"
                                      Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}" />
                         <TextBlock Text="{Binding StatusText}" FontSize="11" FontWeight="SemiBold"
-                                   Foreground="#0078D4" VerticalAlignment="Center"
-                                   Margin="8,0,0,0" TextWrapping="Wrap" />
+                                   Foreground="#0078D4" VerticalAlignment="Center" Margin="8,0,0,0"
+                                   TextWrapping="Wrap" />
                     </StackPanel>
                 </StackPanel>
-            </Border>
 
-            <!-- Botones -->
-            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="15,0,0,0">
-                <Button Content="🔍 Verificar smartctl"
-                        Command="{Binding CheckSmartctlCommand}" Padding="14,8" FontSize="12"
-                        Background="#0078D4" Foreground="White" BorderThickness="0" Margin="0,0,0,6"
-                        IsEnabled="{Binding CanCheckSmartctl}" />
-                <Button Content="💾 Detectar discos"
-                        Command="{Binding DetectDevicesCommand}" Padding="14,8" FontSize="12"
-                        Background="#F3F3F3" Foreground="#333" BorderBrush="#CCC" BorderThickness="1" Margin="0,0,0,6"
-                        IsEnabled="{Binding CanDetectDevices}" />
-                <Button Content="🔍 Analizar SMART"
-                        Command="{Binding AnalyzeSmartCommand}" Padding="14,8" FontSize="12"
-                        Background="#2E7D32" Foreground="White" BorderThickness="0" Margin="0,0,0,6"
-                        IsEnabled="{Binding CanAnalyzeSmart}" />
-                <Button Content="💾 Guardar análisis"
-                        Command="{Binding SaveAnalysisCommand}" Padding="14,8" FontSize="12"
-                        Background="#F3F3F3" Foreground="#333" BorderBrush="#CCC" BorderThickness="1"
-                        IsEnabled="{Binding CanSaveAnalysis}" />
-            </StackPanel>
-        </Grid>
-
-        <!-- Row 3: Advertencia de seguridad -->
-        <Border Grid.Row="3" Background="#E3F2FD" BorderBrush="#42A5F5" BorderThickness="1"
-                CornerRadius="6" Padding="12,8" Margin="0,0,0,10"
-                Visibility="{Binding SmartctlChecked, Converter={StaticResource BoolToVis}}">
-            <TextBlock FontSize="11" Foreground="#1565C0">
-                <Run Text="ℹ️ " FontWeight="Bold" />
-                <Run Text="El análisis SMART es de solo lectura. Un estado No disponible no significa que el disco esté sano. Algunos discos pueden requerir permisos de administrador." />
-            </TextBlock>
+                <WrapPanel Grid.Column="1" Width="330" VerticalAlignment="Center">
+                    <Button Content="Verificar smartctl" Style="{StaticResource TechButton}"
+                            Command="{Binding CheckSmartctlCommand}"
+                            IsEnabled="{Binding CanCheckSmartctl}" Background="#0078D4" Foreground="White" BorderThickness="0" />
+                    <Button Content="Detectar discos" Style="{StaticResource TechButton}"
+                            Command="{Binding DetectDevicesCommand}" IsEnabled="{Binding CanDetectDevices}" />
+                    <Button Content="Analizar SMART" Style="{StaticResource TechButton}"
+                            Command="{Binding AnalyzeSmartCommand}" IsEnabled="{Binding CanAnalyzeSmart}"
+                            Background="#2E7D32" Foreground="White" BorderThickness="0" />
+                    <Button Content="Guardar análisis" Style="{StaticResource TechButton}"
+                            Command="{Binding SaveAnalysisCommand}" IsEnabled="{Binding CanSaveAnalysis}" />
+                    <Button Content="Copiar informe" Style="{StaticResource TechButton}"
+                            Command="{Binding CopySmartReportCommand}"
+                            IsEnabled="{Binding IsRunning, Converter={StaticResource InvertBool}}"
+                            ToolTip="Copia un TSV con discos, estado, atributos crudos y sesiones de self-test." />
+                    <Button Content="Exportar CSV" Style="{StaticResource TechButton}"
+                            Command="{Binding ExportCsvCommand}"
+                            IsEnabled="{Binding IsRunning, Converter={StaticResource InvertBool}}"
+                            ToolTip="Guarda un CSV técnico con secciones de discos, atributos y sesiones." />
+                    <Button Content="Abrir carpeta reports" Style="{StaticResource TechButton}"
+                            Command="{Binding OpenReportsFolderCommand}"
+                            IsEnabled="{Binding IsRunning, Converter={StaticResource InvertBool}}"
+                            ToolTip="Abre data/smart-reports (la crea si todavía no existe)." />
+                    <Button Content="Abrir config smartctl" Style="{StaticResource TechButton}"
+                            Command="{Binding OpenSmartctlConfigCommand}"
+                            IsEnabled="{Binding IsRunning, Converter={StaticResource InvertBool}}"
+                            ToolTip="Abre la carpeta config/ donde vive herramientas.json." />
+                </WrapPanel>
+            </Grid>
         </Border>
 
-        <!-- Row 4: Resumen -->
-        <Border Grid.Row="4" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
-                Padding="12,10" Margin="0,0,0,10" Background="White"
+        <!-- Row 3: Resumen -->
+        <Border Grid.Row="3" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="4"
+                Padding="10,6" Margin="0,0,0,6" Background="White"
                 Visibility="{Binding HasResults, Converter={StaticResource BoolToVis}}">
-            <StackPanel>
-                <TextBlock Text="RESUMEN" FontSize="11" FontWeight="Bold" Foreground="#0078D4" Margin="0,0,0,6" />
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" /><ColumnDefinition Width="20" />
-                        <ColumnDefinition Width="Auto" /><ColumnDefinition Width="20" />
-                        <ColumnDefinition Width="Auto" /><ColumnDefinition Width="20" />
-                        <ColumnDefinition Width="Auto" /><ColumnDefinition Width="20" />
-                        <ColumnDefinition Width="Auto" /><ColumnDefinition Width="20" />
-                        <ColumnDefinition Width="Auto" /><ColumnDefinition Width="20" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="Total:" FontSize="11" Foreground="#555" />
-                    <TextBlock Grid.Column="1" Text="{Binding SummaryTotal}" FontSize="11" FontWeight="SemiBold" />
-                    <TextBlock Grid.Column="2" Text="✅ Buenos:" FontSize="11" Foreground="#555" />
-                    <TextBlock Grid.Column="3" Text="{Binding SummaryGood}" FontSize="11" FontWeight="SemiBold" Foreground="#2E7D32" />
-                    <TextBlock Grid.Column="4" Text="⚠️ Precaución:" FontSize="11" Foreground="#555" />
-                    <TextBlock Grid.Column="5" Text="{Binding SummaryWarning}" FontSize="11" FontWeight="SemiBold" Foreground="#E65100" />
-                    <TextBlock Grid.Column="6" Text="🔴 Críticos:" FontSize="11" Foreground="#555" />
-                    <TextBlock Grid.Column="7" Text="{Binding SummaryCritical}" FontSize="11" FontWeight="SemiBold" Foreground="#C62828" />
-                    <TextBlock Grid.Column="8" Text="❓ No disponible:" FontSize="11" Foreground="#555" />
-                    <TextBlock Grid.Column="9" Text="{Binding SummaryNotAvailable}" FontSize="11" FontWeight="SemiBold" Foreground="#999" />
-                    <TextBlock Grid.Column="10" Text="❔ Desconocido:" FontSize="11" Foreground="#555" />
-                    <TextBlock Grid.Column="11" Text="{Binding SummaryUnknown}" FontSize="11" FontWeight="SemiBold" Foreground="#999" />
-                </Grid>
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="RESUMEN" FontSize="10" FontWeight="Bold" Foreground="#0078D4" Margin="0,0,12,0" VerticalAlignment="Center" />
+                <TextBlock FontSize="11" Foreground="#555" Margin="0,0,12,0">
+                    <Run Text="Total: " /><Run Text="{Binding SummaryTotal, Mode=OneWay}" FontWeight="SemiBold" />
+                </TextBlock>
+                <TextBlock FontSize="11" Foreground="#555" Margin="0,0,12,0">
+                    <Run Text="Buenos: " /><Run Text="{Binding SummaryGood, Mode=OneWay}" FontWeight="SemiBold" Foreground="#2E7D32" />
+                </TextBlock>
+                <TextBlock FontSize="11" Foreground="#555" Margin="0,0,12,0">
+                    <Run Text="Precaución: " /><Run Text="{Binding SummaryWarning, Mode=OneWay}" FontWeight="SemiBold" Foreground="#E65100" />
+                </TextBlock>
+                <TextBlock FontSize="11" Foreground="#555" Margin="0,0,12,0">
+                    <Run Text="Críticos: " /><Run Text="{Binding SummaryCritical, Mode=OneWay}" FontWeight="SemiBold" Foreground="#C62828" />
+                </TextBlock>
+                <TextBlock FontSize="11" Foreground="#555" Margin="0,0,12,0">
+                    <Run Text="No disponible: " /><Run Text="{Binding SummaryNotAvailable, Mode=OneWay}" FontWeight="SemiBold" Foreground="#999" />
+                </TextBlock>
+                <TextBlock FontSize="11" Foreground="#555">
+                    <Run Text="Desconocido: " /><Run Text="{Binding SummaryUnknown, Mode=OneWay}" FontWeight="SemiBold" Foreground="#999" />
+                </TextBlock>
             </StackPanel>
         </Border>
 
-        <!-- Row 5: Tabla de dispositivos detectados -->
-        <Border Grid.Row="5" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
-                Padding="10" Margin="0,0,0,10" Background="White" MaxHeight="150"
+        <!-- Row 4: Dispositivos detectados -->
+        <Border Grid.Row="4" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="4"
+                Padding="8" Margin="0,0,0,6" Background="White" MaxHeight="112"
                 Visibility="{Binding HasDevices, Converter={StaticResource BoolToVis}}">
             <StackPanel>
-                <TextBlock Text="DISPOSITIVOS DETECTADOS" FontSize="11" FontWeight="Bold"
-                           Foreground="#0078D4" Margin="0,0,0,6" />
-                <DataGrid ItemsSource="{Binding Devices}" AutoGenerateColumns="False"
-                          IsReadOnly="True" SelectionMode="Single"
-                          GridLinesVisibility="Horizontal" HeadersVisibility="Column"
-                          AlternatingRowBackground="#FAFAFA" BorderThickness="0"
-                          RowHeaderWidth="0" CanUserAddRows="False" FontSize="11">
+                <TextBlock Text="DISPOSITIVOS DETECTADOS" FontSize="10" FontWeight="Bold"
+                           Foreground="#0078D4" Margin="0,0,0,4" />
+                <DataGrid ItemsSource="{Binding Devices}" Style="{StaticResource TechGrid}" MaxHeight="80">
                     <DataGrid.Columns>
-                        <DataGridTextColumn Header="Dispositivo" Binding="{Binding Name}" Width="100" />
-                        <DataGridTextColumn Header="Tipo" Binding="{Binding Type}" Width="70" />
-                        <DataGridTextColumn Header="Protocolo" Binding="{Binding Protocol}" Width="70" />
-                        <DataGridTextColumn Header="Modelo" Binding="{Binding ModelName}" Width="150" />
-                        <DataGridTextColumn Header="Serie" Binding="{Binding SerialNumber}" Width="120" />
-                        <DataGridTextColumn Header="Disponible" Binding="{Binding IsAvailable, Converter={StaticResource BoolToVisYesNo}}" Width="70" />
+                        <DataGridTextColumn Header="Dispositivo" Binding="{Binding Name}" Width="110" />
+                        <DataGridTextColumn Header="Tipo -d" Binding="{Binding Type}" Width="80" />
+                        <DataGridTextColumn Header="Protocolo" Binding="{Binding Protocol}" Width="80" />
+                        <DataGridTextColumn Header="Modelo" Binding="{Binding ModelName}" Width="180" />
+                        <DataGridTextColumn Header="Serie" Binding="{Binding SerialNumber}" Width="130" />
+                        <DataGridTextColumn Header="Disponible" Binding="{Binding IsAvailable, Converter={StaticResource BoolToVisYesNo}}" Width="80" />
                         <DataGridTextColumn Header="Notas" Binding="{Binding Notes}" Width="*" />
                     </DataGrid.Columns>
                 </DataGrid>
             </StackPanel>
         </Border>
 
-        <!-- Row 6: Tabla + Detalle -->
-        <Grid Grid.Row="6">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="300" />
-            </Grid.ColumnDefinitions>
+        <!-- Row 5: Pestañas técnicas -->
+        <TabControl Grid.Row="5" Background="White" BorderBrush="#E0E0E0" BorderThickness="1" Padding="6">
 
-            <!-- Tabla de reportes -->
-            <Border Grid.Column="0" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
-                    Padding="10" Margin="0,0,10,0" Background="White">
-                <DataGrid ItemsSource="{Binding Reports}" AutoGenerateColumns="False"
-                          IsReadOnly="True" SelectionMode="Single"
-                          SelectionChanged="DataGrid_SelectionChanged"
-                          GridLinesVisibility="Horizontal" HeadersVisibility="Column"
-                          AlternatingRowBackground="#FAFAFA" BorderThickness="0"
-                          RowHeaderWidth="0" CanUserAddRows="False" FontSize="11">
-                    <DataGrid.Columns>
-                        <DataGridTemplateColumn Header="Estado" Width="70">
-                            <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate DataType="{x:Type smart:SmartDiskReport}">
-                                    <Border CornerRadius="3" Padding="4,2" HorizontalAlignment="Center"
-                                            Background="{Binding HealthStatus, Converter={StaticResource HealthColorConverter}}">
-                                        <TextBlock Text="{Binding HealthStatus, Converter={StaticResource HealthTextConverter}}"
-                                                   FontSize="10" Foreground="White" FontWeight="SemiBold" />
-                                    </Border>
-                                </DataTemplate>
-                            </DataGridTemplateColumn.CellTemplate>
-                        </DataGridTemplateColumn>
-                        <DataGridTextColumn Header="Dispositivo" Binding="{Binding Device}" Width="80" />
-                        <DataGridTextColumn Header="Modelo" Binding="{Binding ModelName}" Width="150" />
-                        <DataGridTextColumn Header="Tipo" Binding="{Binding DeviceType}" Width="60" />
-                        <DataGridTextColumn Header="Temp" Binding="{Binding TemperatureCelsius, StringFormat='{}{0}°C'}" Width="50" />
-                        <DataGridTextColumn Header="Horas" Binding="{Binding PowerOnHours}" Width="60" />
-                        <DataGridTextColumn Header="Reasign." Binding="{Binding ReallocatedSectorCount}" Width="55" />
-                        <DataGridTextColumn Header="Pendientes" Binding="{Binding PendingSectorCount}" Width="60" />
-                        <DataGridTextColumn Header="Backup" Binding="{Binding RequiresBackupRecommendation, Converter={StaticResource BoolToVisYesNo}}" Width="55" />
-                    </DataGrid.Columns>
-                </DataGrid>
-            </Border>
-
-            <!-- Panel de detalle -->
-            <Border Grid.Column="1" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
-                    Padding="12" Background="#FAFAFA">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel>
-                        <TextBlock Text="DETALLE" FontSize="11" FontWeight="Bold"
-                                   Foreground="#0078D4" Margin="0,0,0,8" />
-
-                        <TextBlock Text="Seleccioná un disco" FontSize="11" Foreground="#999"
-                                   Visibility="{Binding HasSelectedReport, Converter={StaticResource InvertBool}}" />
-
-                        <StackPanel Visibility="{Binding HasSelectedReport, Converter={StaticResource BoolToVis}}">
-                            <!-- Estado -->
-                            <Border CornerRadius="4" Padding="8,6" Margin="0,0,0,8"
-                                    Background="{Binding SelectedReport.HealthStatus, Converter={StaticResource HealthColorConverter}}">
-                                <TextBlock FontSize="12" FontWeight="SemiBold" Foreground="White">
-                                    <Run Text="{Binding SelectedReport.HealthStatus, Converter={StaticResource HealthTextConverter}, Mode=OneWay}" />
-                                    <Run Text=" - " />
-                                    <Run Text="{Binding SelectedReport.HealthSummary, Mode=OneWay}" FontSize="10" />
-                                </TextBlock>
-                            </Border>
-
-                            <!-- Info básica -->
-                            <Grid Margin="0,0,0,6"><Grid.ColumnDefinitions><ColumnDefinition Width="65" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                <TextBlock Text="Modelo:" FontSize="10" FontWeight="SemiBold" Foreground="#555" />
-                                <TextBlock Text="{Binding SelectedReport.ModelName}" FontSize="10" Grid.Column="1" TextWrapping="Wrap" /></Grid>
-                            <Grid Margin="0,0,0,6"><Grid.ColumnDefinitions><ColumnDefinition Width="65" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                <TextBlock Text="Tipo:" FontSize="10" FontWeight="SemiBold" Foreground="#555" />
-                                <TextBlock Text="{Binding SelectedReport.DeviceType}" FontSize="10" Grid.Column="1" /></Grid>
-                            <Grid Margin="0,0,0,6"><Grid.ColumnDefinitions><ColumnDefinition Width="65" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                <TextBlock Text="Serial:" FontSize="10" FontWeight="SemiBold" Foreground="#555" />
-                                <TextBlock Text="{Binding SelectedReport.SerialNumber}" FontSize="10" Grid.Column="1" /></Grid>
-                            <Grid Margin="0,0,0,6"><Grid.ColumnDefinitions><ColumnDefinition Width="65" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                <TextBlock Text="Firmware:" FontSize="10" FontWeight="SemiBold" Foreground="#555" />
-                                <TextBlock Text="{Binding SelectedReport.FirmwareVersion}" FontSize="10" Grid.Column="1" /></Grid>
-                            <Grid Margin="0,0,0,6"><Grid.ColumnDefinitions><ColumnDefinition Width="65" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                <TextBlock Text="Capacidad:" FontSize="10" FontWeight="SemiBold" Foreground="#555" />
-                                <TextBlock Text="{Binding SelectedReport.CapacityGB, StringFormat='{}{0} GB'}" FontSize="10" Grid.Column="1" /></Grid>
-                            <Grid Margin="0,0,0,6"><Grid.ColumnDefinitions><ColumnDefinition Width="65" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                <TextBlock Text="Temperatura:" FontSize="10" FontWeight="SemiBold" Foreground="#555" />
-                                <TextBlock Text="{Binding SelectedReport.TemperatureCelsius, StringFormat='{}{0} °C'}" FontSize="10" Grid.Column="1" /></Grid>
-                            <Grid Margin="0,0,0,6"><Grid.ColumnDefinitions><ColumnDefinition Width="65" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                <TextBlock Text="Horas:" FontSize="10" FontWeight="SemiBold" Foreground="#555" />
-                                <TextBlock Text="{Binding SelectedReport.PowerOnHours}" FontSize="10" Grid.Column="1" /></Grid>
-                            <Grid Margin="0,0,0,6"><Grid.ColumnDefinitions><ColumnDefinition Width="65" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                <TextBlock Text="Ciclos:" FontSize="10" FontWeight="SemiBold" Foreground="#555" />
-                                <TextBlock Text="{Binding SelectedReport.PowerCycleCount}" FontSize="10" Grid.Column="1" /></Grid>
-
-                            <!-- Atributos -->
-                            <TextBlock Text="Atributos SMART:" FontSize="10" FontWeight="SemiBold"
-                                       Foreground="#555" Margin="0,8,0,4" />
-                            <ItemsControl ItemsSource="{Binding SelectedAttributes}" MaxHeight="150">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate DataType="{x:Type smart:SmartAttribute}">
-                                        <Grid Margin="0,0,0,3">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="30" />
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="50" />
-                                                <ColumnDefinition Width="60" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0" Text="{Binding Id}" FontSize="10" Foreground="#888" />
-                                            <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="10" TextTrimming="CharacterEllipsis" />
-                                            <TextBlock Grid.Column="2" Text="{Binding RawValue}" FontSize="10" TextAlignment="Right" />
-                                            <Border Grid.Column="3" CornerRadius="2" Padding="3,1" HorizontalAlignment="Right"
-                                                    Background="{Binding Severity, Converter={StaticResource SeverityColorConverter}}">
-                                                <TextBlock Text="{Binding Severity}" FontSize="8" Foreground="White" />
-                                            </Border>
-                                        </Grid>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-
-                            <!-- Warnings -->
-                            <TextBlock Text="Advertencias:" FontSize="10" FontWeight="SemiBold"
-                                       Foreground="#E65100" Margin="0,8,0,4"
-                                       Visibility="{Binding SelectedReport.Warnings.Count, Converter={StaticResource ZeroToVis}}" />
-                            <ItemsControl ItemsSource="{Binding SelectedReport.Warnings}" MaxHeight="80">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <TextBlock Text="{Binding}" FontSize="10" Foreground="#E65100"
-                                                   TextWrapping="Wrap" Margin="0,0,0,2" />
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-
-                            <!-- Errores -->
-                            <TextBlock Text="Errores:" FontSize="10" FontWeight="SemiBold"
-                                       Foreground="#C62828" Margin="0,8,0,4"
-                                       Visibility="{Binding SelectedReport.Errors.Count, Converter={StaticResource ZeroToVis}}" />
-                            <ItemsControl ItemsSource="{Binding SelectedReport.Errors}" MaxHeight="80">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <TextBlock Text="{Binding}" FontSize="10" Foreground="#C62828"
-                                                   TextWrapping="Wrap" Margin="0,0,0,2" />
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-
-                            <!-- Recomendación -->
-                            <Border Background="#FFF8E1" CornerRadius="4" Padding="8,6" Margin="0,8,0,0"
-                                    Visibility="{Binding SelectedReport.RequiresBackupRecommendation, Converter={StaticResource BoolToVis}}">
-                                <TextBlock Text="⚠️ BACKUP INMEDIATO RECOMENDADO" FontSize="10"
-                                           FontWeight="Bold" Foreground="#E65100" />
-                            </Border>
-                        </StackPanel>
-                    </StackPanel>
-                </ScrollViewer>
-            </Border>
-        </Grid>
-
-        <!-- Row 7: Panel Test SMART -->
-        <Border Grid.Row="7" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
-                Padding="12,10" Margin="0,10,0,0" Background="White"
-                Visibility="{Binding HasSelectedReport, Converter={StaticResource BoolToVis}}">
-            <StackPanel>
-                <TextBlock Text="TEST SMART" FontSize="11" FontWeight="Bold" Foreground="#0078D4" Margin="0,0,0,6" />
-
+            <!-- Pestaña 1: discos + detalle -->
+            <TabItem Header="Discos">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="350" />
                     </Grid.ColumnDefinitions>
 
-                    <!-- Estado del test -->
-                    <StackPanel Grid.Column="0">
-                        <Grid Margin="0,0,0,4">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Tipo:" FontSize="10" FontWeight="SemiBold" Foreground="#555" />
-                            <TextBlock Text="{Binding CurrentTestTypeText}" FontSize="10" Foreground="#333"
-                                       Margin="4,0,15,0" />
-                            <TextBlock Text="Estado:" FontSize="10" FontWeight="SemiBold" Foreground="#555" />
-                            <TextBlock Text="{Binding TestStatusText}" FontSize="10" Foreground="#333"
-                                       Margin="4,0,0,0" />
-                        </Grid>
-                        <TextBlock Text="{Binding TestResultMessage}" FontSize="10" Foreground="#666"
-                                   TextWrapping="Wrap" Margin="0,0,0,4" />
-                        <TextBlock Text="El test es ejecutado internamente por el dispositivo. La prueba normalmente no modifica datos."
-                                   FontSize="10" Foreground="#888" TextWrapping="Wrap" />
+                    <Border Grid.Column="0" Margin="0,0,6,0">
+                        <DataGrid ItemsSource="{Binding Reports}" Style="{StaticResource TechGrid}"
+                                  SelectedItem="{Binding SelectedReport, Mode=TwoWay}"
+                                  SelectionChanged="DataGrid_SelectionChanged">
+                            <DataGrid.Columns>
+                                <DataGridTemplateColumn Header="Estado" Width="82">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate DataType="{x:Type smart:SmartDiskReport}">
+                                            <Border CornerRadius="2" Padding="4,1" HorizontalAlignment="Left"
+                                                    Background="{Binding HealthStatus, Converter={StaticResource HealthColorConverter}}">
+                                                <TextBlock Text="{Binding HealthStatus, Converter={StaticResource HealthTextConverter}}"
+                                                           FontSize="9" Foreground="White" FontWeight="SemiBold" />
+                                            </Border>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="Dispositivo" Binding="{Binding Device}" Width="85" />
+                                <DataGridTextColumn Header="Modelo" Binding="{Binding ModelName}" Width="160" />
+                                <DataGridTextColumn Header="Tipo" Binding="{Binding DeviceType}" Width="55" />
+                                <DataGridTextColumn Header="-d" Binding="{Binding SmartctlDeviceType}" Width="60" />
+                                <DataGridTextColumn Header="Temp" Binding="{Binding TemperatureCelsius, StringFormat='{}{0} °C'}" Width="55" />
+                                <DataGridTextColumn Header="Horas" Binding="{Binding PowerOnHours}" Width="65" />
+                                <DataGridTextColumn Header="Ciclos" Binding="{Binding PowerCycleCount}" Width="60" />
+                                <DataGridTextColumn Header="Reasig." Binding="{Binding ReallocatedSectorCount}" Width="60" />
+                                <DataGridTextColumn Header="Pend." Binding="{Binding PendingSectorCount}" Width="55" />
+                                <DataGridTextColumn Header="Offline" Binding="{Binding OfflineUncorrectableCount}" Width="55" />
+                                <DataGridTextColumn Header="CRC UDMA" Binding="{Binding UDMACrcErrorCount}" Width="65" />
+                                <DataGridTextColumn Header="NVMe %" Binding="{Binding NvmePercentageUsed, TargetNullValue='-'}" Width="55" />
+                                <DataGridTextColumn Header="Serial" Binding="{Binding SerialNumber}" Width="130" />
+                                <DataGridTextColumn Header="Firmware" Binding="{Binding FirmwareVersion}" Width="95" />
+                                <DataGridTextColumn Header="Backup" Binding="{Binding RequiresBackupRecommendation, Converter={StaticResource BoolToVisYesNo}}" Width="60" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Border>
+
+                    <!-- Detalle técnico del disco -->
+                    <Border Grid.Column="1" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="3" Padding="10" Background="#FAFAFA">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel>
+                                <TextBlock Text="DETALLE DEL DISCO" FontSize="10" FontWeight="Bold"
+                                           Foreground="#0078D4" Margin="0,0,0,6" />
+                                <TextBlock Text="Seleccioná un disco" FontSize="11" Foreground="#999"
+                                           Visibility="{Binding HasSelectedReport, Converter={StaticResource InvertBool}}" />
+
+                                <StackPanel Visibility="{Binding HasSelectedReport, Converter={StaticResource BoolToVis}}">
+                                    <Border CornerRadius="3" Padding="7,5" Margin="0,0,0,6"
+                                            Background="{Binding SelectedReport.HealthStatus, Converter={StaticResource HealthColorConverter}}">
+                                        <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="White" TextWrapping="Wrap">
+                                            <Run Text="{Binding SelectedReport.HealthStatus, Converter={StaticResource HealthTextConverter}, Mode=OneWay}" />
+                                            <Run Text=" - " />
+                                            <Run Text="{Binding SelectedReport.HealthSummary, Mode=OneWay}" FontSize="10" />
+                                        </TextBlock>
+                                    </Border>
+
+                                    <Grid Margin="0,0,0,3">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="82" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="Dispositivo:" Style="{StaticResource TechLabel}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding SelectedReport.Device}" FontFamily="Consolas" FontSize="10" TextWrapping="Wrap" />
+                                    </Grid>
+                                    <Grid Margin="0,0,0,3">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="82" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="Modelo:" Style="{StaticResource TechLabel}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding SelectedReport.ModelName}" FontSize="10" TextWrapping="Wrap" />
+                                    </Grid>
+                                    <Grid Margin="0,0,0,3">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="82" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="Serial:" Style="{StaticResource TechLabel}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding SelectedReport.SerialNumber}" FontFamily="Consolas" FontSize="10" TextWrapping="Wrap" />
+                                    </Grid>
+                                    <Grid Margin="0,0,0,3">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="82" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="Firmware:" Style="{StaticResource TechLabel}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding SelectedReport.FirmwareVersion}" FontFamily="Consolas" FontSize="10" />
+                                    </Grid>
+                                    <Grid Margin="0,0,0,3">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="82" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="Protocolo:" Style="{StaticResource TechLabel}" />
+                                        <TextBlock Grid.Column="1" FontSize="10">
+                                            <Run Text="{Binding SelectedReport.Protocol, Mode=OneWay}" />
+                                            <Run Text="  -d " Foreground="#888" />
+                                            <Run Text="{Binding SelectedReport.SmartctlDeviceType, Mode=OneWay}" />
+                                        </TextBlock>
+                                    </Grid>
+                                    <Grid Margin="0,0,0,3">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="82" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="Capacidad:" Style="{StaticResource TechLabel}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding SelectedReport.CapacityGB, StringFormat='{}{0} GB'}" FontSize="10" />
+                                    </Grid>
+                                    <Grid Margin="0,0,0,3">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="82" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="Temp/ Horas:" Style="{StaticResource TechLabel}" />
+                                        <TextBlock Grid.Column="1" FontSize="10">
+                                            <Run Text="{Binding SelectedReport.TemperatureCelsius, Mode=OneWay}" />
+                                            <Run Text=" °C · " />
+                                            <Run Text="{Binding SelectedReport.PowerOnHours, Mode=OneWay}" />
+                                            <Run Text=" h · " />
+                                            <Run Text="{Binding SelectedReport.PowerCycleCount, Mode=OneWay}" />
+                                            <Run Text=" ciclos" />
+                                        </TextBlock>
+                                    </Grid>
+                                    <Grid Margin="0,0,0,3">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="82" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="Salud SMART:" Style="{StaticResource TechLabel}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding SelectedReport.OverallHealthPassed, TargetNullValue='N/D'}" FontFamily="Consolas" FontSize="10" />
+                                    </Grid>
+                                    <Grid Margin="0,0,0,6">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="82" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="NVMe:" Style="{StaticResource TechLabel}" />
+                                        <TextBlock Grid.Column="1" FontSize="10" TextWrapping="Wrap">
+                                            <Run Text="usado " /><Run Text="{Binding SelectedReport.NvmePercentageUsed, Mode=OneWay, TargetNullValue='-'}" />
+                                            <Run Text="% · spare " /><Run Text="{Binding SelectedReport.NvmeAvailableSpare, Mode=OneWay, TargetNullValue='-'}" />
+                                            <Run Text="% · media err " /><Run Text="{Binding SelectedReport.NvmeMediaErrors, Mode=OneWay, TargetNullValue='-'}" />
+                                            <Run Text=" · unsafe " /><Run Text="{Binding SelectedReport.NvmeUnsafeShutdowns, Mode=OneWay, TargetNullValue='-'}" />
+                                        </TextBlock>
+                                    </Grid>
+
+                                    <TextBlock Text="Advertencias:" Style="{StaticResource TechLabel}" Foreground="#E65100"
+                                               Margin="0,4,0,2"
+                                               Visibility="{Binding SelectedReport.Warnings.Count, Converter={StaticResource ZeroToVis}}" />
+                                    <ItemsControl ItemsSource="{Binding SelectedReport.Warnings}" MaxHeight="70">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding}" FontSize="10" Foreground="#E65100"
+                                                           TextWrapping="Wrap" Margin="0,0,0,2" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <TextBlock Text="Errores:" Style="{StaticResource TechLabel}" Foreground="#C62828"
+                                               Margin="0,4,0,2"
+                                               Visibility="{Binding SelectedReport.Errors.Count, Converter={StaticResource ZeroToVis}}" />
+                                    <ItemsControl ItemsSource="{Binding SelectedReport.Errors}" MaxHeight="70">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding}" FontSize="10" Foreground="#C62828"
+                                                           TextWrapping="Wrap" Margin="0,0,0,2" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <Border Background="#FFF8E1" CornerRadius="3" Padding="7,5" Margin="0,6,0,0"
+                                            Visibility="{Binding SelectedReport.RequiresBackupRecommendation, Converter={StaticResource BoolToVis}}">
+                                        <TextBlock Text="BACKUP INMEDIATO RECOMENDADO" FontSize="10"
+                                                   FontWeight="Bold" Foreground="#E65100" />
+                                    </Border>
+                                </StackPanel>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- Pestaña 2: atributos crudos -->
+            <TabItem Header="Atributos">
+                <Grid Margin="2">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Margin="0,0,0,5">
+                        <TextBlock Text="{Binding SelectedReportHeader}" FontFamily="Consolas" FontSize="11"
+                                   FontWeight="SemiBold" Foreground="#333" TextTrimming="CharacterEllipsis" />
+                        <TextBlock FontSize="10" Foreground="#777" Margin="0,1,0,0"
+                                   Text="Atributos SMART relevantes expuestos por smartctl. val/peor/umbral son valores normalizados; raw es el valor crudo del atributo." />
                     </StackPanel>
 
-                    <!-- Botones -->
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="15,0,0,0">
-                        <Button Content="▶️ Ejecutar test corto"
-                                Command="{Binding StartShortTestCommand}" Padding="14,8" FontSize="12"
-                                Background="#1976D2" Foreground="White" BorderThickness="0" Margin="0,0,0,6"
-                                IsEnabled="{Binding CanRunShortTest}" />
-                        <Button Content="⏱️ Ejecutar test extendido"
-                                Command="{Binding StartExtendedTestCommand}" Padding="14,8" FontSize="12"
-                                Background="#E65100" Foreground="White" BorderThickness="0" Margin="0,0,0,6"
-                                IsEnabled="{Binding CanRunExtendedTest}" />
-                        <Button Content="🔄 Consultar estado"
-                                Command="{Binding CheckTestStatusCommand}" Padding="14,8" FontSize="12"
-                                Background="#F3F3F3" Foreground="#333" BorderBrush="#CCC" BorderThickness="1"
-                                IsEnabled="{Binding CanCheckTestStatus}" />
-                    </StackPanel>
+                    <Grid Grid.Row="1">
+                        <DataGrid ItemsSource="{Binding SelectedAttributeRows}" Style="{StaticResource TechGrid}" RowHeight="20">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="ID" Binding="{Binding IdDisplay}" Width="55" />
+                                <DataGridTextColumn Header="Atributo" Binding="{Binding Name}" Width="190" />
+                                <DataGridTextColumn Header="Fuente" Binding="{Binding Source}" Width="60" />
+                                <DataGridTextColumn Header="Val" Binding="{Binding ValueDisplay}" Width="50" />
+                                <DataGridTextColumn Header="Peor" Binding="{Binding WorstDisplay}" Width="50" />
+                                <DataGridTextColumn Header="Umbral" Binding="{Binding ThresholdDisplay}" Width="55" />
+                                <DataGridTextColumn Header="Raw" Binding="{Binding RawDisplay}" Width="105" />
+                                <DataGridTemplateColumn Header="Flags" Width="*" MinWidth="120">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate DataType="{x:Type smart:SmartAttributeRow}">
+                                            <TextBlock Text="{Binding Flags}" Style="{StaticResource TechCell}"
+                                                       ToolTip="{Binding ToolTipText}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="Prefallo" Binding="{Binding IsPrefailure, Converter={StaticResource BoolToVisYesNo}}" Width="60" />
+                                <DataGridTemplateColumn Header="Severidad" Width="90">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate DataType="{x:Type smart:SmartAttributeRow}">
+                                            <Border CornerRadius="2" Padding="4,1" HorizontalAlignment="Left"
+                                                    VerticalAlignment="Center"
+                                                    Background="{Binding Severity, Converter={StaticResource SeverityColorConverter}}">
+                                                <TextBlock Text="{Binding SeverityDisplay}" FontSize="9"
+                                                           Foreground="White" FontWeight="SemiBold" />
+                                            </Border>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="Descripción" Width="200">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate DataType="{x:Type smart:SmartAttributeRow}">
+                                            <TextBlock Text="{Binding Description}" Style="{StaticResource TechCell}"
+                                                       ToolTip="{Binding ToolTipText}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+
+                        <TextBlock Text="{Binding AttributeEmptyMessage}" FontSize="12" Foreground="#888"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   TextWrapping="Wrap" MaxWidth="520" TextAlignment="Center"
+                                   Visibility="{Binding HasSelectedAttributes, Converter={StaticResource InvertBoolToVis}}" />
+                    </Grid>
                 </Grid>
-            </StackPanel>
+            </TabItem>
+
+            <!-- Pestaña 3: sesiones de self-test persistidas -->
+            <TabItem Header="Sesiones self-test">
+                <Grid Margin="2">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0" Margin="0,0,0,5">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="{Binding SessionsStatusText}" FontSize="11" Foreground="#555"
+                                   VerticalAlignment="Center" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                            <Button Content="Actualizar lista" Style="{StaticResource TechButton}"
+                                    Command="{Binding RefreshSessionsCommand}"
+                                    IsEnabled="{Binding IsRunning, Converter={StaticResource InvertBool}}" />
+                            <Button Content="Cargar sesión" Style="{StaticResource TechButton}"
+                                    Command="{Binding UseSelectedSessionCommand}" />
+                            <Button Content="Consultar estado" Style="{StaticResource TechButton}"
+                                    Command="{Binding CheckTestStatusCommand}"
+                                    IsEnabled="{Binding CanCheckTestStatus}" />
+                        </StackPanel>
+                    </Grid>
+
+                    <DataGrid Grid.Row="1" ItemsSource="{Binding TestSessions}" Style="{StaticResource TechGrid}"
+                              SelectedItem="{Binding SelectedSession, Mode=TwoWay}" RowHeight="20">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="ID" Binding="{Binding Id}" Width="75" />
+                            <DataGridTextColumn Header="Dispositivo" Binding="{Binding Device}" Width="95" />
+                            <DataGridTextColumn Header="Modelo" Binding="{Binding ModelName}" Width="170" />
+                            <DataGridTextColumn Header="Test" Binding="{Binding TestTypeText}" Width="70" />
+                            <DataGridTextColumn Header="Estado" Binding="{Binding StatusText}" Width="140" />
+                            <DataGridTextColumn Header="Solicitado" Binding="{Binding RequestedAtDisplay}" Width="120" />
+                            <DataGridTextColumn Header="Últ. consulta" Binding="{Binding LastCheckedDisplay}" Width="120" />
+                            <DataGridTextColumn Header="Progreso" Binding="{Binding ProgressDisplay}" Width="70" />
+                            <DataGridTextColumn Header="Consulta OK" Binding="{Binding LastCheckText}" Width="85" />
+                            <DataGridTextColumn Header="Resultado" Binding="{Binding ResultMessage}" Width="*" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <TextBlock Grid.Row="2" FontSize="10" Foreground="#777" Margin="0,4,0,0" TextWrapping="Wrap"
+                               Text="Desde esta lista no se inician pruebas: solo se consulta el estado de sesiones ya registradas (smartctl -l selftest, solo lectura)." />
+                </Grid>
+            </TabItem>
+        </TabControl>
+
+        <!-- Row 6: Test SMART de la unidad seleccionada -->
+        <Border Grid.Row="6" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="4"
+                Padding="10,7" Margin="0,6,0,0" Background="White"
+                Visibility="{Binding HasSelectedReport, Converter={StaticResource BoolToVis}}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="TEST SMART" FontSize="10" FontWeight="Bold" Foreground="#0078D4" Margin="0,0,10,0" />
+                        <TextBlock Text="Tipo:" Style="{StaticResource TechLabel}" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding CurrentTestTypeText}" FontSize="10" Margin="4,0,12,0" VerticalAlignment="Center" />
+                        <TextBlock Text="Estado:" Style="{StaticResource TechLabel}" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding TestStatusText}" FontSize="10" Foreground="#333" Margin="4,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding TestResultMessage}" FontSize="10" Foreground="#666"
+                               TextWrapping="Wrap" Margin="0,2,0,0" />
+                    <TextBlock Text="El self-test lo ejecuta el firmware del disco; la app solo inicia/consulta. No modifica datos."
+                               FontSize="9" Foreground="#888" TextWrapping="Wrap" Margin="0,1,0,0" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Content="Test corto" Style="{StaticResource TechButton}"
+                            Command="{Binding StartShortTestCommand}" IsEnabled="{Binding CanRunShortTest}"
+                            Background="#1976D2" Foreground="White" BorderThickness="0" />
+                    <Button Content="Test extendido" Style="{StaticResource TechButton}"
+                            Command="{Binding StartExtendedTestCommand}" IsEnabled="{Binding CanRunExtendedTest}"
+                            Background="#E65100" Foreground="White" BorderThickness="0" />
+                    <Button Content="Consultar estado" Style="{StaticResource TechButton}"
+                            Command="{Binding CheckTestStatusCommand}" IsEnabled="{Binding CanCheckTestStatus}" />
+                </StackPanel>
+            </Grid>
         </Border>
     </Grid>
 </UserControl>

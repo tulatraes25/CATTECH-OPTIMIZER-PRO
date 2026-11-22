@@ -32,6 +32,24 @@ CATTECH OPTIMIZER PRO es una aplicación de escritorio para Windows diseñada pa
 - **Optimización segura**: limpieza de temporales, ajustes visuales y punto de restauración
 - **Informes profesionales**: HTML y PDF con logo, historial de casos y trazabilidad
 
+### UX para técnicos avanzados (v0.3.1)
+
+La interfaz se rediseñó para trabajo técnico real, no para una demo:
+
+- **Barra de estado global** (24 px): `Admin: sí/no`, build de Windows, arquitectura, runtime .NET, ruta de datos con **Abrir datos/Copiar**, estado de `smartctl` (config, autodetección o OK) y versión de la app con panel **Información**.
+- **Panel técnico en Inicio**: sistema (equipo, usuario, admin, Windows, runtime, rutas, smartctl), contadores reales de almacenamiento (informes, diagnósticos, análisis de inicio, backups, limpiezas, optimizaciones, puntos de restauración, HTML) y acciones rápidas. F5 actualiza el panel.
+- **Atajos**: `F5` ejecuta la acción principal de la sección visible y `Ctrl+0..9` navega entre secciones.
+- **Configuración → Herramientas externas**: editor de `smartctl.exe` (ruta, Examinar, Autodetectar, **Probar** y **Guardar** atómico de `config/herramientas.json`) con estado real del binario y rutas de datos/backups/reports/logs.
+- **Diagnóstico**: muestra diagnóstico **parcial** cuando una fuente falla (con lista de errores), JSON técnico en Consolas, **Copiar resumen**, **Exportar JSON** y abrir carpeta de diagnósticos.
+- **Hardware**: **Copiar tabla**/**Exportar CSV** (sensores live + inventario WMI) y panel de diagnóstico técnico (proveedor, conteos válidos, warnings/errores).
+- **SMART**: verificación automática de smartctl al entrar, grilla técnica (transporte `-d`, horas, ciclos, reasignados, pendientes, CRC, UDMA, NVMe %, serial, firmware), pestaña de **atributos crudos** (ID, valor, peor, umbral, raw, flags) y **sesiones self-test** persistidas; **Copiar informe** y **Exportar CSV**.
+- **Programas de inicio**: filtros y búsqueda que funcionan de verdad, detalle técnico con comando/clave completos, **Copiar comando**, **Copiar entrada** y **Abrir ubicación** (regedit/explorer/taskschd).
+- **Limpieza**: rutas completas con IDs técnicos, **historial** de limpiezas persistidas y apertura de carpetas de resultados.
+- **Pantallas azules**: **Abrir carpeta de minidumps**, **Abrir Visor de eventos** y **Copiar análisis**.
+- **Reparaciones**: comandos exactos del plan en panel monoespaciado + **Copiar comandos**/**Copiar plan** (la ejecución automática sigue fuera de alcance).
+- **Informes**: panel de estado técnico (conteos, ruta `reports/`, archivos dañados listados), preselección de secciones con datos reales (incluye historial de limpieza/restauración y resultados de optimización visual) y motivos específicos cuando una revisión falla.
+- **Manejo global de errores**: un fallo inesperado no cierra la app; queda registrado en `logs/app-YYYYMMDD.log` y se informa al técnico.
+
 ### Correcciones v0.3.1 (botones que antes no ejecutaban)
 
 Esta versión corrige la causa raíz de las pantallas que "no hacían nada":
@@ -53,7 +71,7 @@ Esta versión corrige la causa raíz de las pantallas que "no hacían nada":
 - **Pasaporte técnico**: exportación redactada en memoria, con checksum y consentimiento revocable por caso (superficie de revisión)
 - **Informes endurecidos**: publicación atómica de bundles, control de exportaciones HTML/PDF, IDs desambiguados e inventario honesto de archivos dañados
 - **Limpieza verificada**: raíces confiables, exclusiones por edad/atributos, auditoría inmutable y feedback que distingue omitidos, errores y fallas
-- **1946 tests** automatizados (0 fallas, 0 omitidos)
+- **2055 tests** automatizados (0 fallas, 0 omitidos)
 
 ### Correcciones v0.2.2
 

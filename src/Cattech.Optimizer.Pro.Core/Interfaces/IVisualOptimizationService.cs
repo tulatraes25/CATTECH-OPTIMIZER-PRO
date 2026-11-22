@@ -55,4 +55,29 @@ public interface IVisualOptimizationService
     /// Guarda un resultado de optimización.
     /// </summary>
     Task<string> SaveResultAsync(VisualOptimizationResult result);
+
+    /// <summary>
+    /// Lista los resultados de optimización persistidos, más recientes primero.
+    /// </summary>
+    /// <remarks>
+    /// Tiene implementación por defecto (lista vacía) para no romper
+    /// implementaciones o dobles de prueba existentes. La implementación real
+    /// (<c>VisualOptimizationService</c>) la sobrescribe leyendo su carpeta de
+    /// resultados y omitiendo archivos dañados o ilegibles.
+    /// </remarks>
+    Task<IReadOnlyList<VisualOptimizationResult>> ListResultsAsync(int maxResults = 20)
+        => Task.FromResult<IReadOnlyList<VisualOptimizationResult>>(
+            Array.Empty<VisualOptimizationResult>());
+
+    /// <summary>
+    /// Carga el último resultado persistido, o <c>null</c> si no hay registros.
+    /// </summary>
+    /// <remarks>
+    /// Implementación por defecto sobre <see cref="ListResultsAsync"/>.
+    /// </remarks>
+    async Task<VisualOptimizationResult?> LoadLatestResultAsync()
+    {
+        var results = await ListResultsAsync(1).ConfigureAwait(false);
+        return results.Count == 0 ? null : results[0];
+    }
 }

@@ -303,6 +303,26 @@ public class DiagnosticReport
     /// </summary>
     public List<DiagnosticAlert> Alerts { get; set; } = new();
 
+    // --- Advertencias y errores por fuente ---
+
+    /// <summary>
+    /// Advertencias técnicas registradas durante el diagnóstico, una por fuente
+    /// afectada (hardware, inicio, temporales, seguridad, memoria virtual, etc.).
+    /// Nunca incluye rutas privadas ni nombres de usuario. Lista vacía cuando no
+    /// hubo advertencias. Campo aditivo: los JSON de versiones anteriores que no
+    /// lo contienen deserializan con lista vacía.
+    /// </summary>
+    public List<string> Warnings { get; set; } = new();
+
+    /// <summary>
+    /// Errores de fuente registrados durante el diagnóstico. Un error en una
+    /// fuente no invalida el resto del reporte: el servicio conserva las fuentes
+    /// que sí respondieron. Nunca incluye rutas privadas ni nombres de usuario.
+    /// Campo aditivo: los JSON de versiones anteriores que no lo contienen
+    /// deserializan con lista vacía.
+    /// </summary>
+    public List<string> Errors { get; set; } = new();
+
     /// <summary>
     /// Nombre del técnico que ejecutó el diagnóstico.
     /// </summary>

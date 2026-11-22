@@ -6,9 +6,35 @@
     <UserControl.Resources>
         <converters:BoolToVisibilityConverter x:Key="BoolToVis" />
         <converters:InvertBoolConverter x:Key="InvertBool" />
+
+        <!-- Valor numérico grande y monoespaciado de la barra técnica. -->
+        <Style x:Key="TechValue" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Consolas" />
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#1B1B1B" />
+        </Style>
+        <Style x:Key="TechLabel" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Consolas" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="Foreground" Value="#777" />
+        </Style>
+        <Style x:Key="TechMono" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Consolas" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="#444" />
+        </Style>
+        <Style x:Key="SecondaryButton" TargetType="Button">
+            <Setter Property="Padding" Value="10,5" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Background" Value="#F3F3F3" />
+            <Setter Property="Foreground" Value="#333" />
+            <Setter Property="BorderBrush" Value="#CCC" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
     </UserControl.Resources>
 
-    <Grid Margin="30">
+    <Grid Margin="24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -17,178 +43,266 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- Row 0: Título -->
-        <StackPanel Grid.Row="0" Margin="0,0,0,10">
-            <TextBlock Text="Informe Técnico" FontSize="26" FontWeight="Bold" Foreground="#1B1B1B" />
-            <TextBlock Text="Generá un informe HTML profesional con todos los datos del servicio."
-                       FontSize="13" Foreground="#666" Margin="0,5,0,0" />
-        </StackPanel>
+        <!-- Row 0: Título técnico compacto -->
+        <Grid Grid.Row="0" Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="INFORMES TÉCNICOS" FontSize="20" FontWeight="Bold"
+                           Foreground="#1B1B1B" FontFamily="Consolas" />
+                <TextBlock Text="Selección de fuentes persistidas, verificación de evidencia y exportación HTML/PDF."
+                           FontSize="11" Foreground="#666" Margin="0,2,0,0" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <ProgressBar Width="90" Height="5" IsIndeterminate="True"
+                             VerticalAlignment="Center" Margin="0,0,8,0"
+                             Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}" />
+                <TextBlock Text="{Binding StatusText}" FontFamily="Consolas" FontSize="11"
+                           Foreground="#555" VerticalAlignment="Center" />
+            </StackPanel>
+        </Grid>
 
-        <!-- Row 1: Mensajes -->
+        <!-- Row 1: Mensajes / advertencias -->
         <StackPanel Grid.Row="1">
-            <!-- Advisory, read-only integrity warning; never offers file deletion. -->
-            <Border CornerRadius="6" Padding="12,10" Margin="0,0,0,10"
+            <!-- WARNING: aviso de integridad del almacén; NUNCA ofrece borrar archivos. -->
+            <Border CornerRadius="4" Padding="10,8" Margin="0,0,0,8"
                     Visibility="{Binding HasReportInventoryWarning, Converter={StaticResource BoolToVis}}"
                     Background="#FFF4DC" BorderBrush="#B36B00" BorderThickness="1">
                 <StackPanel>
                     <TextBlock Text="ATENCIÓN · INTEGRIDAD DE INFORMES"
-                               FontSize="12" FontWeight="Bold" Foreground="#754400"
-                               Margin="0,0,0,5" />
+                               FontSize="11" FontWeight="Bold" Foreground="#754400"
+                               FontFamily="Consolas" Margin="0,0,0,4" />
                     <TextBlock Text="{Binding ReportInventoryMessage}" TextWrapping="Wrap"
-                               FontSize="12" Foreground="#603900" />
+                               FontSize="11" Foreground="#603900" />
+                    <!-- Lista concreta de archivos dañados (solo nombres). -->
+                    <ItemsControl ItemsSource="{Binding DamagedReportFiles}"
+                                  Margin="0,4,0,0"
+                                  Visibility="{Binding HasDamagedReportFiles, Converter={StaticResource BoolToVis}}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding}" FontFamily="Consolas" FontSize="10"
+                                           Foreground="#603900" TextTrimming="CharacterEllipsis" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
                 </StackPanel>
             </Border>
-            <Border CornerRadius="6" Padding="12,10" Margin="0,0,0,10"
+            <Border CornerRadius="4" Padding="10,8" Margin="0,0,0,8"
                     Visibility="{Binding IsSuccess, Converter={StaticResource BoolToVis}}"
                     Background="#E6F4EA" BorderBrush="#34A853" BorderThickness="1">
                 <TextBlock Text="{Binding StatusMessage}" Foreground="#1E7E34" FontWeight="SemiBold" />
             </Border>
-            <Border CornerRadius="6" Padding="12,10" Margin="0,0,0,10"
+            <Border CornerRadius="4" Padding="10,8" Margin="0,0,0,8"
                     Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}"
                     Background="#FDECEA" BorderBrush="#D93025" BorderThickness="1">
-                <TextBlock Text="{Binding ErrorMessage}" Foreground="#C62828" FontWeight="SemiBold" />
+                <StackPanel>
+                    <TextBlock Text="{Binding ErrorMessage}" Foreground="#C62828"
+                               FontWeight="SemiBold" TextWrapping="Wrap" />
+                    <TextBlock FontFamily="Consolas" FontSize="10" Foreground="#8E1B12"
+                               Margin="0,3,0,0">
+                        <Run Text="Categoría técnica:" />
+                        <Run Text="{Binding ReviewFailureCategory, Mode=OneWay}" />
+                    </TextBlock>
+                </StackPanel>
             </Border>
         </StackPanel>
 
-        <!-- Row 2: Botones -->
-        <Grid Grid.Row="2" Margin="0,0,0,10">
+        <!-- Row 2: Acciones -->
+        <Grid Grid.Row="2" Margin="0,0,0,8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="10" />
+                <ColumnDefinition Width="8" />
                 <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="10" />
+                <ColumnDefinition Width="8" />
                 <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="10" />
+                <ColumnDefinition Width="8" />
                 <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="10" />
+                <ColumnDefinition Width="8" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
-            <Button Grid.Column="0" Content="📥 Cargar datos"
-                    Command="{Binding LoadDataCommand}" Padding="16,8" FontSize="12" FontWeight="SemiBold"
-                    Background="#0078D4" Foreground="White" BorderThickness="0"
+            <Button Grid.Column="0" Content="Cargar datos"
+                    Command="{Binding LoadDataCommand}" Padding="14,6" FontSize="11"
+                    FontWeight="SemiBold" Background="#0078D4" Foreground="White"
+                    BorderThickness="0"
+                    ToolTip="Vuelve a leer configuración, casos, diagnósticos e historiales persistidos."
                     IsEnabled="{Binding IsRunning, Converter={StaticResource InvertBool}}" />
 
-            <Button Grid.Column="2" Content="📄 Generar informe"
-                    Command="{Binding GenerateReportCommand}" Padding="16,8" FontSize="12" FontWeight="SemiBold"
-                    Background="#2E7D32" Foreground="White" BorderThickness="0"
+            <Button Grid.Column="2" Content="Generar informe HTML"
+                    Command="{Binding GenerateReportCommand}" Padding="14,6" FontSize="11"
+                    FontWeight="SemiBold" Background="#2E7D32" Foreground="White"
+                    BorderThickness="0"
+                    ToolTip="Genera el HTML con las secciones tildadas que tengan datos reales."
                     IsEnabled="{Binding IsRunning, Converter={StaticResource InvertBool}}" />
 
-            <Button Grid.Column="4" Content="📕 Exportar PDF"
-                    Command="{Binding ExportPdfCommand}" Padding="16,8" FontSize="12" FontWeight="SemiBold"
-                    Background="#E53935" Foreground="White" BorderThickness="0"
+            <Button Grid.Column="4" Content="Exportar PDF"
+                    Command="{Binding ExportPdfCommand}" Padding="14,6" FontSize="11"
+                    FontWeight="SemiBold" Background="#E53935" Foreground="White"
+                    BorderThickness="0"
+                    ToolTip="Regenera el HTML actual y lo convierte a PDF mediante Microsoft Edge."
                     IsEnabled="{Binding IsExportingPdf, Converter={StaticResource InvertBool}}" />
 
-            <Button Grid.Column="6" Content="🔗 Abrir informe"
-                    Command="{Binding OpenReportCommand}" Padding="14,8" FontSize="12"
-                    Background="#F3F3F3" Foreground="#333" BorderBrush="#CCC" BorderThickness="1"
+            <Button Grid.Column="6" Content="Abrir último HTML"
+                    Command="{Binding OpenReportCommand}" Style="{StaticResource SecondaryButton}"
                     IsEnabled="{Binding HasGeneratedReport}" />
-
-            <Button Grid.Column="8" Content="📁 Abrir carpeta"
-                    Command="{Binding OpenReportsFolderCommand}" Padding="14,8" FontSize="12"
-                    Background="#F3F3F3" Foreground="#333" BorderBrush="#CCC" BorderThickness="1" />
-
-            <StackPanel Grid.Column="10" Orientation="Horizontal" VerticalAlignment="Center">
-                <!-- Indicador de ocupado: la pantalla ahora auto-carga al abrirse -->
-                <ProgressBar Width="110" Height="6" IsIndeterminate="True"
-                             VerticalAlignment="Center" Margin="0,0,8,0"
-                             Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}" />
-                <TextBlock Text="{Binding StatusText}" FontSize="12" Foreground="#666" VerticalAlignment="Center" />
-            </StackPanel>
+            <Button Grid.Column="8" Content="Abrir carpeta de informes"
+                    Command="{Binding OpenReportsFolderCommand}" Style="{StaticResource SecondaryButton}"
+                    ToolTip="{Binding ReportsFolderPath}" />
         </Grid>
 
-        <!-- Row 3: Contenido -->
+        <!-- Row 3: Contenido principal -->
         <Grid Grid.Row="3">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="280" />
+                <ColumnDefinition Width="330" />
             </Grid.ColumnDefinitions>
 
-            <!-- Panel izquierdo: Selección de datos -->
+            <!-- Panel izquierdo: secciones, evidencia y tabla técnica -->
             <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" Margin="0,0,10,0">
                 <StackPanel>
                     <!-- Secciones del informe -->
-                    <Border BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
-                            Padding="15" Background="White" Margin="0,0,0,10">
+                    <Border BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="4"
+                            Padding="12" Background="White" Margin="0,0,0,8">
                         <StackPanel>
-                            <TextBlock Text="SECCIONES DEL INFORME" FontSize="12" FontWeight="Bold"
-                                       Foreground="#0078D4" Margin="0,0,0,10" />
+                            <TextBlock Text="SECCIONES DEL INFORME" FontSize="11" FontWeight="Bold"
+                                       Foreground="#0078D4" FontFamily="Consolas" Margin="0,0,0,8" />
 
                             <CheckBox Content="Datos de empresa/técnico" IsChecked="{Binding IncludeCompany}"
-                                      IsEnabled="{Binding HasCompanyData}" FontSize="12" Margin="0,0,0,6" />
+                                      IsEnabled="{Binding HasCompanyData}" FontSize="11" Margin="0,0,0,4"
+                                      ToolTip="Configuración de empresa y técnico cargada." />
                             <CheckBox Content="Datos del cliente/equipo" IsChecked="{Binding IncludeClient}"
-                                      IsEnabled="{Binding HasClientData}" FontSize="12" Margin="0,0,0,6" />
+                                      IsEnabled="{Binding HasClientData}" FontSize="11" Margin="0,0,0,4"
+                                      ToolTip="Caso de servicio seleccionado; requiere revalidación antes del HTML." />
                             <CheckBox Content="Diagnóstico rápido" IsChecked="{Binding IncludeDiagnostic}"
-                                      IsEnabled="{Binding HasDiagnosticData}" FontSize="12" Margin="0,0,0,6" />
+                                      IsEnabled="{Binding HasDiagnosticData}" FontSize="11" Margin="0,0,0,4"
+                                      ToolTip="Solo se incluye en informes sin cliente hasta que exista una asociación auditada." />
                             <CheckBox Content="Programas de inicio" IsChecked="{Binding IncludeStartup}"
-                                      IsEnabled="{Binding HasStartupData}" FontSize="12" Margin="0,0,0,6" />
-                            <CheckBox Content="Limpieza de temporales" IsChecked="{Binding IncludeCleanup}"
-                                      IsEnabled="{Binding HasCleanupData}" FontSize="12" Margin="0,0,0,6" />
-                            <CheckBox Content="Optimización visual" IsChecked="{Binding IncludeVisualOptimization}"
-                                      IsEnabled="{Binding HasVisualOptimizationData}" FontSize="12" Margin="0,0,0,6" />
-                            <CheckBox Content="Punto de restauración" IsChecked="{Binding IncludeRestorePoint}"
-                                      IsEnabled="{Binding HasRestorePointData}" FontSize="12" Margin="0,0,0,6" />
+                                      IsEnabled="{Binding HasStartupData}" FontSize="11" Margin="0,0,0,4"
+                                      ToolTip="Análisis persistido; solo en informes sin cliente." />
+                            <CheckBox Content="Limpieza de temporales (historial)"
+                                      IsChecked="{Binding IncludeCleanup}"
+                                      IsEnabled="{Binding HasCleanupHistory}" FontSize="11" Margin="0,0,0,1"
+                                      ToolTip="{Binding CleanupSectionToolTip}"
+                                      ToolTipService.ShowOnDisabled="True" />
+                            <TextBlock Text="{Binding LastCleanupRecordText}" Style="{StaticResource TechMono}"
+                                       FontSize="10" Foreground="#777" Margin="22,0,0,4"
+                                       TextTrimming="CharacterEllipsis"
+                                       ToolTip="{Binding CleanupSectionToolTip}" />
+                            <CheckBox Content="Optimización visual"
+                                      IsChecked="{Binding IncludeVisualOptimization}"
+                                      IsEnabled="{Binding HasVisualOptimizationData}" FontSize="11" Margin="0,0,0,1"
+                                      ToolTip="{Binding VisualOptimizationSectionToolTip}"
+                                      ToolTipService.ShowOnDisabled="True" />
+                            <TextBlock Text="{Binding LastVisualOptimizationRecordText}"
+                                       Style="{StaticResource TechMono}"
+                                       FontSize="10" Foreground="#777" Margin="22,0,0,4"
+                                       TextTrimming="CharacterEllipsis"
+                                       ToolTip="{Binding VisualOptimizationSectionToolTip}" />
+                            <CheckBox Content="Punto de restauración (historial)"
+                                      IsChecked="{Binding IncludeRestorePoint}"
+                                      IsEnabled="{Binding HasRestorePointHistory}" FontSize="11" Margin="0,0,0,1"
+                                      ToolTip="{Binding RestorePointSectionToolTip}"
+                                      ToolTipService.ShowOnDisabled="True" />
+                            <TextBlock Text="{Binding LastRestorePointRecordText}" Style="{StaticResource TechMono}"
+                                       FontSize="10" Foreground="#777" Margin="22,0,0,4"
+                                       TextTrimming="CharacterEllipsis"
+                                       ToolTip="{Binding RestorePointSectionToolTip}" />
                             <CheckBox Content="Estado SMART de discos" IsChecked="{Binding IncludeSmart}"
-                                      IsEnabled="{Binding HasSmartData}" FontSize="12" Margin="0,0,0,6" />
+                                      IsEnabled="{Binding HasSmartData}" FontSize="11" Margin="0,0,0,4"
+                                      ToolTip="Análisis SMART persistido; solo en informes sin cliente." />
                             <CheckBox Content="Pruebas SMART (Self-Test)" IsChecked="{Binding IncludeSmartTests}"
-                                      IsEnabled="{Binding HasSmartTestData}" FontSize="12" Margin="0,0,0,6" />
+                                      IsEnabled="{Binding HasSmartTestData}" FontSize="11" Margin="0,0,0,4"
+                                      ToolTip="Sesiones de self-test seleccionadas manualmente." />
                             <CheckBox Content="Recomendaciones automáticas" IsChecked="{Binding IncludeRecommendations}"
-                                      FontSize="12" />
+                                      FontSize="11" Margin="0,0,0,4"
+                                      ToolTip="Recomendaciones derivadas de los datos incluidos." />
                         </StackPanel>
                     </Border>
 
-                    <!-- C2-C: technician review; does NOT enable mixed exports -->
-                    <Border BorderBrush="#B8CBDC" BorderThickness="1" CornerRadius="6"
-                            Padding="15" Background="#F3F8FC" Margin="0,0,0,10">
+                    <!-- Revisión de evidencia (C2-C) -->
+                    <Border BorderBrush="#B8CBDC" BorderThickness="1" CornerRadius="4"
+                            Padding="12" Background="#F3F8FC" Margin="0,0,0,8">
                         <StackPanel>
                             <TextBlock Text="REVISIÓN DE EVIDENCIA DEL EQUIPO"
-                                       FontSize="12" FontWeight="Bold" Foreground="#175C8E"
-                                       Margin="0,0,0,6" />
-                            <TextBlock Text="Antes de asociar un diagnóstico al cliente, verificá el equipo y el origen de la medición. La coincidencia de número de serie o fecha no demuestra procedencia."
-                                       FontSize="11" TextWrapping="Wrap" Margin="0,0,0,10" />
+                                       FontSize="11" FontWeight="Bold" Foreground="#175C8E"
+                                       FontFamily="Consolas" Margin="0,0,0,4" />
+                            <TextBlock Text="Verifica que el diagnóstico elegido sea el archivo exacto del equipo. La coincidencia de serial o fecha no demuestra procedencia."
+                                       FontSize="10" TextWrapping="Wrap" Foreground="#444" Margin="0,0,0,8" />
                             <Button Content="1. Verificar diagnóstico seleccionado"
                                     Command="{Binding PreviewDiagnosticReviewCommand}"
-                                    Padding="12,7" HorizontalAlignment="Left"
+                                    Padding="10,5" HorizontalAlignment="Left" FontSize="11"
+                                    ToolTip="Comprueba caso y archivo de origen; informa el motivo técnico exacto del fallo."
                                     IsEnabled="{Binding IsRunning, Converter={StaticResource InvertBool}}" />
-                            <StackPanel Margin="0,10,0,0"
+                            <StackPanel Margin="0,8,0,0"
                                         Visibility="{Binding HasPendingSourceReview, Converter={StaticResource BoolToVis}}">
                                 <TextBlock Text="{Binding SourceReviewEvidence}"
-                                           FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8" />
+                                           FontFamily="Consolas" FontSize="10" TextWrapping="Wrap"
+                                           Foreground="#175C8E" Margin="0,0,0,6" />
                                 <TextBlock Text="Alias local del técnico (3 a 48 caracteres, letras/números/guion):"
-                                           FontSize="11" TextWrapping="Wrap" Margin="0,0,0,3" />
+                                           FontSize="10" TextWrapping="Wrap" Margin="0,0,0,2" />
                                 <TextBox Text="{Binding ReviewerAlias, UpdateSourceTrigger=PropertyChanged}"
-                                         MaxLength="48" Padding="8,5" Margin="0,0,0,8"
+                                         MaxLength="48" Padding="6,4" Margin="0,0,0,6" FontSize="11"
                                          AutomationProperties.Name="Alias del técnico revisor" />
                                 <CheckBox IsChecked="{Binding ReviewConsent}"
                                           Content="He revisado el caso y esta evidencia; autorizo registrar su asociación."
-                                          FontSize="11" Margin="0,0,0,8" />
+                                          FontSize="10" Margin="0,0,0,6" />
                                 <Button Content="2. Confirmar y registrar revisión"
                                         Command="{Binding ConfirmDiagnosticReviewCommand}"
-                                        Padding="12,7" HorizontalAlignment="Left"
+                                        Padding="10,5" HorizontalAlignment="Left" FontSize="11"
                                         IsEnabled="{Binding IsRunning, Converter={StaticResource InvertBool}}" />
                             </StackPanel>
                             <TextBlock Text="Esta revisión no habilita todavía el uso combinado de mediciones en un informe de cliente."
-                                       FontSize="10" TextWrapping="Wrap"
-                                       Foreground="#526779" Margin="0,10,0,0" />
+                                       FontSize="9" TextWrapping="Wrap"
+                                       Foreground="#526779" Margin="0,8,0,0" />
                         </StackPanel>
                     </Border>
 
-                    <!-- Selección de datos -->
-                    <Border BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
-                            Padding="15" Background="White" Margin="0,0,0,10">
+                    <!-- Fuentes disponibles: tabla compacta monoespaciada -->
+                    <Border BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="4"
+                            Padding="12" Background="White" Margin="0,0,0,8">
                         <StackPanel>
-                            <TextBlock Text="DATOS DISPONIBLES" FontSize="12" FontWeight="Bold"
-                                       Foreground="#0078D4" Margin="0,0,0,10" />
+                            <TextBlock Text="FUENTES DISPONIBLES (SOLO LECTURA)"
+                                       FontSize="11" FontWeight="Bold" Foreground="#0078D4"
+                                       FontFamily="Consolas" Margin="0,0,0,6" />
+                            <DataGrid ItemsSource="{Binding SectionRows}" AutoGenerateColumns="False"
+                                      IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False"
+                                      HeadersVisibility="Column" SelectionMode="Single"
+                                      FontFamily="Consolas" FontSize="11" RowHeight="20"
+                                      Background="White" BorderBrush="#E0E0E0" BorderThickness="1"
+                                      HorizontalGridLinesBrush="#EEEEEE" VerticalGridLinesBrush="Transparent"
+                                      MaxHeight="220">
+                                <DataGrid.RowStyle>
+                                    <Style TargetType="DataGridRow">
+                                        <Setter Property="ToolTip" Value="{Binding Detalle}" />
+                                    </Style>
+                                </DataGrid.RowStyle>
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Fuente" Binding="{Binding Fuente}" Width="150" />
+                                    <DataGridTextColumn Header="Reg." Binding="{Binding Registros}" Width="45" />
+                                    <DataGridTextColumn Header="Último registro" Binding="{Binding Ultimo}" Width="*" />
+                                    <DataGridTextColumn Header="Estado" Binding="{Binding Estado}" Width="85" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </StackPanel>
+                    </Border>
 
-                            <!-- Cliente/Equipo -->
-                            <TextBlock Text="Cliente/Equipo:" FontSize="11" FontWeight="SemiBold" Foreground="#555" Margin="0,0,0,4" />
-                            <!-- Do not show indistinguishable duplicate client names:
-                                 include equipment and service date, never raw serial/ID. -->
+                    <!-- Selección de datos concretos -->
+                    <Border BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="4"
+                            Padding="12" Background="White" Margin="0,0,0,8">
+                        <StackPanel>
+                            <TextBlock Text="SELECCIÓN DE FUENTES" FontSize="11" FontWeight="Bold"
+                                       Foreground="#0078D4" FontFamily="Consolas" Margin="0,0,0,8" />
+
+                            <!-- Cliente/Equipo: no mostrar duplicados indistinguibles.
+                                 Incluye equipo y fecha de servicio; nunca serial/ID crudo. -->
+                            <TextBlock Text="Cliente/Equipo:" FontSize="10" FontWeight="SemiBold"
+                                       Foreground="#555" Margin="0,0,0,2" />
                             <ComboBox ItemsSource="{Binding AvailableServiceReports}"
                                       SelectedItem="{Binding SelectedServiceReport}"
-                                      FontSize="11" Padding="8,6" Margin="0,0,0,10"
+                                      FontSize="11" Padding="6,4" Margin="0,0,0,8"
                                       IsEnabled="{Binding HasClientData}">
                                 <ComboBox.ItemTemplate>
                                     <DataTemplate>
@@ -208,50 +322,63 @@
                                 </ComboBox.ItemTemplate>
                             </ComboBox>
 
-                            <!-- Diagnóstico -->
-                            <TextBlock Text="Diagnóstico:" FontSize="11" FontWeight="SemiBold" Foreground="#555" Margin="0,0,0,4" />
+                            <TextBlock Text="Diagnóstico:" FontSize="10" FontWeight="SemiBold"
+                                       Foreground="#555" Margin="0,0,0,2" />
                             <ComboBox ItemsSource="{Binding AvailableDiagnosticReports}"
                                       SelectedItem="{Binding SelectedDiagnosticReport}"
                                       DisplayMemberPath="OsName"
-                                      FontSize="11" Padding="8,6" Margin="0,0,0,10"
-                                      IsEnabled="{Binding HasDiagnosticData}" />
+                                      FontFamily="Consolas" FontSize="11" Padding="6,4" Margin="0,0,0,8"
+                                      IsEnabled="{Binding HasDiagnosticData}"
+                                      ToolTip="Diagnóstico persistido usado para la revisión de evidencia." />
 
-                            <!-- Inicio -->
-                            <TextBlock Text="Análisis de inicio:" FontSize="11" FontWeight="SemiBold" Foreground="#555" Margin="0,0,0,4" />
+                            <TextBlock Text="Análisis de inicio:" FontSize="10" FontWeight="SemiBold"
+                                       Foreground="#555" Margin="0,0,0,2" />
                             <ComboBox ItemsSource="{Binding AvailableStartupAnalyses}"
                                       SelectedItem="{Binding SelectedStartupAnalysis}"
                                       DisplayMemberPath="AnalysisDate"
-                                      FontSize="11" Padding="8,6" Margin="0,0,0,10"
+                                      FontFamily="Consolas" FontSize="11" Padding="6,4" Margin="0,0,0,8"
                                       IsEnabled="{Binding HasStartupData}" />
 
-                            <!-- Limpieza -->
-                            <TextBlock Text="Resultado de limpieza:" FontSize="11" FontWeight="SemiBold" Foreground="#555" Margin="0,0,0,4" />
-                            <ComboBox ItemsSource="{Binding AvailableCleanupResults}"
-                                      SelectedItem="{Binding SelectedCleanupResult}"
-                                      DisplayMemberPath="StartedAt"
-                                      FontSize="11" Padding="8,6" Margin="0,0,0,10"
-                                      IsEnabled="{Binding HasCleanupData}" />
+                            <TextBlock Text="Optimización visual (resultados persistidos):" FontSize="10"
+                                       FontWeight="SemiBold" Foreground="#555" Margin="0,0,0,2" />
+                            <ComboBox ItemsSource="{Binding AvailableVisualOptResults}"
+                                      SelectedItem="{Binding SelectedVisualOptimizationResult}"
+                                      FontFamily="Consolas" FontSize="11" Padding="6,4" Margin="0,0,0,8"
+                                      IsEnabled="{Binding HasVisualOptimizationData}"
+                                      ToolTip="{Binding VisualOptimizationSectionToolTip}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding StartedAt, StringFormat={}{0:dd/MM/yyyy HH:mm}}"
+                                                       FontFamily="Consolas" />
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Foreground="#666">
+                                                    <Run Text="aplicados: " />
+                                                    <Run Text="{Binding AppliedCount, Mode=OneWay}" />
+                                                </TextBlock>
+                                                <TextBlock Text=" · " Foreground="#777" />
+                                                <TextBlock Foreground="#666">
+                                                    <Run Text="fallidos: " />
+                                                    <Run Text="{Binding FailedCount, Mode=OneWay}" />
+                                                </TextBlock>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
 
-                            <!-- Punto de restauración -->
-                            <TextBlock Text="Punto de restauración:" FontSize="11" FontWeight="SemiBold" Foreground="#555" Margin="0,0,0,4" />
-                            <ComboBox ItemsSource="{Binding AvailableRestorePointResults}"
-                                      SelectedItem="{Binding SelectedRestorePointResult}"
-                                      DisplayMemberPath="RestorePointName"
-                                      FontSize="11" Padding="8,6" Margin="0,0,0,10"
-                                      IsEnabled="{Binding HasRestorePointData}" />
-
-                            <!-- Análisis SMART -->
-                            <TextBlock Text="Análisis SMART:" FontSize="11" FontWeight="SemiBold" Foreground="#555" Margin="0,0,0,4" />
+                            <TextBlock Text="Análisis SMART:" FontSize="10" FontWeight="SemiBold"
+                                       Foreground="#555" Margin="0,0,0,2" />
                             <ComboBox ItemsSource="{Binding AvailableSmartAnalyses}"
                                       SelectedItem="{Binding SelectedSmartAnalysis}"
                                       DisplayMemberPath="DisplayName"
-                                      FontSize="11" Padding="8,6" Margin="0,0,0,10"
+                                      FontFamily="Consolas" FontSize="11" Padding="6,4" Margin="0,0,0,8"
                                       IsEnabled="{Binding HasSmartData}" />
 
-                            <!-- Self-tests SMART -->
-                            <TextBlock Text="Self-tests SMART disponibles:" FontSize="11" FontWeight="SemiBold" Foreground="#555" Margin="0,0,0,4" />
-                            <Border BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="4" Padding="8,6"
-                                    Background="#FAFAFA" MaxHeight="150"
+                            <TextBlock Text="Self-tests SMART disponibles:" FontSize="10" FontWeight="SemiBold"
+                                       Foreground="#555" Margin="0,0,0,2" />
+                            <Border BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="2" Padding="6,4"
+                                    Background="#FAFAFA" MaxHeight="120"
                                     Visibility="{Binding HasSmartTestData, Converter={StaticResource BoolToVis}}">
                                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                                     <ItemsControl ItemsSource="{Binding AvailableSmartTestSessions}">
@@ -259,78 +386,133 @@
                                             <DataTemplate>
                                                 <CheckBox Content="{Binding DisplayName}"
                                                           IsChecked="{Binding IsSelected}"
-                                                          FontSize="10" Margin="0,2,0,2" />
+                                                          FontFamily="Consolas" FontSize="10" Margin="0,1" />
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
                                 </ScrollViewer>
                             </Border>
-                            <TextBlock Text="Las sesiones de self-test no están vinculadas automáticamente al cliente o servicio. Seleccione únicamente las correspondientes a este informe."
-                                       FontSize="9" Foreground="#999" TextWrapping="Wrap" Margin="0,4,0,0"
+                            <TextBlock Text="Las sesiones de self-test no se vinculan automáticamente al cliente; seleccioná solo las de este informe."
+                                       FontSize="9" Foreground="#999" TextWrapping="Wrap" Margin="0,3,0,0"
                                        Visibility="{Binding HasSmartTestData, Converter={StaticResource BoolToVis}}" />
                         </StackPanel>
                     </Border>
                 </StackPanel>
             </ScrollViewer>
 
-            <!-- Panel derecho: Observaciones + Resultado -->
-            <Border Grid.Column="1" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
-                    Padding="15" Background="#FAFAFA">
+            <!-- Panel derecho: estado técnico + observaciones + último artefacto -->
+            <Border Grid.Column="1" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="4"
+                    Padding="12" Background="#FAFAFA">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
-                        <TextBlock Text="OBSERVACIONES FINALES" FontSize="12" FontWeight="Bold"
-                                   Foreground="#0078D4" Margin="0,0,0,8" />
+                        <TextBlock Text="ESTADO TÉCNICO" FontSize="11" FontWeight="Bold"
+                                   Foreground="#0078D4" FontFamily="Consolas" Margin="0,0,0,8" />
+
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <StackPanel Grid.Row="0" Grid.Column="0">
+                                <TextBlock Text="{Binding ClientCount}" Style="{StaticResource TechValue}" />
+                                <TextBlock Text="clientes" Style="{StaticResource TechLabel}" />
+                            </StackPanel>
+                            <StackPanel Grid.Row="0" Grid.Column="1">
+                                <TextBlock Text="{Binding DiagnosticCount}" Style="{StaticResource TechValue}" />
+                                <TextBlock Text="diagnósticos" Style="{StaticResource TechLabel}" />
+                            </StackPanel>
+                            <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,6,0,0">
+                                <TextBlock Text="{Binding InventoryReportCount}" Style="{StaticResource TechValue}" />
+                                <TextBlock Text="informes en almacén" Style="{StaticResource TechLabel}" />
+                            </StackPanel>
+                            <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,6,0,0">
+                                <TextBlock Text="{Binding IncludedSectionsCount}" Style="{StaticResource TechValue}" />
+                                <TextBlock Text="secciones incluidas" Style="{StaticResource TechLabel}" />
+                            </StackPanel>
+                        </Grid>
+
+                        <TextBlock Text="Secciones incluidas:" Style="{StaticResource TechLabel}" />
+                        <TextBlock Text="{Binding IncludedSectionsSummary}" Style="{StaticResource TechMono}"
+                                   TextWrapping="Wrap" Margin="0,1,0,8" />
+
+                        <TextBlock Text="Ruta de reports/:" Style="{StaticResource TechLabel}" />
+                        <TextBlock Text="{Binding ReportsFolderPath}" Style="{StaticResource TechMono}"
+                                   TextTrimming="CharacterEllipsis" Margin="0,1,0,4"
+                                   ToolTip="{Binding ReportsFolderPath}" />
+                        <Button Content="Abrir carpeta de informes"
+                                Command="{Binding OpenReportsFolderCommand}"
+                                Style="{StaticResource SecondaryButton}"
+                                HorizontalAlignment="Left" Margin="0,0,0,8" />
+
+                        <Separator Background="#E0E0E0" Margin="0,0,0,8" />
+
+                        <TextBlock Text="OBSERVACIONES FINALES" FontSize="10" FontWeight="Bold"
+                                   Foreground="#0078D4" FontFamily="Consolas" Margin="0,0,0,4" />
                         <TextBox Text="{Binding FinalObservations, UpdateSourceTrigger=PropertyChanged}"
-                                 AcceptsReturn="True" TextWrapping="Wrap" Height="120"
-                                 Padding="10,8" FontSize="12" BorderBrush="#CCC" BorderThickness="1"
-                                 VerticalScrollBarVisibility="Auto" Margin="0,0,0,15" />
+                                 AcceptsReturn="True" TextWrapping="Wrap" Height="90"
+                                 Padding="6,4" FontFamily="Consolas" FontSize="11"
+                                 BorderBrush="#CCC" BorderThickness="1"
+                                 VerticalScrollBarVisibility="Auto" Margin="0,0,0,8" />
 
-                        <Separator Background="#E0E0E0" Margin="0,0,0,15" />
+                        <Separator Background="#E0E0E0" Margin="0,0,0,8" />
 
-                        <!-- Último informe -->
-                        <TextBlock Text="ÚLTIMO INFORME" FontSize="12" FontWeight="Bold"
-                                   Foreground="#0078D4" Margin="0,0,0,8"
+                        <TextBlock Text="ÚLTIMO HTML" FontSize="10" FontWeight="Bold"
+                                   Foreground="#0078D4" FontFamily="Consolas" Margin="0,0,0,4"
                                    Visibility="{Binding HasGeneratedReport, Converter={StaticResource BoolToVis}}" />
-
-                        <TextBlock Text="{Binding LastReportPath}" FontSize="10" Foreground="#666"
-                                   TextWrapping="Wrap" Margin="0,0,0,10"
+                        <TextBlock Text="{Binding LastReportPath}" Style="{StaticResource TechMono}"
+                                   FontSize="10" TextWrapping="Wrap" Margin="0,0,0,6"
+                                   ToolTip="{Binding LastReportPath}"
                                    Visibility="{Binding HasGeneratedReport, Converter={StaticResource BoolToVis}}" />
-
-                        <Button Content="🔗 Abrir informe generado"
-                                Command="{Binding OpenReportCommand}" Padding="14,8" FontSize="12"
-                                Background="#E3F2FD" Foreground="#1565C0" BorderBrush="#42A5F5" BorderThickness="1"
-                                HorizontalAlignment="Stretch" Margin="0,0,0,8"
+                        <Button Content="Abrir HTML generado"
+                                Command="{Binding OpenReportCommand}" Style="{StaticResource SecondaryButton}"
+                                HorizontalAlignment="Stretch" Margin="0,0,0,6"
                                 Visibility="{Binding HasGeneratedReport, Converter={StaticResource BoolToVis}}" />
 
-                        <!-- PDF -->
-                        <TextBlock Text="ÚLTIMO PDF" FontSize="12" FontWeight="Bold"
-                                   Foreground="#0078D4" Margin="0,10,0,8"
+                        <TextBlock Text="ÚLTIMO PDF" FontSize="10" FontWeight="Bold"
+                                   Foreground="#0078D4" FontFamily="Consolas" Margin="0,4,0,4"
                                    Visibility="{Binding HasGeneratedPdf, Converter={StaticResource BoolToVis}}" />
-
-                        <TextBlock Text="{Binding LastPdfPath}" FontSize="10" Foreground="#666"
-                                   TextWrapping="Wrap" Margin="0,0,0,10"
+                        <TextBlock Text="{Binding LastPdfPath}" Style="{StaticResource TechMono}"
+                                   FontSize="10" TextWrapping="Wrap" Margin="0,0,0,6"
+                                   ToolTip="{Binding LastPdfPath}"
                                    Visibility="{Binding HasGeneratedPdf, Converter={StaticResource BoolToVis}}" />
-
-                        <Button Content="📕 Abrir PDF generado"
-                                Command="{Binding OpenPdfCommand}" Padding="14,8" FontSize="12"
-                                Background="#FDECEA" Foreground="#C62828" BorderBrush="#EF5350" BorderThickness="1"
-                                HorizontalAlignment="Stretch" Margin="0,0,0,8"
+                        <Button Content="Abrir PDF generado"
+                                Command="{Binding OpenPdfCommand}" Style="{StaticResource SecondaryButton}"
+                                HorizontalAlignment="Stretch" Margin="0,0,0,6"
                                 Visibility="{Binding HasGeneratedPdf, Converter={StaticResource BoolToVis}}" />
 
-                        <!-- Advertencias -->
-                        <Border Background="#FFF8E1" CornerRadius="6" Padding="10" Margin="0,15,0,0">
+                        <Border Background="#FFF8E1" CornerRadius="2" Padding="8" Margin="0,6,0,0">
                             <StackPanel>
-                                <TextBlock Text="ℹ️ Notas" FontSize="11" FontWeight="SemiBold"
-                                           Foreground="#E65100" Margin="0,0,0,4" />
-                                <TextBlock Text="• El informe se genera en formato HTML portátil" FontSize="10" Foreground="#666" />
-                                <TextBlock Text="• El logo se embebe como base64 (portátil)" FontSize="10" Foreground="#666" />
-                                <TextBlock Text="• Se guardan en reports/html/" FontSize="10" Foreground="#666" />
-                                <TextBlock Text="• Las secciones sin datos se omiten automáticamente" FontSize="10" Foreground="#666" />
+                                <TextBlock Text="NOTAS" FontSize="10" FontWeight="Bold"
+                                           Foreground="#E65100" FontFamily="Consolas" Margin="0,0,0,3" />
+                                <TextBlock Text="• El HTML es portátil y el logo va embebido (base64)." FontSize="9" Foreground="#666" TextWrapping="Wrap" />
+                                <TextBlock Text="• Se guarda en reports/html/ y el PDF junto al HTML." FontSize="9" Foreground="#666" TextWrapping="Wrap" />
+                                <TextBlock Text="• Limpieza y restauración solo tienen historial resumido: se habilitan pero no se escriben en el HTML." FontSize="9" Foreground="#666" TextWrapping="Wrap" />
+                                <TextBlock Text="• Las secciones sin datos reales se omiten." FontSize="9" Foreground="#666" TextWrapping="Wrap" />
                             </StackPanel>
                         </Border>
                     </StackPanel>
                 </ScrollViewer>
             </Border>
+        </Grid>
+
+        <!-- Row 4: pie técnico -->
+        <Grid Grid.Row="4" Margin="0,6,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="{Binding ReportInventoryMessage}" Style="{StaticResource TechMono}"
+                       FontSize="10" Foreground="#777" TextTrimming="CharacterEllipsis"
+                       ToolTip="{Binding DamagedReportFilesSummary}" />
+            <TextBlock Grid.Column="1" Text="{Binding ReportsFolderPath}" Style="{StaticResource TechMono}"
+                       FontSize="10" Foreground="#999" Margin="12,0,0,0"
+                       TextTrimming="CharacterEllipsis" ToolTip="{Binding ReportsFolderPath}" />
         </Grid>
     </Grid>
 </UserControl>

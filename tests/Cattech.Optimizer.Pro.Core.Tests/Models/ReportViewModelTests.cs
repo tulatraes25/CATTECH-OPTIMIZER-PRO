@@ -861,7 +861,7 @@ public class ReportViewModelTests
     }
 
     [Fact]
-    public async Task ReportViewModel_InvalidStore_FlagsWarningAndSuppressesCustomerSelection()
+    public async Task ReportViewModel_InvalidStore_ListsValidCustomersWithWarning()
     {
         var store = new FakeServiceReportService
         {
@@ -870,12 +870,14 @@ public class ReportViewModelTests
         var (vm, _) = CreateViewModel(store);
         await vm.LoadDataCommand.ExecuteAsync(null);
 
+        // Un archivo dañado se informa y se omite, pero no oculta los válidos.
         Assert.True(vm.HasReportInventoryWarning);
-        Assert.Contains("1 archivos inválidos", vm.ReportInventoryMessage);
-        Assert.Empty(vm.AvailableServiceReports);
-        Assert.Null(vm.SelectedServiceReport);
-        Assert.False(vm.HasClientData);
-        Assert.False(vm.IncludeClient);
+        Assert.Contains("archivos inválidos omitidos", vm.ReportInventoryMessage);
+        Assert.True(vm.HasDamagedReportFiles);
+        Assert.Single(vm.AvailableServiceReports);
+        Assert.NotNull(vm.SelectedServiceReport);
+        Assert.True(vm.HasClientData);
+        Assert.True(vm.IncludeClient);
         Assert.True(vm.HasDiagnosticData);
     }
 
@@ -894,7 +896,7 @@ public class ReportViewModelTests
     }
 
     [Fact]
-    public async Task ReportViewModel_ReloadAfterCorruption_RevokesPreviouslyLoadedDataAndArtifacts()
+    public async Task ReportViewModel_ReloadAfterCorruption_KeepsValidCustomerAndRevokesArtifacts()
     {
         var store = new FakeServiceReportService();
         var (vm, _) = CreateViewModel(store);
@@ -906,10 +908,13 @@ public class ReportViewModelTests
         store.Inventory = new ServiceReportInventory(1, 0, 0, 1, false);
         await vm.LoadDataCommand.ExecuteAsync(null);
 
+        // Se informa el archivo dañado y se revocan los artefactos previos,
+        // pero los clientes válidos siguen disponibles para el informe.
         Assert.True(vm.HasReportInventoryWarning);
-        Assert.Null(vm.SelectedServiceReport);
-        Assert.False(vm.HasClientData);
-        Assert.False(vm.IncludeClient);
+        Assert.Contains("archivos inválidos omitidos", vm.ReportInventoryMessage);
+        Assert.NotNull(vm.SelectedServiceReport);
+        Assert.True(vm.HasClientData);
+        Assert.True(vm.IncludeClient);
         Assert.False(vm.HasGeneratedReport);
         Assert.Equal(string.Empty, vm.LastReportPath);
     }

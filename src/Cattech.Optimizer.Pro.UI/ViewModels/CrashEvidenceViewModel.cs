@@ -1,4 +1,8 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.IO;
+using System.Text;
+using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Cattech.Optimizer.Pro.Core.Interfaces;
@@ -50,6 +54,16 @@ public partial class CrashEvidenceViewModel : ObservableObject
     private string _dumpCheckStatusText =
         "Seleccioná un archivo .dmp y confirmá expresamente si querés verificarlo con DumpChk.";
 
+    /// <summary>
+    /// Carpeta de volcados resuelta (Windows\Minidump o carpeta configurable por
+    /// variable de entorno). Se muestra en el panel técnico y la abre el botón.
+    /// </summary>
+    [ObservableProperty]
+    private string _dumpsFolderPath = string.Empty;
+
+    [ObservableProperty]
+    private string _dumpFolderStatusText = "Carpeta de volcados sin abrir.";
+
     public ObservableCollection<CrashDumpEntry> Dumps { get; } = new();
     public ObservableCollection<CrashEventDisplayItem> Events { get; } = new();
 
@@ -65,6 +79,13 @@ public partial class CrashEvidenceViewModel : ObservableObject
         _decoder = decoder ?? throw new ArgumentNullException(nameof(decoder));
         _dumpCheckService = dumpCheckService;
         _confirmDumpCheck = confirmDumpCheck;
+
+        DumpsFolderPath = ResolveDumpsDirectory(
+            Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+            Environment.GetEnvironmentVariable("CATTECH_DUMPS_DIR"),
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "CrashDumps"));
     }
 
     partial void OnSelectedDumpChanged(CrashDumpEntry? value)
@@ -179,6 +200,188 @@ public partial class CrashEvidenceViewModel : ObservableObject
             IsBusy = false;
         }
     }
+
+    // --- Acciones de técnico: carpetas/visor y copia del análisis ---
+
+    /// <summary>
+    /// Abre en Explorer la carpeta de volcados resuelta (Windows\Minidump o la
+    /// carpeta configurada por CATTECH_DUMPS_DIR / %LOCALAPPDATA%\CrashDumps).
+    /// No crea carpetas del sistema ni modifica Windows.
+    /// </summary>
+    [RelayCommand]
+    private void OpenMinidumpFolder()
+    {
+        var directory = DumpsFolderPath;
+
+        if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+        {
+            DumpFolderStatusText = "La carpeta de volcados no existe en este equipo.";
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = directory,
+                UseShellExecute = true
+            });
+            DumpFolderStatusText = "Carpeta de volcados abierta.";
+        }
+        catch (Exception)
+        {
+            // Sin detalle de excepción: puede incluir rutas locales.
+            DumpFolderStatusText = "No se pudo abrir la carpeta de volcados.";
+        }
+    }
+
+    /// <summary>
+    /// Abre el Visor de eventos de Windows (eventvwr.msc). Solo lectura.
+    /// </summary>
+    [RelayCommand]
+    private void OpenEventViewer()
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "eventvwr.msc",
+                UseShellExecute = true
+            });
+            StatusText = "Visor de eventos abierto. No se modificó Windows.";
+        }
+        catch (Exception)
+        {
+            StatusText = "No se pudo abrir el Visor de eventos. No se modificó Windows.";
+        }
+    }
+
+    /// <summary>
+    /// Copia al portapapeles el análisis técnico del estado actual: dumps,
+    /// dump seleccionado, verificación DumpChk y eventos decodificados.
+    /// </summary>
+    [RelayCommand]
+    private void CopyAnalysis()
+    {
+        try
+        {
+            Clipboard.SetText(BuildAnalysisText());
+            StatusText = "Análisis copiado al portapapeles. No se modificó Windows.";
+        }
+        catch (Exception)
+        {
+            StatusText = "No se pudo copiar el análisis al portapapeles.";
+        }
+    }
+
+    // --- Funciones puras (testables sin Clipboard ni procesos) ---
+
+    /// <summary>
+    /// Resuelve la carpeta de volcados: Windows\Minidump si existe; si no, la
+    /// carpeta configurable (variable de entorno) o %LOCALAPPDATA%\CrashDumps.
+    /// Devuelve la ruta de Windows\Minidump como valor por defecto aunque no exista.
+    /// </summary>
+    public static string ResolveDumpsDirectory(
+        string windowsDirectory,
+        string? configuredDirectory,
+        string? localCrashDumpsDirectory)
+    {
+        var windows = windowsDirectory ?? string.Empty;
+        var minidump = string.IsNullOrWhiteSpace(windows)
+            ? string.Empty
+            : Path.Combine(windows, "Minidump");
+
+        if (!string.IsNullOrWhiteSpace(minidump) && Directory.Exists(minidump))
+            return minidump;
+
+        if (!string.IsNullOrWhiteSpace(configuredDirectory) && Directory.Exists(configuredDirectory))
+            return configuredDirectory;
+
+        if (!string.IsNullOrWhiteSpace(localCrashDumpsDirectory) &&
+            Directory.Exists(localCrashDumpsDirectory))
+            return localCrashDumpsDirectory;
+
+        if (!string.IsNullOrWhiteSpace(configuredDirectory))
+            return configuredDirectory;
+
+        return minidump;
+    }
+
+    /// <summary>
+    /// Texto plain-text/TSV del análisis de evidencia actual. No lee el contenido
+    /// de los .dmp ni inventa módulos: el modelo solo expone metadatos.
+    /// </summary>
+    public string BuildAnalysisText()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("CATTECH Optimizer Pro — Evidencia BSOD");
+        sb.AppendLine($"Fecha: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+        sb.AppendLine($"Estado: {StatusText}");
+        sb.AppendLine($"Carpeta de volcados: {(string.IsNullOrWhiteSpace(DumpsFolderPath) ? "N/D" : DumpsFolderPath)}");
+        sb.AppendLine();
+        sb.AppendLine(DumpStatusText);
+        sb.AppendLine();
+
+        sb.AppendLine($"DUMPS ({Dumps.Count})");
+        sb.AppendLine("archivo\tbytes\tmodificado_utc");
+        foreach (var dump in Dumps)
+        {
+            sb.AppendLine(
+                $"{dump.FileName}\t{dump.SizeBytes}\t" +
+                dump.LastModifiedUtc.ToString("yyyy-MM-dd HH:mm:ss"));
+        }
+
+        if (Dumps.Count == 0)
+            sb.AppendLine("- (sin archivos .dmp visibles)");
+
+        sb.AppendLine();
+        sb.AppendLine("DUMP SELECCIONADO");
+        if (SelectedDump == null)
+        {
+            sb.AppendLine("- (ninguno seleccionado)");
+        }
+        else
+        {
+            sb.AppendLine($"archivo: {SelectedDump.FileName}");
+            sb.AppendLine($"bytes: {SelectedDump.SizeBytes}");
+            sb.AppendLine(
+                $"modificado_utc: {SelectedDump.LastModifiedUtc:yyyy-MM-dd HH:mm:ss}");
+            var folder = string.IsNullOrWhiteSpace(DumpsFolderPath) ? "N/D" : DumpsFolderPath;
+            sb.AppendLine($"ruta_estimada: {Path.Combine(folder, SelectedDump.FileName)}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("VERIFICACIÓN DUMPCHK");
+        sb.AppendLine($"- {DumpCheckStatusText}");
+
+        sb.AppendLine();
+        sb.AppendLine("MÓDULOS");
+        sb.AppendLine("- No disponibles: esta versión no lee el contenido del .dmp ni lista módulos.");
+        sb.AppendLine("  DumpChk opcional informa legibilidad y código BugCheck, no el driver culpable.");
+
+        sb.AppendLine();
+        sb.AppendLine(EventStatusText);
+        sb.AppendLine($"EVENTOS ({Events.Count})");
+        sb.AppendLine("fecha_local\tcodigo\tnombre\tfuente");
+        foreach (var item in Events)
+        {
+            sb.AppendLine(
+                $"{Cell(item.DateText)}\t{Cell(item.Code)}\t{Cell(item.Name)}\t{Cell(item.Source)}");
+        }
+
+        if (Events.Count == 0)
+            sb.AppendLine("- (sin eventos BugCheck visibles)");
+
+        sb.AppendLine();
+        sb.AppendLine(SummaryText);
+
+        return sb.ToString();
+    }
+
+    private static string Cell(string? value)
+        => string.IsNullOrWhiteSpace(value)
+            ? string.Empty
+            : value.Replace('\t', ' ').Replace("\r", " ").Replace('\n', ' ').Trim();
 
     private static string DescribeDumps(CrashDumpDiscoveryResult value) => value.Status switch
     {

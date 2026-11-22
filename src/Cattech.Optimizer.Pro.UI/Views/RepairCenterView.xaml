@@ -5,34 +5,41 @@
         <StackPanel MaxWidth="1000" HorizontalAlignment="Left">
             <TextBlock Text="Centro de reparación — preparación"
                        FontSize="25" FontWeight="Bold" Foreground="#222222"
-                       Margin="0,0,0,6" />
-            <TextBlock Text="Esta pantalla solo consulta información y muestra planes. No ejecuta SFC, DISM, reinicios de servicios ni reparaciones de Windows Update."
+                       Margin="0,0,0,4" />
+            <TextBlock Text="Catálogo fijo SFC/DISM. Esta pantalla solo consulta y copia comandos."
                        TextWrapping="Wrap" Foreground="#555555"
-                       FontSize="13" Margin="0,0,0,14" />
-            <Border Background="#FFF2DC" Padding="12" CornerRadius="6"
-                    Margin="0,0,0,22">
-                <TextBlock Text="EJECUCIÓN DESHABILITADA. Diagnosticar y respaldar primero; cualquier reparación futura requerirá autorización explícita."
-                           Foreground="#775100" FontWeight="SemiBold"
-                           TextWrapping="Wrap" />
+                       FontSize="12" Margin="0,0,0,12" />
+
+            <Border Background="#FFF2DC" Padding="12,10" CornerRadius="6"
+                    Margin="0,0,0,18">
+                <StackPanel>
+                    <TextBlock Text="EJECUCIÓN NO IMPLEMENTADA EN ESTA VERSIÓN"
+                               Foreground="#775100" FontWeight="Bold" FontSize="12"
+                               TextWrapping="Wrap" />
+                    <TextBlock Text="Los comandos mostrados son para ejecución manual controlada por el técnico. Diagnóstico y respaldo primero; esta app no ejecuta SFC, DISM ni reinicia servicios."
+                               Foreground="#775100" FontSize="11"
+                               TextWrapping="Wrap" Margin="0,3,0,0" />
+                </StackPanel>
             </Border>
 
             <TextBlock Text="1. Windows Update — observación"
-                       FontSize="19" FontWeight="SemiBold" Margin="0,0,0,7" />
-            <TextBlock Text="Un servicio detenido puede ser normal. Estos datos NO prueban la salud de Windows Update."
-                       Foreground="#666666" TextWrapping="Wrap"
-                       Margin="0,0,0,10" />
+                       FontSize="17" FontWeight="SemiBold" Margin="0,0,0,6" />
+            <TextBlock Text="Servicios WU observados. Un servicio detenido puede ser normal; esto no prueba salud de Windows Update."
+                       Foreground="#666666" TextWrapping="Wrap" FontSize="11"
+                       Margin="0,0,0,8" />
             <Button Content="Consultar servicios (solo lectura)"
                     Command="{Binding InspectWindowsUpdateCommand}"
                     Padding="14,8" HorizontalAlignment="Left"
                     Background="#0078D4" Foreground="White"
-                    BorderThickness="0" Margin="0,0,0,10" />
+                    BorderThickness="0" Margin="0,0,0,8" />
             <TextBlock Text="{Binding UpdateStatusText}"
                        TextWrapping="Wrap" Foreground="#333333"
-                       Margin="0,0,0,10" />
-            <DataGrid ItemsSource="{Binding UpdateServices}" Height="170"
+                       Margin="0,0,0,8" />
+            <DataGrid ItemsSource="{Binding UpdateServices}" Height="160"
                       IsReadOnly="True" AutoGenerateColumns="False"
                       CanUserAddRows="False" CanUserDeleteRows="False"
-                      HeadersVisibility="Column" Margin="0,0,0,24">
+                      FontFamily="Consolas" FontSize="11" RowHeight="24"
+                      HeadersVisibility="Column" Margin="0,0,0,20">
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="Servicio" Binding="{Binding Name}" Width="2*"/>
                     <DataGridTextColumn Header="Estado" Binding="{Binding StateText}" Width="3*"/>
@@ -41,40 +48,70 @@
             </DataGrid>
 
             <TextBlock Text="2. SFC / DISM — planes fijos"
-                       FontSize="19" FontWeight="SemiBold" Margin="0,0,0,7" />
-            <TextBlock Text="Seleccioná una operación para ver su comando, impacto y requisitos. Los análisis pueden generar logs del sistema. Las reparaciones modifican Windows."
-                       Foreground="#666666" TextWrapping="Wrap"
-                       Margin="0,0,0,10" />
+                       FontSize="17" FontWeight="SemiBold" Margin="0,0,0,6" />
+            <TextBlock Text="Seleccioná una operación para ver el comando exacto, impacto y requisitos."
+                       Foreground="#666666" TextWrapping="Wrap" FontSize="11"
+                       Margin="0,0,0,8" />
             <ListBox ItemsSource="{Binding Plans}"
                      SelectedItem="{Binding SelectedPlan, Mode=TwoWay}"
                      DisplayMemberPath="DisplayName"
-                     Height="140" Margin="0,0,0,12" />
+                     FontFamily="Consolas" FontSize="11"
+                     Height="130" Margin="0,0,0,10" />
+
+            <!-- Comandos exactos del plan seleccionado (read-only, monoespaciado) -->
+            <TextBlock Text="COMANDO EXACTO (solo lectura)"
+                       FontSize="11" FontWeight="Bold" Foreground="#0078D4"
+                       Margin="0,0,0,4" />
+            <TextBox Text="{Binding SelectedPlanCommandsText, Mode=OneWay}"
+                     IsReadOnly="True" AcceptsReturn="True"
+                     FontFamily="Consolas" FontSize="12"
+                     Background="#FAFAFA" BorderBrush="#DDD" BorderThickness="1"
+                     Padding="8" MinHeight="46" MaxHeight="90"
+                     VerticalScrollBarVisibility="Auto"
+                     HorizontalScrollBarVisibility="Auto"
+                     TextWrapping="NoWrap"
+                     Margin="0,0,0,8" />
+
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                <Button Content="Copiar comandos" Padding="12,8"
+                        Command="{Binding CopyCommandsCommand}"
+                        Background="#F3F3F3" Foreground="#333"
+                        BorderBrush="#CCC" BorderThickness="1"
+                        Margin="0,0,8,0" />
+                <Button Content="Copiar plan completo" Padding="12,8"
+                        Command="{Binding CopyFullPlanCommand}"
+                        Background="#F3F3F3" Foreground="#333"
+                        BorderBrush="#CCC" BorderThickness="1"
+                        Margin="0,0,8,0" />
+                <TextBlock Text="{Binding CopyStatusText}" FontSize="11"
+                           Foreground="#666" VerticalAlignment="Center" />
+            </StackPanel>
 
             <StackPanel DataContext="{Binding SelectedPlan}"
-                        Margin="0,0,0,12">
-                <TextBlock Text="{Binding CommandPreview, StringFormat='Comando previsto: {0}'}"
-                           TextWrapping="Wrap" FontWeight="SemiBold" />
+                        Margin="0,0,0,10">
                 <TextBlock Text="{Binding ImpactText}"
                            Foreground="#994400" FontWeight="SemiBold"
-                           TextWrapping="Wrap" Margin="0,5,0,0" />
+                           TextWrapping="Wrap" FontSize="12" />
                 <TextBlock Text="{Binding SafetyNote}"
                            Foreground="#555555" TextWrapping="Wrap"
-                           Margin="0,5,0,0" />
+                           FontSize="11" Margin="0,4,0,0" />
                 <TextBlock Text="{Binding NetworkText}"
                            Foreground="#555555" TextWrapping="Wrap"
-                           Margin="0,5,0,0" />
+                           FontSize="11" Margin="0,4,0,0" />
             </StackPanel>
+
             <Button Content="Revisar requisitos del plan (sin ejecutar)"
                     Command="{Binding InspectSelectedPlanCommand}"
                     Padding="14,8" HorizontalAlignment="Left"
                     Background="#F0F0F0" Foreground="#333333"
                     BorderBrush="#AAAAAA" BorderThickness="1"
-                    Margin="0,0,0,10" />
+                    Margin="0,0,0,8" />
             <TextBlock Text="{Binding PreflightStatusText}"
-                       TextWrapping="Wrap" Foreground="#333333" Margin="0,0,0,20" />
+                       TextWrapping="Wrap" Foreground="#333333" FontSize="12"
+                       Margin="0,0,0,16" />
             <TextBlock Text="No se ejecutan comandos, no se cambian servicios, no se descarga software y no se reinicia Windows desde esta pantalla."
                        Foreground="#777777" TextWrapping="Wrap"
-                       FontSize="12" Margin="0,0,0,10" />
+                       FontSize="11" Margin="0,0,0,10" />
         </StackPanel>
     </ScrollViewer>
 </UserControl>

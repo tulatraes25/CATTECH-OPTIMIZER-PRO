@@ -1,8 +1,13 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
+using System.IO;
+using System.Text;
+using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Cattech.Optimizer.Pro.Core.Interfaces;
 using Cattech.Optimizer.Pro.Core.Models.Hardware;
+using Microsoft.Win32;
 
 namespace Cattech.Optimizer.Pro.UI.ViewModels;
 
@@ -277,11 +282,16 @@ public partial class HardwareViewModel : ObservableObject
         }
         finally
         {
-            IsMonitoring = false;
+            // El estado final se calcula ANTES de marcar IsMonitoring = false:
+            // con el orden inverso, un observador podía ver IsMonitoring=false
+            // y el StatusText viejo ("Monitoreando"), lo que producía tests
+            // intermitentes y un parpadeo de estado en la UI.
             if (StatusText == "Monitoreando")
             {
                 UpdateIdleLiveStatus();
             }
+
+            IsMonitoring = false;
 
             _cts?.Dispose();
             _cts = null;
@@ -468,6 +478,330 @@ public partial class HardwareViewModel : ObservableObject
 
         HasErrors = Errors.Count > 0;
     }
+
+    // --- Exportación/copia de datos crudos (solo snapshot actual + inventario) ---
+
+    [ObservableProperty]
+    private string _exportStatusText = string.Empty;
+
+    [ObservableProperty]
+    private bool _hasExportStatus;
+
+    /// <summary>
+    /// Copia al portapapeles la tabla cruda actual (TSV: live + inventario +
+    /// diagnóstico técnico). Solo datos presentes en las colecciones.
+    /// </summary>
+    [RelayCommand]
+    private void CopyTable()
+    {
+        try
+        {
+            Clipboard.SetText(BuildTableText());
+            ExportStatusText = "Tabla copiada al portapapeles.";
+            HasExportStatus = true;
+        }
+        catch (Exception)
+        {
+            ExportStatusText = "No se pudo copiar la tabla al portapapeles.";
+            HasExportStatus = true;
+        }
+    }
+
+    /// <summary>
+    /// Exporta a CSV (separador ';') la tabla cruda actual y el inventario WMI.
+    /// </summary>
+    [RelayCommand]
+    private void ExportCsv()
+    {
+        try
+        {
+            var dialog = new SaveFileDialog
+            {
+                Title = "Exportar hardware a CSV",
+                Filter = "CSV (*.csv)|*.csv|Todos los archivos (*.*)|*.*",
+                DefaultExt = ".csv",
+                AddExtension = true,
+                OverwritePrompt = true,
+                FileName = $"hardware-{DateTime.Now:yyyyMMdd-HHmmss}.csv"
+            };
+
+            if (dialog.ShowDialog() != true)
+            {
+                return;
+            }
+
+            File.WriteAllText(dialog.FileName, BuildCsv(), new UTF8Encoding(false));
+            // Solo el nombre de archivo: no se exponen rutas privadas en la UI.
+            ExportStatusText = $"CSV exportado: {Path.GetFileName(dialog.FileName)}";
+            HasExportStatus = true;
+        }
+        catch (Exception)
+        {
+            ExportStatusText = "No se pudo exportar el CSV de hardware.";
+            HasExportStatus = true;
+        }
+    }
+
+    /// <summary>
+    /// Tabla cruda actual en TSV, pensada para copiar a un editor o planilla.
+    /// </summary>
+    public string BuildTableText() => BuildHardwareText('\t', includeSeparatorDirective: false);
+
+    /// <summary>
+    /// Tabla cruda actual en CSV con separador ';' y directiva sep= para Excel.
+    /// </summary>
+    public string BuildCsv() => BuildHardwareText(';', includeSeparatorDirective: true);
+
+    /// <summary>
+    /// Panel técnico en texto: proveedor, admin, estado, conteos válidos/total,
+    /// warnings y errors. Solo datos ya presentes en el ViewModel.
+    /// </summary>
+    public string BuildDiagnosticsText()
+    {
+        var validTemperature = TemperatureSensors.Count(s => s.ValueCelsius.HasValue);
+        var validPerformance = PerformanceSensors.Count(s => s.Value.HasValue);
+        var validGpuMemory = GpuMemorySensors.Count(s => s.ValueMB.HasValue);
+        var validBattery = BatterySensors.Count(s => s.Value.HasValue);
+        var validTimings = MemoryTimingSensors.Count(s => s.ValueNanoseconds.HasValue);
+
+        var sb = new StringBuilder();
+        sb.AppendLine("PROVEEDOR: " + Dash(ProviderStatusText));
+        sb.AppendLine("ADMIN: " + Dash(AdminText));
+        sb.AppendLine("ESTADO: " + Dash(StatusText));
+        sb.AppendLine($"TEMPERATURA: {validTemperature}/{TemperatureSensors.Count} válidos");
+        sb.AppendLine($"PERFORMANCE: {validPerformance}/{PerformanceSensors.Count} válidos");
+        sb.AppendLine($"GPU MEMORIA: {validGpuMemory}/{GpuMemorySensors.Count} válidos");
+        sb.AppendLine($"BATERÍA: {validBattery}/{BatterySensors.Count} válidos");
+        sb.AppendLine($"TIMINGS SPD: {validTimings}/{MemoryTimingSensors.Count} válidos");
+        sb.AppendLine($"INVENTARIO: {Dash(InventoryStatusText)}");
+
+        sb.AppendLine($"WARNINGS ({Warnings.Count})");
+        AppendLines(sb, Warnings);
+
+        sb.AppendLine($"ERRORS ({Errors.Count})");
+        AppendLines(sb, Errors);
+
+        sb.AppendLine($"INVENTORY_ERRORS ({InventoryErrors.Count})");
+        AppendLines(sb, InventoryErrors);
+
+        return sb.ToString();
+    }
+
+    private string BuildHardwareText(char separator, bool includeSeparatorDirective)
+    {
+        var sb = new StringBuilder();
+
+        if (includeSeparatorDirective)
+        {
+            sb.AppendLine($"sep={separator}");
+        }
+
+        sb.AppendLine("# CATTECH Optimizer Pro — Hardware");
+        sb.AppendLine($"# capturado{separator}{LastUpdatedAt?.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) ?? "N/D"}");
+        sb.AppendLine($"# proveedor{separator}{Cell(ProviderStatusText, separator)}");
+        sb.AppendLine($"# admin{separator}{Cell(AdminText, separator)}");
+        sb.AppendLine($"# estado{separator}{Cell(StatusText, separator)}");
+        sb.AppendLine();
+
+        // --- Snapshot live ---
+        sb.AppendLine("# LIVE");
+        sb.AppendLine(
+            $"familia{separator}hardware{separator}tipo{separator}sensor{separator}" +
+            $"metrica{separator}valor{separator}unidad{separator}min{separator}max");
+
+        foreach (var sensor in TemperatureSensors)
+        {
+            AppendRow(sb, separator,
+                "temperatura", sensor.HardwareName, sensor.HardwareType, sensor.SensorName,
+                string.Empty, Num(sensor.ValueCelsius), "°C",
+                Num(sensor.MinCelsius), Num(sensor.MaxCelsius));
+        }
+
+        foreach (var sensor in PerformanceSensors)
+        {
+            AppendRow(sb, separator,
+                "performance", sensor.HardwareName, sensor.HardwareType, sensor.SensorName,
+                sensor.MetricType.ToString(), Num(sensor.Value), sensor.Unit,
+                Num(sensor.Min), Num(sensor.Max));
+        }
+
+        foreach (var sensor in GpuMemorySensors)
+        {
+            AppendRow(sb, separator,
+                "gpu_memoria", sensor.HardwareName, sensor.HardwareType, sensor.SensorName,
+                string.Empty, Num(sensor.ValueMB), sensor.Unit,
+                Num(sensor.MinMB), Num(sensor.MaxMB));
+        }
+
+        foreach (var sensor in BatterySensors)
+        {
+            AppendRow(sb, separator,
+                "bateria", sensor.HardwareName, sensor.HardwareType, sensor.SensorName,
+                sensor.MetricType.ToString(), Num(sensor.Value), sensor.Unit,
+                Num(sensor.Min), Num(sensor.Max));
+        }
+
+        foreach (var sensor in MemoryTimingSensors)
+        {
+            AppendRow(sb, separator,
+                "spd", sensor.HardwareName, sensor.HardwareType, sensor.SensorName,
+                string.Empty, Num(sensor.ValueNanoseconds), "ns",
+                Num(sensor.MinNanoseconds), Num(sensor.MaxNanoseconds));
+        }
+
+        if (TemperatureSensors.Count + PerformanceSensors.Count + GpuMemorySensors.Count +
+            BatterySensors.Count + MemoryTimingSensors.Count == 0)
+        {
+            sb.AppendLine($"(sin sensores live){separator}{separator}{separator}{separator}{separator}{separator}{separator}{separator}");
+        }
+
+        // --- Inventario estático WMI ---
+        sb.AppendLine();
+        sb.AppendLine("# INVENTARIO");
+        sb.AppendLine($"seccion{separator}campo{separator}valor");
+
+        AppendRow(sb, separator, "cpu", "nombre", Cpu.Name);
+        AppendRow(sb, separator, "cpu", "fabricante", Cpu.Manufacturer);
+        AppendRow(sb, separator, "cpu", "nucleos", Cpu.Cores.ToString(CultureInfo.InvariantCulture));
+        AppendRow(sb, separator, "cpu", "hilos", Cpu.Threads.ToString(CultureInfo.InvariantCulture));
+        AppendRow(sb, separator, "cpu", "velocidad_base_ghz", Num(Cpu.BaseSpeedGHz));
+
+        AppendRow(sb, separator, "ram", "total_gb", Num(Memory.TotalGB));
+        AppendRow(sb, separator, "ram", "disponible_gb", Num(Memory.AvailableGB));
+        AppendRow(sb, separator, "ram", "en_uso_gb", Num(Memory.UsedGB));
+        AppendRow(sb, separator, "ram", "uso_porcentaje", Num(Memory.UsagePercent));
+        AppendRow(sb, separator, "ram", "tipo", Memory.Type);
+        AppendRow(sb, separator, "ram", "velocidad_mhz", Memory.SpeedMHz.ToString(CultureInfo.InvariantCulture));
+        AppendRow(sb, separator, "ram", "slots", $"{Memory.SlotsUsed}/{Memory.SlotsTotal}");
+
+        foreach (var gpu in Gpus)
+        {
+            AppendRow(sb, separator, "gpu", "nombre", gpu.Name);
+            AppendRow(sb, separator, "gpu", "fabricante", gpu.Manufacturer);
+            AppendRow(sb, separator, "gpu", "memoria_gb", Num(gpu.MemoryGB));
+            AppendRow(sb, separator, "gpu", "tipo_memoria", gpu.MemoryType);
+        }
+
+        foreach (var module in MemoryModules)
+        {
+            var slot = string.IsNullOrWhiteSpace(module.DeviceLocator) ? "N/D" : module.DeviceLocator;
+            AppendRow(sb, separator, "ram_modulo", $"{slot}:capacidad_gb", Num(module.CapacityGB));
+            AppendRow(sb, separator, "ram_modulo", $"{slot}:tipo", module.MemoryType);
+            AppendRow(sb, separator, "ram_modulo", $"{slot}:velocidad_mhz",
+                module.ConfiguredClockSpeedMHz?.ToString(CultureInfo.InvariantCulture) ?? string.Empty);
+            AppendRow(sb, separator, "ram_modulo", $"{slot}:fabricante", module.Manufacturer);
+            AppendRow(sb, separator, "ram_modulo", $"{slot}:part_number", module.PartNumber);
+            AppendRow(sb, separator, "ram_modulo", $"{slot}:serie", module.SerialNumber);
+            AppendRow(sb, separator, "ram_modulo", $"{slot}:data_width_bits",
+                module.DataWidthBits?.ToString(CultureInfo.InvariantCulture) ?? string.Empty);
+            AppendRow(sb, separator, "ram_modulo", $"{slot}:rank",
+                module.Rank?.ToString(CultureInfo.InvariantCulture) ?? string.Empty);
+        }
+
+        AppendRow(sb, separator, "placa_madre", "fabricante", Motherboard.Manufacturer);
+        AppendRow(sb, separator, "placa_madre", "modelo", Motherboard.Model);
+        AppendRow(sb, separator, "placa_madre", "bios", Motherboard.BiosVersion);
+        AppendRow(sb, separator, "placa_madre", "bios_fecha",
+            Motherboard.BiosDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? string.Empty);
+
+        // --- Diagnóstico técnico ---
+        sb.AppendLine();
+        sb.AppendLine("# DIAGNOSTICO");
+        sb.AppendLine($"seccion{separator}campo{separator}valor");
+        AppendRow(sb, separator, "diagnostico", "proveedor", ProviderStatusText);
+        AppendRow(sb, separator, "diagnostico", "admin", AdminText);
+        AppendRow(sb, separator, "diagnostico", "estado", StatusText);
+        AppendRow(sb, separator, "diagnostico", "temperatura_validos",
+            $"{TemperatureSensors.Count(s => s.ValueCelsius.HasValue)}/{TemperatureSensors.Count}");
+        AppendRow(sb, separator, "diagnostico", "performance_validos",
+            $"{PerformanceSensors.Count(s => s.Value.HasValue)}/{PerformanceSensors.Count}");
+        AppendRow(sb, separator, "diagnostico", "gpu_memoria_validos",
+            $"{GpuMemorySensors.Count(s => s.ValueMB.HasValue)}/{GpuMemorySensors.Count}");
+        AppendRow(sb, separator, "diagnostico", "bateria_validos",
+            $"{BatterySensors.Count(s => s.Value.HasValue)}/{BatterySensors.Count}");
+        AppendRow(sb, separator, "diagnostico", "spd_validos",
+            $"{MemoryTimingSensors.Count(s => s.ValueNanoseconds.HasValue)}/{MemoryTimingSensors.Count}");
+        AppendRow(sb, separator, "diagnostico", "inventario", InventoryStatusText);
+
+        foreach (var warning in Warnings)
+        {
+            AppendRow(sb, separator, "warning", warning);
+        }
+
+        foreach (var error in Errors)
+        {
+            AppendRow(sb, separator, "error", error);
+        }
+
+        foreach (var error in InventoryErrors)
+        {
+            AppendRow(sb, separator, "inventario_error", error);
+        }
+
+        return sb.ToString();
+    }
+
+    private static void AppendRow(StringBuilder sb, char separator, params string[] cells)
+    {
+        for (var i = 0; i < cells.Length; i++)
+        {
+            if (i > 0)
+            {
+                sb.Append(separator);
+            }
+
+            sb.Append(Cell(cells[i], separator));
+        }
+
+        sb.AppendLine();
+    }
+
+    private static string Cell(string? value, char separator)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        var normalized = value.Replace("\r", " ").Replace('\n', ' ');
+        if (normalized.IndexOf(separator) < 0 && normalized.IndexOf('"') < 0)
+        {
+            return normalized;
+        }
+
+        return '"' + normalized.Replace("\"", "\"\"") + '"';
+    }
+
+    private static void AppendLines(StringBuilder sb, IEnumerable<string> lines)
+    {
+        var any = false;
+        foreach (var line in lines)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            sb.AppendLine("- " + line.Replace("\r", " ").Replace('\n', ' ').Trim());
+            any = true;
+        }
+
+        if (!any)
+        {
+            sb.AppendLine("- (sin registros)");
+        }
+    }
+
+    private static string Dash(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "N/D" : value.Trim();
+
+    private static string Num(double? value)
+        => value.HasValue
+            ? value.Value.ToString("0.###", CultureInfo.InvariantCulture)
+            : string.Empty;
+
+    private static string Num(double value)
+        => value.ToString("0.###", CultureInfo.InvariantCulture);
 
     /// <summary>
     /// Consulta manual el inventario estático (CPU/GPU/RAM/placa madre) vía WMI/SMBIOS.

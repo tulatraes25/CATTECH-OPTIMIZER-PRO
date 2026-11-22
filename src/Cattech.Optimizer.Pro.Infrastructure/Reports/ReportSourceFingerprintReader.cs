@@ -60,8 +60,16 @@ internal enum SourceIdResolutionStatus
     UnsafeScope
 }
 
+/// <summary>
+/// Outcome of a read-only source ID lookup. <paramref name="OmittedUnreadableFiles"/>
+/// counts sibling files that could not be inspected (corrupt JSON, locked,
+/// missing, oversized or redirected) and were therefore SKIPPED. They are
+/// never treated as matches and no data is invented for them; the counter is
+/// only an operational warning for the technician.
+/// </summary>
 internal sealed record SourceIdResolution(
-    SourceIdResolutionStatus Status, SourceFileFingerprint? Fingerprint = null);
+    SourceIdResolutionStatus Status, SourceFileFingerprint? Fingerprint = null,
+    int OmittedUnreadableFiles = 0);
 
 /// <summary>
 /// SPEC #92 C2-B1: read ONLY the known CATTECH local source stores, on the SAME
@@ -88,9 +96,14 @@ internal sealed class ReportSourceFingerprintReader
 
     /// <summary>
     /// Resolve a source ID to one approved local JSON file, refusing every
-    /// ambiguous or unreadable history. Never choose by timestamp, serial,
-    /// enumeration order or first matching short ID.
-    /// A returned fingerprint is ephemeral and requires revalidation.
+    /// readable ambiguous match. An unrelated sibling that is corrupt,
+    /// locked, oversized or redirected is SKIPPED and counted in
+    /// <see cref="SourceIdResolution.OmittedUnreadableFiles"/>: one damaged
+    /// neighboring file must not hide a valid, uniquely readable target.
+    /// The target itself must still be unique and readable; no data is ever
+    /// invented for an unreadable file, and timestamp/enumeration order are
+    /// never used to choose. A returned fingerprint is ephemeral and
+    /// requires revalidation.
     /// </summary>
     internal async Task<SourceIdResolution> ResolveUniqueAsync(
         string sourceKind, string sourceRecordId,
@@ -129,26 +142,36 @@ internal sealed class ReportSourceFingerprintReader
                 return new(SourceIdResolutionStatus.Unverifiable);
 
             SourceFileFingerprint? selected = null;
+            var omittedUnreadable = 0;
             foreach (var file in files.OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var relative = location.Item1 + "/" + Path.GetFileName(file);
                 var found = await InspectAsync(sourceKind, relative,
                     cancellationToken).ConfigureAwait(false);
-                // A corrupt, inaccessible or redirected sibling may hide a
-                // matching ID. Never silently skip it.
+                // A sibling that cannot be read (corrupt JSON, locked, missing
+                // under a TOCTOU race, oversized, redirected) is skipped and
+                // counted. It is never assumed to contain the requested ID:
+                // skipping cannot invent a match and the target must still be
+                // unique among the readable records.
                 if (!found.HasReadableSnapshot)
-                    return new(SourceIdResolutionStatus.Unverifiable);
+                {
+                    omittedUnreadable++;
+                    continue;
+                }
                 if (!string.Equals(found.Fingerprint!.SourceRecordId,
                         sourceRecordId, StringComparison.Ordinal))
                     continue;
                 if (selected is not null)
-                    return new(SourceIdResolutionStatus.Ambiguous);
+                    return new(SourceIdResolutionStatus.Ambiguous,
+                        OmittedUnreadableFiles: omittedUnreadable);
                 selected = found.Fingerprint;
             }
             return selected is null
-                ? new(SourceIdResolutionStatus.NotFound)
-                : new(SourceIdResolutionStatus.FoundUnique, selected);
+                ? new(SourceIdResolutionStatus.NotFound,
+                    OmittedUnreadableFiles: omittedUnreadable)
+                : new(SourceIdResolutionStatus.FoundUnique, selected,
+                    omittedUnreadable);
         }
         catch (OperationCanceledException)
         {

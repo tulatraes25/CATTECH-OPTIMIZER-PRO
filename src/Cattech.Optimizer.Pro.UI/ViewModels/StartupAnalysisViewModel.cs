@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Cattech.Optimizer.Pro.Core.Interfaces;
@@ -114,7 +116,23 @@ public partial class StartupAnalysisViewModel : ObservableObject
 
     // --- Lista filtrada ---
 
+    /// <summary>
+    /// Entradas visibles en la grilla. Es la MISMA referencia que
+    /// <see cref="SelectableEntries"/>, por lo que la selección, el toggle y la
+    /// desactivación siguen funcionando sobre el entry real. Los filtros y el
+    /// buscador ahora filtran realmente la grilla (antes llenaban FilteredEntries,
+    /// que el DataGrid no bindeaba, y el filtro era un no-op visible).
+    /// </summary>
+    public ObservableCollection<SelectableStartupEntry> FilteredSelectableEntries { get; } = new();
+
+    /// <summary>Entradas visibles (vista de solo lectura, se mantiene sincronizada).</summary>
     public ObservableCollection<StartupEntry> FilteredEntries { get; } = new();
+
+    [ObservableProperty]
+    private SelectableStartupEntry? _selectedSelectableEntry;
+
+    [ObservableProperty]
+    private string _filteredCountText = "0 de 0";
 
     public StartupAnalysisViewModel(IStartupService startupService)
     {
@@ -126,6 +144,17 @@ public partial class StartupAnalysisViewModel : ObservableObject
     /// desactivar entradas de inicio.
     /// </summary>
     public Func<string, bool>? ConfirmDisableRequest { get; set; }
+
+    /// <summary>
+    /// Hook para tests: recibe (ejecutable, argumentos) y devuelve si se abrió.
+    /// Evita lanzar Explorer/regedit reales durante los tests.
+    /// </summary>
+    public Func<string, string, bool>? OpenShellTargetRequest { get; set; }
+
+    /// <summary>
+    /// Hook de portapapeles para tests: evita depender de una sesión STA/UI.
+    /// </summary>
+    internal Func<string, bool>? CopyTextOverride { get; set; }
 
     // =====================
     // ANÁLISIS
@@ -152,6 +181,12 @@ public partial class StartupAnalysisViewModel : ObservableObject
 
             RebuildSelectableEntries();
             ApplyFilter();
+
+            // Dejar una fila seleccionada: el panel de detalle técnico arranca
+            // con datos reales en lugar de "Seleccioná una entrada".
+            if (SelectedSelectableEntry is null && FilteredSelectableEntries.Count > 0)
+                SelectedSelectableEntry = FilteredSelectableEntries[0];
+
             HasResults = true;
             StatusText = analysis.AlertCount > 0
                 ? $"Análisis completado ({analysis.AlertCount} alertas)"
@@ -212,38 +247,74 @@ public partial class StartupAnalysisViewModel : ObservableObject
 
     private void ApplyFilter()
     {
+        FilteredSelectableEntries.Clear();
         FilteredEntries.Clear();
+
         var filtered = SelectedFilter switch
         {
-            "No Microsoft" => _allEntries.Where(e => !e.IsMicrosoft),
-            "Recomendados para revisar" => _allEntries.Where(e => e.Recommendation == StartupRecommendation.Review),
-            "Posible desactivar" => _allEntries.Where(e => e.Recommendation == StartupRecommendation.PossibleDisable),
-            "Alertas" => _allEntries.Where(e =>
-                e.Status == StartupEntryStatus.PathNotFound ||
-                e.Risk == RiskLevel.High ||
-                e.Notes.Contains("Temp", StringComparison.OrdinalIgnoreCase) ||
-                e.Notes.Contains("AppData", StringComparison.OrdinalIgnoreCase)),
-            _ => _allEntries.AsEnumerable()
+            "No Microsoft" => SelectableEntries.Where(s => !s.Entry.IsMicrosoft),
+            "Recomendados para revisar" => SelectableEntries.Where(
+                s => s.Entry.Recommendation == StartupRecommendation.Review),
+            "Posible desactivar" => SelectableEntries.Where(
+                s => s.Entry.Recommendation == StartupRecommendation.PossibleDisable),
+            "Alertas" => SelectableEntries.Where(s =>
+                s.Entry.Status == StartupEntryStatus.PathNotFound ||
+                s.Entry.Risk == RiskLevel.High ||
+                s.Entry.Notes.Contains("Temp", StringComparison.OrdinalIgnoreCase) ||
+                s.Entry.Notes.Contains("AppData", StringComparison.OrdinalIgnoreCase)),
+            _ => SelectableEntries.AsEnumerable()
         };
 
         if (!string.IsNullOrWhiteSpace(SearchText))
         {
-            var search = SearchText.ToLowerInvariant();
-            filtered = filtered.Where(e =>
-                e.Name.Contains(search, StringComparison.OrdinalIgnoreCase) ||
-                e.Command.Contains(search, StringComparison.OrdinalIgnoreCase) ||
-                e.Publisher.Contains(search, StringComparison.OrdinalIgnoreCase));
+            var search = SearchText.Trim();
+            filtered = filtered.Where(s =>
+                s.Entry.Name.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                s.Entry.Command.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                s.Entry.Publisher.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                s.Entry.Location.Contains(search, StringComparison.OrdinalIgnoreCase));
         }
 
-        foreach (var entry in filtered)
-            FilteredEntries.Add(entry);
+        foreach (var selectable in filtered)
+        {
+            FilteredSelectableEntries.Add(selectable);
+            FilteredEntries.Add(selectable.Entry);
+        }
+
+        FilteredCountText = SelectableEntries.Count == FilteredSelectableEntries.Count
+            ? $"{FilteredSelectableEntries.Count} de {SelectableEntries.Count}"
+            : $"{FilteredSelectableEntries.Count} de {SelectableEntries.Count} (filtrado)";
+
+        // Si la entrada seleccionada quedó fuera del filtro, se limpia el detalle.
+        if (SelectedSelectableEntry is not null
+            && !FilteredSelectableEntries.Contains(SelectedSelectableEntry))
+        {
+            SelectedSelectableEntry = null;
+        }
 
         UpdateSelectedCount();
+    }
+
+    partial void OnSelectedSelectableEntryChanged(SelectableStartupEntry? value)
+    {
+        // El detalle técnico siempre refleja la fila seleccionada en la grilla.
+        SelectedEntry = value?.Entry;
     }
 
     partial void OnSelectedEntryChanged(StartupEntry? value)
     {
         HasSelectedEntry = value != null;
+
+        // Propiedades derivadas del detalle técnico.
+        OnPropertyChanged(nameof(SelectedEntryCommand));
+        OnPropertyChanged(nameof(SelectedEntryLocation));
+        OnPropertyChanged(nameof(HasSelectedEntryLocation));
+        OnPropertyChanged(nameof(IsSelectedEntryDisableable));
+        OnPropertyChanged(nameof(IsRegistryEntry));
+        OnPropertyChanged(nameof(IsStartupFolderEntry));
+        OnPropertyChanged(nameof(IsScheduledTaskEntry));
+        OnPropertyChanged(nameof(RegistryKeyFullPath));
+        OnPropertyChanged(nameof(LocationKindText));
     }
 
     // =====================
@@ -475,6 +546,286 @@ public partial class StartupAnalysisViewModel : ObservableObject
     }
 
     // =====================
+    // DETALLE TÉCNICO Y ACCIONES DEL ENTRY SELECCIONADO
+    // =====================
+
+    /// <summary>
+    /// Texto completo del comando del entry seleccionado (para "Copiar comando").
+    /// </summary>
+    public string BuildSelectedCommandText() =>
+        SelectedEntry is null ? string.Empty : SelectedEntry.Command;
+
+    /// <summary>
+    /// Texto multilínea con toda la información técnica del entry seleccionado.
+    /// Función pura: no toca el portapapeles.
+    /// </summary>
+    public string BuildSelectedEntryText()
+    {
+        var entry = SelectedEntry;
+        if (entry is null)
+            return string.Empty;
+
+        var lines = new List<string>
+        {
+            $"ID: {entry.Id}",
+            $"Nombre: {entry.Name}",
+            $"Comando: {entry.Command}",
+            $"Ubicación: {entry.Location}",
+            $"Origen: {SourceTypeText(entry.SourceType)}",
+            $"Editor: {ValueOrDash(entry.Publisher)}",
+            $"Estado: {StatusDisplayText(entry.Status)}",
+            $"Riesgo: {RiskText(entry.Risk)}",
+            $"Recomendación: {RecommendationText(entry.Recommendation)}",
+            $"Microsoft: {(entry.IsMicrosoft ? "sí" : "no")}",
+            $"Desactivable: {(IsSelectedEntryDisableable ? "sí" : "no")}"
+        };
+
+        if (!string.IsNullOrWhiteSpace(entry.Notes))
+            lines.Add($"Notas: {entry.Notes}");
+
+        if (entry.SourceType is StartupSourceType.RegistryRun or StartupSourceType.RegistryRunOnce)
+            lines.Add($"Regedit: {RegistryKeyFullPath}");
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    /// <summary>Comando completo del entry seleccionado.</summary>
+    public string SelectedEntryCommand => SelectedEntry?.Command ?? string.Empty;
+
+    /// <summary>Ubicación completa (clave de registro, archivo o tarea).</summary>
+    public string SelectedEntryLocation => SelectedEntry?.Location ?? string.Empty;
+
+    public bool HasSelectedEntryLocation => !string.IsNullOrWhiteSpace(SelectedEntryLocation);
+
+    public bool IsSelectedEntryDisableable
+    {
+        get
+        {
+            if (SelectedSelectableEntry is not null)
+                return SelectedSelectableEntry.IsSelectable;
+
+            return SelectedEntry is not null
+                && _startupService.CanDisableStartupEntry(SelectedEntry);
+        }
+    }
+
+    public bool IsRegistryEntry => SelectedEntry?.SourceType is
+        StartupSourceType.RegistryRun or StartupSourceType.RegistryRunOnce;
+
+    public bool IsStartupFolderEntry => SelectedEntry?.SourceType is
+        StartupSourceType.StartupFolder or StartupSourceType.StartupFolderCommon;
+
+    public bool IsScheduledTaskEntry => SelectedEntry?.SourceType == StartupSourceType.ScheduledTask;
+
+    /// <summary>
+    /// Ruta completa de la clave de registro (HKCU → HKEY_CURRENT_USER,
+    /// HKLM → HKEY_LOCAL_MACHINE) para abrir regedit en la clave exacta.
+    /// Vacío si el entry no es de registro.
+    /// </summary>
+    public string RegistryKeyFullPath
+    {
+        get
+        {
+            var location = SelectedEntry?.Location;
+            if (string.IsNullOrWhiteSpace(location))
+                return string.Empty;
+
+            const string currentUser = "HKCU\\";
+            const string localMachine = "HKLM\\";
+            const string users = "HKU\\";
+
+            if (location.StartsWith(currentUser, StringComparison.OrdinalIgnoreCase))
+                return "HKEY_CURRENT_USER\\" + location[currentUser.Length..];
+            if (location.StartsWith(localMachine, StringComparison.OrdinalIgnoreCase))
+                return "HKEY_LOCAL_MACHINE\\" + location[localMachine.Length..];
+            if (location.StartsWith(users, StringComparison.OrdinalIgnoreCase))
+                return "HKEY_USERS\\" + location[users.Length..];
+
+            return string.Empty;
+        }
+    }
+
+    public string LocationKindText => SelectedEntry?.SourceType switch
+    {
+        StartupSourceType.RegistryRun or StartupSourceType.RegistryRunOnce => "Clave de registro",
+        StartupSourceType.StartupFolder or StartupSourceType.StartupFolderCommon => "Carpeta de inicio",
+        StartupSourceType.ScheduledTask => "Tarea programada",
+        _ => "-"
+    };
+
+    [RelayCommand]
+    private Task CopyAsync()
+    {
+        if (SelectedEntry is null)
+        {
+            ShowError("Seleccioná una entrada de inicio para copiar su comando.");
+            return Task.CompletedTask;
+        }
+
+        if (!TryCopyText(BuildSelectedCommandText()))
+        {
+            ShowError("No se pudo copiar el comando al portapapeles.");
+            return Task.CompletedTask;
+        }
+
+        ShowSuccess("Comando copiado al portapapeles.");
+        return Task.CompletedTask;
+    }
+
+    [RelayCommand]
+    private Task CopyEntryAsync()
+    {
+        if (SelectedEntry is null)
+        {
+            ShowError("Seleccioná una entrada de inicio para copiar su detalle.");
+            return Task.CompletedTask;
+        }
+
+        if (!TryCopyText(BuildSelectedEntryText()))
+        {
+            ShowError("No se pudo copiar la entrada al portapapeles.");
+            return Task.CompletedTask;
+        }
+
+        ShowSuccess("Entrada completa copiada al portapapeles.");
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Abre la ubicación del entry seleccionado:
+    /// - registro → regedit en la clave HK* exacta (si el shell lo permite);
+    /// - carpeta de inicio → Explorer seleccionando el archivo/carpeta;
+    /// - tarea programada → Programador de tareas.
+    /// Nunca muestra rutas privadas en el mensaje de error.
+    /// </summary>
+    [RelayCommand]
+    private Task OpenLocationAsync()
+    {
+        if (SelectedEntry is null)
+        {
+            ShowError("Seleccioná una entrada de inicio para abrir su ubicación.");
+            return Task.CompletedTask;
+        }
+
+        var opened = false;
+
+        if (IsRegistryEntry)
+        {
+            var keyPath = RegistryKeyFullPath;
+            opened = !string.IsNullOrWhiteSpace(keyPath)
+                && TryOpenShellTarget("regedit.exe", $"\"{keyPath}\"");
+        }
+        else if (IsStartupFolderEntry)
+        {
+            var location = SelectedEntryLocation;
+            try
+            {
+                if (File.Exists(location))
+                {
+                    opened = TryOpenShellTarget("explorer.exe", $"/select,\"{location}\"");
+                }
+                else if (Directory.Exists(location))
+                {
+                    opened = TryOpenShellTarget("explorer.exe", $"\"{location}\"");
+                }
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException
+                or PathTooLongException or UnauthorizedAccessException
+                or System.Security.SecurityException)
+            {
+                opened = false;
+            }
+        }
+        else if (IsScheduledTaskEntry)
+        {
+            opened = TryOpenShellTarget("taskschd.msc", string.Empty);
+        }
+
+        if (!opened)
+        {
+            ShowError("No se pudo abrir la ubicación. Verificá que el elemento exista y que tengas permisos.");
+            return Task.CompletedTask;
+        }
+
+        ShowSuccess("Ubicación abierta.");
+        return Task.CompletedTask;
+    }
+
+    private bool TryCopyText(string text)
+    {
+        try
+        {
+            if (CopyTextOverride is not null)
+                return CopyTextOverride(text);
+
+            System.Windows.Clipboard.SetText(text);
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    private bool TryOpenShellTarget(string fileName, string arguments)
+    {
+        try
+        {
+            if (OpenShellTargetRequest is not null)
+                return OpenShellTargetRequest(fileName, arguments);
+
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = fileName,
+                Arguments = arguments,
+                UseShellExecute = true
+            };
+            Process.Start(startInfo);
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    private static string SourceTypeText(StartupSourceType sourceType) => sourceType switch
+    {
+        StartupSourceType.RegistryRun => "Registro (Run)",
+        StartupSourceType.RegistryRunOnce => "Registro (RunOnce)",
+        StartupSourceType.StartupFolder => "Carpeta de inicio del usuario",
+        StartupSourceType.StartupFolderCommon => "Carpeta de inicio común",
+        StartupSourceType.ScheduledTask => "Tarea programada",
+        _ => sourceType.ToString()
+    };
+
+    private static string RiskText(RiskLevel risk) => risk switch
+    {
+        RiskLevel.Low => "Bajo",
+        RiskLevel.Medium => "Medio",
+        RiskLevel.High => "Alto",
+        _ => "Desconocido"
+    };
+
+    private static string RecommendationText(StartupRecommendation recommendation) => recommendation switch
+    {
+        StartupRecommendation.Keep => "Mantener",
+        StartupRecommendation.Review => "Revisar",
+        StartupRecommendation.PossibleDisable => "Posible desactivar",
+        _ => recommendation.ToString()
+    };
+
+    private static string StatusDisplayText(StartupEntryStatus status) => status switch
+    {
+        StartupEntryStatus.Active => "Activo",
+        StartupEntryStatus.Inactive => "Inactivo",
+        StartupEntryStatus.PathNotFound => "Ruta no encontrada",
+        _ => "Desconocido"
+    };
+
+    private static string ValueOrDash(string? value) => string.IsNullOrWhiteSpace(value) ? "-" : value;
+
+    // =====================
     // HELPERS
     // =====================
 
@@ -520,4 +871,48 @@ public partial class SelectableStartupEntry : ObservableObject
 
     [ObservableProperty]
     private bool _isSelected;
+
+    // --- Presentación técnica en la grilla (español, sin cambiar el modelo Core) ---
+
+    public string Name => Entry.Name;
+
+    public string Publisher => Entry.Publisher;
+
+    public string Command => Entry.Command;
+
+    public string Location => Entry.Location;
+
+    public string SourceTypeText => Entry.SourceType switch
+    {
+        StartupSourceType.RegistryRun => "Registro (Run)",
+        StartupSourceType.RegistryRunOnce => "Registro (RunOnce)",
+        StartupSourceType.StartupFolder => "Carpeta usuario",
+        StartupSourceType.StartupFolderCommon => "Carpeta común",
+        StartupSourceType.ScheduledTask => "Tarea programada",
+        _ => Entry.SourceType.ToString()
+    };
+
+    public string RiskText => Entry.Risk switch
+    {
+        RiskLevel.Low => "Bajo",
+        RiskLevel.Medium => "Medio",
+        RiskLevel.High => "Alto",
+        _ => "Desconocido"
+    };
+
+    public string RecommendationText => Entry.Recommendation switch
+    {
+        StartupRecommendation.Keep => "Mantener",
+        StartupRecommendation.Review => "Revisar",
+        StartupRecommendation.PossibleDisable => "Posible desactivar",
+        _ => Entry.Recommendation.ToString()
+    };
+
+    public string StatusText => Entry.Status switch
+    {
+        StartupEntryStatus.Active => "Activo",
+        StartupEntryStatus.Inactive => "Inactivo",
+        StartupEntryStatus.PathNotFound => "Ruta no encontrada",
+        _ => "Desconocido"
+    };
 }

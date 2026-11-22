@@ -6,10 +6,33 @@ using Cattech.Optimizer.Pro.Core.Models.Reports;
 namespace Cattech.Optimizer.Pro.Infrastructure.Data;
 
 /// <summary>
+/// Detailed, privacy-minimized report-store inventory. <see cref="DamagedFiles"/>
+/// contains ONLY file names (timestamp + random token), never paths, client
+/// names or payloads. The snapshot is advisory: load/delete revalidate.
+/// </summary>
+public sealed record ServiceReportInventoryDetail(
+    ServiceReportInventory Inventory,
+    IReadOnlyList<string> DamagedFiles)
+{
+    public bool HasDamagedFiles => DamagedFiles.Count > 0;
+}
+
+/// <summary>
+/// Optional read-only capability that also reports the NAMES of damaged files
+/// so the UI can show a concrete warning without hiding the remaining valid
+/// records. Implementations never delete or repair those files.
+/// </summary>
+public interface IServiceReportInventoryDetailReader
+{
+    Task<ServiceReportInventoryDetail> InspectReportInventoryDetailedAsync();
+}
+
+/// <summary>
 /// Implementación de IServiceReportService que persiste reportes en JSON.
 /// Los archivos se guardan en data/service-reports/service-report-YYYYMMDD-HHMMSS.json
 /// </summary>
-public class JsonServiceReportService : IServiceReportService, IServiceReportInventoryReader
+public class JsonServiceReportService : IServiceReportService,
+    IServiceReportInventoryReader, IServiceReportInventoryDetailReader
 {
     private readonly string _reportsDirectory;
     private readonly string _storeLeasePath;
@@ -105,8 +128,11 @@ public class JsonServiceReportService : IServiceReportService, IServiceReportInv
             // The first matching logical ID is NEVER sufficient: older
             // report IDs may be only eight hex characters, and a snapshot
             // may have been saved more than once with the same ID.
-            var match = await FindUniqueReportAsync(reportId)
-                .ConfigureAwait(false);
+            // Read-only loads tolerate damaged unrelated siblings: they are
+            // skipped with a count, so one corrupt file cannot hide every
+            // other client. Deletion below remains strict.
+            var match = await FindUniqueReportAsync(reportId,
+                tolerateUnreadableSiblings: true).ConfigureAwait(false);
             return match?.Report;
         }
         finally
@@ -180,12 +206,24 @@ public class JsonServiceReportService : IServiceReportService, IServiceReportInv
     /// No client details, paths or raw exception messages are returned.
     /// </summary>
     public async Task<ServiceReportInventory> InspectReportInventoryAsync()
+        => (await InspectReportInventoryDetailedAsync().ConfigureAwait(false))
+            .Inventory;
+
+    /// <summary>
+    /// Read-only inventory that ALSO returns the file names of damaged
+    /// entries. A corrupt file is skipped (never deleted, repaired or
+    /// interpreted) and counted; the remaining valid records are still
+    /// enumerated so one damaged sibling cannot hide every other client.
+    /// File names are timestamp + random tokens, not client data or paths.
+    /// </summary>
+    public async Task<ServiceReportInventoryDetail> InspectReportInventoryDetailedAsync()
     {
         await _lock.WaitAsync().ConfigureAwait(false);
         try
         {
             if (!Directory.Exists(_reportsDirectory))
-                return new ServiceReportInventory(0, 0, 0, 0, false);
+                return new(new ServiceReportInventory(0, 0, 0, 0, false),
+                    Array.Empty<string>());
 
             // Never publish "healthy" while a cooperating writer is mid-save.
             await using var lease = await AcquireStoreLeaseAsync(
@@ -197,15 +235,17 @@ public class JsonServiceReportService : IServiceReportService, IServiceReportInv
             }
             catch (IOException)
             {
-                return new ServiceReportInventory(0, 0, 0, 0, true);
+                return new(new ServiceReportInventory(0, 0, 0, 0, true),
+                    Array.Empty<string>());
             }
             catch (UnauthorizedAccessException)
             {
-                return new ServiceReportInventory(0, 0, 0, 0, true);
+                return new(new ServiceReportInventory(0, 0, 0, 0, true),
+                    Array.Empty<string>());
             }
 
             var counts = new Dictionary<string, int>(StringComparer.Ordinal);
-            var invalid = 0;
+            var damaged = new List<string>();
             foreach (var file in files)
             {
                 try
@@ -214,21 +254,23 @@ public class JsonServiceReportService : IServiceReportService, IServiceReportInv
                     var report = DeserializeValidatedReport(json);
                     if (report is null)
                     {
-                        invalid++;
+                        damaged.Add(Path.GetFileName(file));
                         continue;
                     }
 
                     counts.TryGetValue(report.Id, out var count);
                     counts[report.Id] = count + 1;
                 }
-                catch (IOException) { invalid++; }
-                catch (UnauthorizedAccessException) { invalid++; }
-                catch (JsonException) { invalid++; }
+                catch (IOException) { damaged.Add(Path.GetFileName(file)); }
+                catch (UnauthorizedAccessException) { damaged.Add(Path.GetFileName(file)); }
+                catch (JsonException) { damaged.Add(Path.GetFileName(file)); }
             }
 
+            damaged.Sort(StringComparer.OrdinalIgnoreCase);
             var duplicates = counts.Values.Where(count => count > 1).Sum();
-            return new ServiceReportInventory(files.Length, counts.Values.Sum() - duplicates,
-                duplicates, invalid, false);
+            var inventory = new ServiceReportInventory(files.Length,
+                counts.Values.Sum() - duplicates, duplicates, damaged.Count, false);
+            return new(inventory, damaged);
         }
         finally
         {
@@ -250,8 +292,10 @@ public class JsonServiceReportService : IServiceReportService, IServiceReportInv
             // Never delete the first apparent match: multiple stored files
             // can carry the same logical Id. This is a best-effort local
             // uniqueness gate, NOT an inter-process atomic identity lock.
-            var match = await FindUniqueReportAsync(reportId)
-                .ConfigureAwait(false);
+            // Unlike reads, deletion stays strict: an unreadable sibling may
+            // carry the same logical ID, so it blocks the deletion.
+            var match = await FindUniqueReportAsync(reportId,
+                tolerateUnreadableSiblings: false).ConfigureAwait(false);
             if (match is null)
                 return false;
 
@@ -270,13 +314,15 @@ public class JsonServiceReportService : IServiceReportService, IServiceReportInv
     }
 
     /// <summary>
-    /// Reject ambiguous, unreadable, or malformed report directories.
-    /// Reading a corrupt file cannot prove that its logical ID is distinct,
-    /// so returning any other report (or deleting it) would be unsafe.
-    /// Caller already holds this instance's gate.
+    /// Locate one readable stored record by logical ID.
+    /// When <paramref name="tolerateUnreadableSiblings"/> is true (read-only
+    /// loads) damaged/unreadable files are skipped so they cannot hide a
+    /// uniquely readable match; two READABLE records with the same ID still
+    /// fail as ambiguous. Deletion passes false so an unreadable sibling
+    /// blocks the operation. Caller already holds this instance's gate.
     /// </summary>
     private async Task<(ServiceReport Report, string FilePath)?>
-        FindUniqueReportAsync(string? reportId)
+        FindUniqueReportAsync(string? reportId, bool tolerateUnreadableSiblings)
     {
         if (string.IsNullOrWhiteSpace(reportId))
             return null;
@@ -293,7 +339,11 @@ public class JsonServiceReportService : IServiceReportService, IServiceReportInv
                     .ConfigureAwait(false);
                 var report = DeserializeValidatedReport(json);
                 if (report is null)
+                {
+                    if (tolerateUnreadableSiblings)
+                        continue;
                     return null;
+                }
 
                 if (string.Equals(report.Id, reportId,
                     StringComparison.Ordinal))
@@ -303,9 +353,24 @@ public class JsonServiceReportService : IServiceReportService, IServiceReportInv
                     match = (report, file);
                 }
             }
-            catch (IOException) { return null; }
-            catch (UnauthorizedAccessException) { return null; }
-            catch (JsonException) { return null; }
+            catch (IOException)
+            {
+                if (tolerateUnreadableSiblings)
+                    continue;
+                return null;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                if (tolerateUnreadableSiblings)
+                    continue;
+                return null;
+            }
+            catch (JsonException)
+            {
+                if (tolerateUnreadableSiblings)
+                    continue;
+                return null;
+            }
         }
 
         return match;

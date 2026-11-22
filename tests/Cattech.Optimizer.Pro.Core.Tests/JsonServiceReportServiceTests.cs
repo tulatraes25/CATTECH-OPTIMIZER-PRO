@@ -333,7 +333,7 @@ public class JsonServiceReportServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task CorruptUnrelatedReport_BlocksAmbiguousDeletionUntilReviewed()
+    public async Task CorruptUnrelatedReport_IsSkippedForReadingButDeletionStaysStrict()
     {
         var service = new JsonServiceReportService(_testDir);
         var report = CreateTestReport("Good Synthetic Client");
@@ -342,9 +342,12 @@ public class JsonServiceReportServiceTests : IDisposable
         var corruptFile = Path.Combine(dir, "service-report-corrupted.json");
         await File.WriteAllTextAsync(corruptFile, "{ not valid JSON");
 
-        Assert.Null(await service.LoadReportAsync(report.Id));
+        // Política v0.3.1: la lectura tolera un hermano dañado (se omite),
+        // pero el borrado sigue siendo estricto hasta revisarlo.
+        Assert.NotNull(await service.LoadReportAsync(report.Id));
         Assert.False(await service.DeleteReportAsync(report.Id));
         Assert.True(File.Exists(Path.Combine(dir, file)));
+        Assert.True(File.Exists(corruptFile));
 
         // Repair a synthetic fixture outside CATTECH's storage API.
         File.Delete(corruptFile);

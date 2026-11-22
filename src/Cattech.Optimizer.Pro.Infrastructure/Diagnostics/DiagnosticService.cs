@@ -37,28 +37,80 @@ public class DiagnosticService : IDiagnosticService
     {
         var report = new DiagnosticReport();
 
+        // Cada fuente se ejecuta aislada: si una falla, el reporte conserva las
+        // demás y registra el error técnico de la fuente (sin rutas privadas ni
+        // nombres de usuario). Los errores por fuente los consume la pantalla de
+        // Diagnóstico para mostrar "Diagnóstico parcial" en vez de un falso éxito.
+
         // 1. Hardware (10%)
         progress?.Report(5);
-        var hw = await _hardwareService.GetHardwareReportAsync();
-        FillSystemInfo(report, hw);
-        FillHardwareInfo(report, hw);
-        FillDiskInfo(report, hw);
+        var hardwareReadFailed = false;
+        try
+        {
+            var hw = await _hardwareService.GetHardwareReportAsync();
+            FillSystemInfo(report, hw);
+            FillHardwareInfo(report, hw);
+            FillDiskInfo(report, hw);
+        }
+        catch (Exception)
+        {
+            hardwareReadFailed = true;
+            report.Errors.Add("Hardware/WMI: no se pudo completar la consulta base del sistema.");
+        }
+
+        if (!hardwareReadFailed)
+        {
+            AddHardwareCompletenessIssues(report);
+        }
+
         progress?.Report(15);
 
         // 2. Programas de inicio (20%)
-        report.Startup = await GetStartupInfoAsync();
+        try
+        {
+            report.Startup = await GetStartupInfoAsync(report.Warnings, report.Errors);
+        }
+        catch (Exception)
+        {
+            report.Errors.Add("Inicio: falló la lectura de programas de arranque.");
+        }
+
         progress?.Report(35);
 
         // 3. Temporales (20%)
-        report.TempFiles = await GetTempFilesInfoAsync();
+        try
+        {
+            report.TempFiles = await GetTempFilesInfoAsync(report.Warnings, report.Errors);
+        }
+        catch (Exception)
+        {
+            report.Errors.Add("Temporales: falló la medición de archivos temporales.");
+        }
+
         progress?.Report(55);
 
         // 4. Seguridad (15%)
-        report.Security = await GetSecurityInfoAsync();
+        try
+        {
+            report.Security = await GetSecurityInfoAsync(report.Warnings, report.Errors);
+        }
+        catch (Exception)
+        {
+            report.Errors.Add("Seguridad: falló la consulta del estado de seguridad.");
+        }
+
         progress?.Report(70);
 
         // 5. Memoria virtual (10%)
-        report.VirtualMemory = GetVirtualMemoryInfo();
+        try
+        {
+            report.VirtualMemory = GetVirtualMemoryInfo(report.Warnings, report.Errors);
+        }
+        catch (Exception)
+        {
+            report.Errors.Add("Memoria virtual: falló la consulta del archivo de paginación.");
+        }
+
         progress?.Report(80);
 
         // 6. Generar alertas (10%)
@@ -74,7 +126,8 @@ public class DiagnosticService : IDiagnosticService
         }
         catch
         {
-            // No es crítico
+            // No es crítico, pero queda registrado para el técnico.
+            report.Warnings.Add("Configuración: no se pudo leer el nombre del técnico.");
         }
 
         progress?.Report(100);
@@ -221,6 +274,36 @@ public class DiagnosticService : IDiagnosticService
         report.RamUsagePercent = Math.Round(hw.Memory.UsagePercent, 1);
     }
 
+    /// <summary>
+    /// Detecta fuentes WMI que respondieron vacías sin lanzar excepción.
+    /// El servicio de hardware degrada a datos parciales en vez de propagar el
+    /// fallo; estas comprobaciones evitan presentar ese resultado como completo.
+    /// No expone rutas ni identificadores del equipo.
+    /// </summary>
+    private static void AddHardwareCompletenessIssues(DiagnosticReport report)
+    {
+        if (string.IsNullOrWhiteSpace(report.OsName))
+        {
+            report.Errors.Add("Sistema: la consulta WMI no devolvió el sistema operativo.");
+        }
+
+        if (string.IsNullOrWhiteSpace(report.Processor))
+        {
+            report.Errors.Add("Hardware: la consulta WMI no devolvió información de CPU.");
+        }
+
+        if (report.RamTotalGB <= 0)
+        {
+            report.Errors.Add("Hardware: la consulta WMI no devolvió la memoria total.");
+        }
+
+        if (!report.DiskFreeSpaceKnown)
+        {
+            report.Warnings.Add(
+                "Almacenamiento: no se pudo verificar capacidad y espacio libre del volumen del sistema.");
+        }
+    }
+
     // A migration recommendation requires *positive* HDD evidence.
     // Unknown, NVMe, SSD, flash, or compound labels must never trigger it.
     internal static bool ShouldSuggestHddUpgrade(string? classifiedMediaType) =>
@@ -262,16 +345,17 @@ public class DiagnosticService : IDiagnosticService
         }
     }
 
-    private static async Task<StartupInfo> GetStartupInfoAsync()
+    private static async Task<StartupInfo> GetStartupInfoAsync(
+        List<string> warnings, List<string> errors)
     {
         var info = new StartupInfo();
 
         try
         {
             // HKCU\Software\Microsoft\Windows\CurrentVersion\Run
-            var userStartup = ReadRegistryStartup("HKCU");
+            var userStartup = ReadRegistryStartup("HKCU", warnings);
             // HKLM\Software\Microsoft\Windows\CurrentVersion\Run
-            var machineStartup = ReadRegistryStartup("HKLM");
+            var machineStartup = ReadRegistryStartup("HKLM", warnings);
 
             var allPrograms = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             allPrograms.UnionWith(userStartup);
@@ -286,8 +370,8 @@ public class DiagnosticService : IDiagnosticService
                 Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
                 @"Microsoft\Windows\Start Menu\Programs\Startup");
 
-            var folderPrograms = GetStartupFolderPrograms(userStartupFolder);
-            folderPrograms.AddRange(GetStartupFolderPrograms(commonStartupFolder));
+            var folderPrograms = GetStartupFolderPrograms(userStartupFolder, warnings);
+            folderPrograms.AddRange(GetStartupFolderPrograms(commonStartupFolder, warnings));
 
             foreach (var prog in folderPrograms)
             {
@@ -303,15 +387,15 @@ public class DiagnosticService : IDiagnosticService
                 !p.Contains("ms-", StringComparison.OrdinalIgnoreCase) &&
                 !p.Contains("windows", StringComparison.OrdinalIgnoreCase));
         }
-        catch
+        catch (Exception)
         {
-            // No crítico
+            errors.Add("Inicio: falló la lectura de la configuración de arranque.");
         }
 
         return await Task.FromResult(info);
     }
 
-    private static List<string> ReadRegistryStartup(string hive)
+    private static List<string> ReadRegistryStartup(string hive, List<string> warnings)
     {
         var programs = new List<string>();
 
@@ -335,15 +419,16 @@ public class DiagnosticService : IDiagnosticService
                 key.Close();
             }
         }
-        catch
+        catch (Exception)
         {
-            // No crítico
+            warnings.Add($"Inicio: no se pudo leer la clave de arranque de {hive}.");
         }
 
         return programs;
     }
 
-    private static List<string> GetStartupFolderPrograms(string folderPath)
+    private static List<string> GetStartupFolderPrograms(
+        string folderPath, List<string> warnings)
     {
         var programs = new List<string>();
 
@@ -358,15 +443,17 @@ public class DiagnosticService : IDiagnosticService
                 }
             }
         }
-        catch
+        catch (Exception)
         {
-            // No crítico
+            // Nunca se incluye la ruta de la carpeta en el mensaje.
+            warnings.Add("Inicio: no se pudo enumerar una carpeta de inicio de programas.");
         }
 
         return programs;
     }
 
-    private static async Task<TempFilesInfo> GetTempFilesInfoAsync()
+    private static async Task<TempFilesInfo> GetTempFilesInfoAsync(
+        List<string> warnings, List<string> errors)
     {
         var info = new TempFilesInfo();
 
@@ -388,14 +475,17 @@ public class DiagnosticService : IDiagnosticService
                 if (Directory.Exists(fullPath))
                     uniqueLocations.Add(fullPath);
             }
-            catch { }
+            catch (Exception)
+            {
+                warnings.Add("Temporales: no se pudo resolver una ubicación temporal.");
+            }
         }
 
         foreach (var location in uniqueLocations)
         {
             try
             {
-                var detail = await CalculateFolderSizeAsync(location);
+                var detail = await CalculateFolderSizeAsync(location, warnings);
                 if (detail.SizeBytes > 0)
                 {
                     info.Locations.Add(detail);
@@ -404,16 +494,23 @@ public class DiagnosticService : IDiagnosticService
                     info.FolderCount++;
                 }
             }
-            catch
+            catch (Exception)
             {
-                // No crítico, skip
+                // No se incluye la ruta de la ubicación en el mensaje.
+                warnings.Add("Temporales: no se pudo medir una ubicación temporal.");
             }
+        }
+
+        if (info.FileCount == 0)
+        {
+            warnings.Add("Temporales: la medición no devolvió archivos; puede ser acceso denegado o carpetas vacías.");
         }
 
         return info;
     }
 
-    private static async Task<TempLocationDetail> CalculateFolderSizeAsync(string path)
+    private static async Task<TempLocationDetail> CalculateFolderSizeAsync(
+        string path, List<string> warnings)
     {
         return await Task.Run(() =>
         {
@@ -437,21 +534,28 @@ public class DiagnosticService : IDiagnosticService
                         detail.SizeBytes += file.Length;
                         detail.FileCount++;
                     }
-                    catch { }
+                    catch (Exception)
+                    {
+                        // Archivo volátil; no se registra por archivo para no inflar el reporte.
+                    }
 
                     // Timeout de seguridad: no más de 3 segundos por carpeta
                     if (sw.ElapsedMilliseconds > 3000)
                         break;
                 }
             }
-            catch { }
+            catch (Exception)
+            {
+                warnings.Add("Temporales: lectura parcial de una ubicación temporal.");
+            }
 
             sw.Stop();
             return detail;
         });
     }
 
-    private static async Task<SecurityInfo> GetSecurityInfoAsync()
+    private static async Task<SecurityInfo> GetSecurityInfoAsync(
+        List<string> warnings, List<string> errors)
     {
         var info = new SecurityInfo();
 
@@ -483,9 +587,10 @@ public class DiagnosticService : IDiagnosticService
                 }
             }
         }
-        catch
+        catch (Exception)
         {
             info.AntivirusName = "No detectado";
+            errors.Add("Seguridad: no se pudo consultar AntiVirusProduct (WMI).");
         }
 
         // Firewall via WMI
@@ -499,9 +604,10 @@ public class DiagnosticService : IDiagnosticService
                 break;
             }
         }
-        catch
+        catch (Exception)
         {
             // No se pudo determinar
+            warnings.Add("Seguridad: no se pudo consultar FirewallProduct (WMI).");
         }
 
         // Windows Update status
@@ -518,15 +624,17 @@ public class DiagnosticService : IDiagnosticService
                 break;
             }
         }
-        catch
+        catch (Exception)
         {
             info.WindowsUpdateStatus = "No determinado";
+            warnings.Add("Seguridad: no se pudo consultar el estado del servicio Windows Update (WMI).");
         }
 
         return await Task.FromResult(info);
     }
 
-    private static VirtualMemoryInfo GetVirtualMemoryInfo()
+    private static VirtualMemoryInfo GetVirtualMemoryInfo(
+        List<string> warnings, List<string> errors)
     {
         var info = new VirtualMemoryInfo();
 
@@ -556,9 +664,9 @@ public class DiagnosticService : IDiagnosticService
                 break;
             }
         }
-        catch
+        catch (Exception)
         {
-            // No crítico
+            warnings.Add("Memoria virtual: no se pudo consultar Win32_PageFileUsage/Win32_ComputerSystem (WMI).");
         }
 
         return info;

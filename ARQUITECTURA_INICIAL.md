@@ -725,7 +725,7 @@ SOFTWARE.
 
 ## 9. Estado Actual del Proyecto
 
-El proyecto está **publicado en v0.3.1** (2026-11-22), con build Release sin warnings y 1946 tests automatizados en verde sobre .NET 10 LTS. Para el detalle de cambios, ver `CHANGELOG.md`; para el plan futuro, `ROADMAP.md`.
+El proyecto está **publicado en v0.3.1** (2026-11-22), con build Release sin warnings y 2055 tests automatizados en verde sobre .NET 10 LTS. Para el detalle de cambios, ver `CHANGELOG.md`; para el plan futuro, `ROADMAP.md`.
 
 ---
 

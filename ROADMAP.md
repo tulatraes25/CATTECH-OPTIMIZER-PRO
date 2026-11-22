@@ -48,7 +48,7 @@ Basic  Hardware  Repair            USB     Completa
 
 ### Verificación
 
-- Build Release sin warnings, 1946 tests xUnit (0 fallas, 0 omitidos) en Windows CI.
+- Build Release sin warnings, 2055 tests xUnit (0 fallas, 0 omitidos) en Windows CI.
 - Paquete con ProductVersion ligada al SHA de origen, SHA-256 y atestación de procedencia.
 - Instalador `CATTECH-Optimizer-Pro-v0.3.1-Setup.exe` (Inno Setup) con instalación por usuario o para todos los usuarios, accesos directos y desinstalador.
 - Pruebas E2E por UI Automation: limpieza real, desactivación/restauración de programas de inicio y navegación sin crashes.
@@ -68,6 +68,7 @@ Basic  Hardware  Repair            USB     Completa
 - [x] Punto de restauración sin la sonda `srservice` inexistente
 - [x] SMART con verificación automática y errores reales
 - [x] Informes con auto-carga y apertura de carpeta funcional
+- [x] UX técnica: barra de estado, panel de inicio, atajos, exportaciones y configuración de smartctl
 
 ---
 

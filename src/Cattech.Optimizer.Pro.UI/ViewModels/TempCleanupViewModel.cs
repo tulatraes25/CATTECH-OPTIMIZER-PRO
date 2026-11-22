@@ -1,4 +1,7 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.Globalization;
+using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Cattech.Optimizer.Pro.Core.Interfaces;
@@ -12,6 +15,8 @@ namespace Cattech.Optimizer.Pro.UI.ViewModels;
 public partial class TempCleanupViewModel : ObservableObject
 {
     private readonly ITempCleanupService _cleanupService;
+    private readonly string _resultsDirectory;
+    private readonly Action<string> _openDirectory;
     private List<TempCleanupTarget> _targets = [];
     private string? _approvedScope;
 
@@ -86,9 +91,31 @@ public partial class TempCleanupViewModel : ObservableObject
 
     public ObservableCollection<CleanupError> ResultErrors { get; } = new();
 
-    public TempCleanupViewModel(ITempCleanupService cleanupService)
+    // --- Historial técnico persistido ---
+
+    public ObservableCollection<CleanupHistoryRow> HistoryRows { get; } = new();
+
+    [ObservableProperty]
+    private bool _hasHistory;
+
+    [ObservableProperty]
+    private bool _isLoadingHistory;
+
+    [ObservableProperty]
+    private string _historyStatusText = "Sin registros cargados";
+
+    public TempCleanupViewModel(
+        ITempCleanupService cleanupService,
+        string? baseDirectory = null,
+        Action<string>? openDirectory = null)
     {
         _cleanupService = cleanupService;
+
+        var root = string.IsNullOrWhiteSpace(baseDirectory)
+            ? AppDomain.CurrentDomain.BaseDirectory
+            : baseDirectory;
+        _resultsDirectory = Path.Combine(root, "data", "cleanup-results");
+        _openDirectory = openDirectory ?? OpenDirectoryWithShell;
     }
 
     public bool CanReviewCleanupConsent =>
@@ -337,9 +364,13 @@ public partial class TempCleanupViewModel : ObservableObject
             {
                 ResultSummary += " El registro técnico NO pudo guardarse.";
                 StatusText = "Limpieza ejecutada; registro no guardado";
+                await LoadHistoryCoreAsync();
                 ShowError("La limpieza se ejecutó, pero no se pudo guardar su historial. Conservá los datos del resultado.");
                 return;
             }
+
+            // Después de limpiar, el historial técnico se recarga con el nuevo registro.
+            await LoadHistoryCoreAsync();
 
             if (fullyCompleted)
                 ShowSuccess("La limpieza se completó y el registro se guardó.");
@@ -426,6 +457,107 @@ public partial class TempCleanupViewModel : ObservableObject
             : $"{totalBytes / (1024.0 * 1024):F1} MB";
     }
 
+    // =====================
+    // HISTORIAL TÉCNICO
+    // =====================
+
+    /// <summary>
+    /// Carga el historial de limpiezas persistidas (data/cleanup-results).
+    /// Solo lectura: no ejecuta ni repite limpiezas.
+    /// </summary>
+    [RelayCommand]
+    private async Task LoadHistoryAsync()
+    {
+        if (IsRunning)
+            return;
+
+        await LoadHistoryCoreAsync();
+    }
+
+    /// <summary>
+    /// Carga el historial sin la guarda de IsRunning: se usa también al final
+    /// de una limpieza (la operación sigue marcada como en curso hasta el finally).
+    /// </summary>
+    private async Task LoadHistoryCoreAsync()
+    {
+        IsLoadingHistory = true;
+
+        try
+        {
+            var results = await _cleanupService.ListResultsAsync(20);
+
+            HistoryRows.Clear();
+            foreach (var summary in results)
+            {
+                if (summary is null)
+                    continue;
+                HistoryRows.Add(new CleanupHistoryRow(summary));
+            }
+
+            HasHistory = HistoryRows.Count > 0;
+            HistoryStatusText = HasHistory
+                ? $"{HistoryRows.Count} registro(s) de limpieza"
+                : "Sin registros de limpieza guardados.";
+        }
+        catch (Exception)
+        {
+            HistoryRows.Clear();
+            HasHistory = false;
+            HistoryStatusText = "No se pudo leer el historial de limpieza.";
+        }
+        finally
+        {
+            IsLoadingHistory = false;
+        }
+    }
+
+    /// <summary>
+    /// Abre la carpeta data/cleanup-results (la crea si todavía no existe).
+    /// </summary>
+    [RelayCommand]
+    private Task OpenResultsFolderAsync()
+    {
+        if (IsRunning)
+        {
+            ShowError("Esperá a que termine la operación en curso.");
+            return Task.CompletedTask;
+        }
+
+        try
+        {
+            var directory = EnsureResultsDirectory();
+            _openDirectory(directory);
+            ShowSuccess("Carpeta de resultados de limpieza abierta.");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+            or ArgumentException or NotSupportedException
+            or System.Security.SecurityException
+            or System.ComponentModel.Win32Exception)
+        {
+            // Aviso visible sin exponer rutas privadas en el banner.
+            ShowError("No se pudo abrir la carpeta de resultados. Verificá los permisos e intentá nuevamente.");
+        }
+
+        return Task.CompletedTask;
+    }
+
+    internal string ResultsDirectoryPath => _resultsDirectory;
+
+    internal string EnsureResultsDirectory()
+    {
+        Directory.CreateDirectory(_resultsDirectory);
+        return Path.GetFullPath(_resultsDirectory);
+    }
+
+    private static void OpenDirectoryWithShell(string directory)
+    {
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = directory,
+            UseShellExecute = true
+        });
+    }
+
     private void ShowSuccess(string message)
     {
         StatusMessage = message;
@@ -449,4 +581,45 @@ public partial class TempCleanupViewModel : ObservableObject
         HasError = false;
         ErrorMessage = string.Empty;
     }
+}
+
+/// <summary>
+/// Fila de presentación del historial técnico de limpiezas.
+/// Solo deriva texto desde el resumen persistido: no ejecuta limpiezas.
+/// </summary>
+public sealed class CleanupHistoryRow
+{
+    public CleanupHistoryRow(TempCleanupResultSummary summary)
+    {
+        ArgumentNullException.ThrowIfNull(summary);
+
+        StartedAt = summary.StartedAt;
+        DeletedMB = summary.DeletedMB;
+        DeletedFiles = summary.DeletedFiles;
+        HasWarnings = summary.HasWarnings;
+        FileName = summary.FileName;
+    }
+
+    public DateTime StartedAt { get; }
+
+    public double DeletedMB { get; }
+
+    public int DeletedFiles { get; }
+
+    public bool HasWarnings { get; }
+
+    public string FileName { get; }
+
+    public string StartedAtDisplay =>
+        StartedAt.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture);
+
+    public string DeletedMBDisplay =>
+        DeletedMB.ToString("0.##", CultureInfo.InvariantCulture) + " MB";
+
+    public string DeletedFilesDisplay =>
+        DeletedFiles.ToString(CultureInfo.InvariantCulture);
+
+    public string WarningsDisplay => HasWarnings ? "Sí" : "No";
+
+    public string FileNameDisplay => string.IsNullOrWhiteSpace(FileName) ? "-" : FileName;
 }

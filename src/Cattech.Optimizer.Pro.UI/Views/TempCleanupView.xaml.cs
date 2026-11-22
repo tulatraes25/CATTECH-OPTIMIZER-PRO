@@ -17,9 +17,14 @@ public partial class TempCleanupView : UserControl
         DataContextChanged += (_, e) => AttachConfirmation(e.NewValue as TempCleanupViewModel);
         Loaded += (_, _) =>
         {
+            if (DataContext is not TempCleanupViewModel viewModel)
+                return;
+
+            // Historial técnico persistido: se carga sin exigir un clic extra.
+            viewModel.LoadHistoryCommand.Execute(null);
+
             // Escaneo automático al entrar: la pantalla arranca con datos reales.
-            if (DataContext is TempCleanupViewModel viewModel
-                && !viewModel.IsRunning && !viewModel.HasScanned)
+            if (!viewModel.IsRunning && !viewModel.HasScanned)
             {
                 viewModel.ScanCommand.Execute(null);
             }

@@ -15,6 +15,15 @@
 - `CATTECH-Optimizer-Pro-v0.3.1-win-x64.zip` (autocontenido, x64)
 - `CATTECH-Optimizer-Pro-v0.3.1-win-x64.sha256.txt` (verificar antes de usar)
 
+## UX para técnicos avanzados
+
+- Barra de estado global con admin, build de Windows, runtime, ruta de datos y estado de smartctl; panel de información con rutas y modo de instalación.
+- Panel técnico de inicio con sistema, contadores de almacenamiento y acciones rápidas; F5 refresca la sección actual y Ctrl+0..9 navega.
+- Configuración › Herramientas externas para fijar/autodetectar `smartctl.exe`, probarlo y guardar la configuración.
+- Diagnóstico con estado parcial y errores por fuente; Hardware con exportar CSV; SMART con atributos crudos, sesiones y exportación.
+- Programas de inicio con filtros reales, detalle técnico y abrir ubicación; Limpieza con historial; Pantallas azules con carpeta de dumps y copiar análisis; Reparaciones con comandos copiables.
+- Informes con estado técnico, archivos dañados listados y secciones reales de historial.
+- Errores inesperados registrados en `logs/app-YYYYMMDD.log` sin cerrar la aplicación.
 ## Qué se corrigió (botones que "no hacían nada")
 
 - **Limpieza de temporales**: borra también subcarpetas, sin la retención de 7 días que dejaba casi todo intacto, y pide confirmación mostrando archivos y MB reales. Incluye el **vaciado de la Papelera de reciclaje** con la API de Windows (antes figuraba como no disponible).
@@ -26,7 +35,7 @@
 
 ## Verificación
 
-- Build Release sin warnings y **1946 tests** xUnit (0 fallas, 0 omitidos) sobre el SHA exacto.
+- Build Release sin warnings y **2055 tests** xUnit (0 fallas, 0 omitidos) sobre el SHA exacto.
 - Pruebas end-to-end con UI Automation sobre la aplicación publicada:
   - Limpieza real: 16.845 archivos / 260 MB detectados, 162 MB liberados, archivos en uso omitidos, nombres protegidos conservados y subcarpeta vacía eliminada.
   - Programas de inicio: entrada de prueba en `HKCU\...\Run` desactivada desde la UI (valor eliminado + backup creado) y restaurada desde el panel de Backups.

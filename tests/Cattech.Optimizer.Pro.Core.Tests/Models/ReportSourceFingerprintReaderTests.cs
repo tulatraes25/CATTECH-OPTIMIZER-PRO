@@ -207,7 +207,7 @@ public sealed class ReportSourceFingerprintReaderTests
     [InlineData("{\"id\":null}")]
     [InlineData("{\"id\":\"invalid/path\"}")]
     [InlineData("not json")]
-    public async Task MalformedSiblingCannotHideAnAmbiguousSource(string sibling)
+    public async Task MalformedSibling_IsOmittedAndValidSourceStillResolves(string sibling)
     {
         var root = NewRoot();
         try
@@ -218,8 +218,12 @@ public sealed class ReportSourceFingerprintReaderTests
                 sibling);
             var result = await new ReportSourceFingerprintReader(root)
                 .ResolveUniqueAsync("Diagnostic", "ABCDEF12");
-            Assert.Equal(SourceIdResolutionStatus.Unverifiable, result.Status);
-            Assert.Null(result.Fingerprint);
+
+            // Política v0.3.1: un hermano ilegible se omite (y se cuenta),
+            // pero no debe ocultar una fuente válida y única.
+            Assert.Equal(SourceIdResolutionStatus.FoundUnique, result.Status);
+            Assert.NotNull(result.Fingerprint);
+            Assert.Equal(1, result.OmittedUnreadableFiles);
         }
         finally { Directory.Delete(root, true); }
     }

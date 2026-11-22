@@ -8,17 +8,19 @@
         <converters:BoolToVisibilityConverter x:Key="BoolToVis" />
         <converters:HexToColorConverter x:Key="HexToColorConverter" />
         <converters:LogoPathColorConverter x:Key="LogoPathColorConverter" />
+        <converters:SmartctlAvailColorConverter x:Key="SmartctlAvailColor" />
+        <converters:StringToVisibilityConverter x:Key="StringToVis" />
     </UserControl.Resources>
 
     <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="30">
-        <StackPanel MaxWidth="700" HorizontalAlignment="Left">
+        <StackPanel MaxWidth="880" HorizontalAlignment="Left">
 
             <!-- Título -->
-            <TextBlock Text="Configuración de Empresa / Técnico"
-                       FontSize="26" FontWeight="Bold"
-                       Foreground="#1B1B1B" Margin="0,0,0,5" />
-            <TextBlock Text="Estos datos se usarán en los informes HTML y PDF generados."
-                       FontSize="13" Foreground="#666" Margin="0,0,0,25" />
+            <TextBlock Text="Configuración"
+                       FontSize="24" FontWeight="Bold"
+                       Foreground="#1B1B1B" Margin="0,0,0,4" />
+            <TextBlock Text="Identidad de empresa/técnico, herramientas externas y rutas de la aplicación."
+                       FontSize="13" Foreground="#666" Margin="0,0,0,20" />
 
             <!-- Mensajes de estado -->
             <Border CornerRadius="6" Padding="12,10" Margin="0,0,0,15"
@@ -185,27 +187,279 @@
             <TextBlock Text="Leyenda del pie de informe" FontSize="13" Foreground="#333" Margin="0,0,0,4" />
             <TextBox Text="{Binding FooterLegend, UpdateSourceTrigger=PropertyChanged}"
                      AcceptsReturn="True" TextWrapping="Wrap" Height="70"
-                     Padding="10,8" FontSize="13" Margin="0,0,0,25"
+                     Padding="10,8" FontSize="13" Margin="0,0,0,15"
                      BorderBrush="#CCC" BorderThickness="1"
                      VerticalScrollBarVisibility="Auto" />
 
-            <!-- Botones de acción -->
+            <!-- Botones de acción (datos de empresa) -->
             <Separator Background="#E0E0E0" Margin="0,0,0,15" />
 
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,30">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,25">
                 <Button Content="Cancelar"
                         Command="{Binding CancelCommand}"
-                        Padding="20,10" FontSize="13" Margin="0,0,10,0"
+                        Padding="18,8" FontSize="13" Margin="0,0,10,0"
                         Background="#F3F3F3" Foreground="#555"
                         BorderBrush="#CCC" BorderThickness="1"
                         Cursor="Hand" />
 
                 <Button Content="Guardar configuración"
                         Command="{Binding SaveCommand}"
-                        Padding="20,10" FontSize="13" FontWeight="SemiBold"
+                        Padding="18,8" FontSize="13" FontWeight="SemiBold"
                         Background="#0078D4" Foreground="White"
                         BorderThickness="0" Cursor="Hand" />
             </StackPanel>
+
+            <!-- Sección: Herramientas externas -->
+            <TextBlock Text="HERRAMIENTAS EXTERNAS" FontSize="12" FontWeight="Bold"
+                       Foreground="#0078D4" Margin="0,0,0,4" />
+            <TextBlock Text="smartctl (smartmontools) se invoca como binario externo para lectura SMART. La app no integra código GPL, no descarga símbolos ni repara discos."
+                       FontSize="12" Foreground="#666" TextWrapping="Wrap" Margin="0,0,0,10" />
+
+            <Border BorderBrush="#CCC" BorderThickness="1" CornerRadius="6"
+                    Padding="14" Background="#FAFAFA" Margin="0,0,0,22">
+                <StackPanel>
+
+                    <!-- Ruta de smartctl.exe -->
+                    <TextBlock Text="Ruta de smartctl.exe" FontSize="12" Foreground="#333" Margin="0,0,0,4" />
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="8" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="8" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBox Grid.Column="0"
+                                 Text="{Binding SmartctlPath, UpdateSourceTrigger=PropertyChanged}"
+                                 FontFamily="Consolas" FontSize="12" Padding="8,6"
+                                 BorderBrush="#CCC" BorderThickness="1"
+                                 ToolTip="{Binding SmartctlPath}" />
+
+                        <Button Grid.Column="2" Content="Examinar"
+                                Command="{Binding BrowseSmartctlCommand}"
+                                Padding="14,6" FontSize="12"
+                                Background="#F3F3F3" Foreground="#333"
+                                BorderBrush="#CCC" BorderThickness="1"
+                                Cursor="Hand" />
+
+                        <Button Grid.Column="4" Content="Probar"
+                                Command="{Binding TestSmartctlCommand}"
+                                Padding="14,6" FontSize="12" FontWeight="SemiBold"
+                                Background="#0078D4" Foreground="White"
+                                BorderThickness="0" Cursor="Hand"
+                                ToolTip="Ejecuta CheckAvailabilityAsync con la configuración actual del formulario (solo lectura)" />
+                    </Grid>
+
+                    <!-- Autodetección + guardar -->
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <CheckBox Grid.Column="0"
+                                  Content="Autodetectar smartctl si la ruta no existe"
+                                  IsChecked="{Binding SmartctlAutoDetect}"
+                                  FontSize="12" Foreground="#333"
+                                  VerticalAlignment="Center"
+                                  ToolTip="Si está activo, smartctl se busca en tools\, Program Files, PATH y rutas estándar de smartmontools" />
+
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="● cambios sin guardar"
+                                       FontSize="11" Foreground="#B26A00"
+                                       VerticalAlignment="Center" Margin="0,0,10,0"
+                                       Visibility="{Binding HasToolsChanges, Converter={StaticResource BoolToVis}}" />
+
+                            <Button Content="Guardar herramientas"
+                                    Command="{Binding SaveToolsCommand}"
+                                    Padding="14,6" FontSize="12" FontWeight="SemiBold"
+                                    Background="#F3F3F3" Foreground="#333"
+                                    BorderBrush="#CCC" BorderThickness="1"
+                                    Cursor="Hand"
+                                    ToolTip="Escribe config/herramientas.json de forma atómica" />
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Archivo de configuración efectivo -->
+                    <TextBlock Text="Archivo de configuración efectivo" FontSize="11" Foreground="#666" Margin="0,0,0,2" />
+                    <Grid Margin="0,0,0,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Column="0"
+                                   Text="{Binding ToolsConfigFilePath}"
+                                   FontFamily="Consolas" FontSize="11" Foreground="#333"
+                                   VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding ToolsConfigFilePath}" />
+
+                        <Button Grid.Column="1" Content="Copiar"
+                                Command="{Binding CopyPathCommand}"
+                                CommandParameter="{Binding ToolsConfigFilePath}"
+                                Padding="10,3" FontSize="11"
+                                Background="Transparent" Foreground="#0067B8"
+                                BorderThickness="0" Cursor="Hand"
+                                ToolTip="Copiar la ruta completa del JSON de herramientas" />
+
+                        <Button Grid.Column="2" Content="Abrir carpeta"
+                                Command="{Binding OpenFolderCommand}"
+                                CommandParameter="{Binding ConfigDirectory}"
+                                Padding="10,3" FontSize="11"
+                                Background="Transparent" Foreground="#0067B8"
+                                BorderThickness="0" Cursor="Hand"
+                                ToolTip="Abrir la carpeta config/ en el Explorador" />
+                    </Grid>
+
+                    <!-- Mensaje del editor de herramientas -->
+                    <Border CornerRadius="4" Padding="10,7" Margin="0,8,0,0">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Setter Property="Background" Value="#E6F4EA" />
+                                <Setter Property="BorderBrush" Value="#34A853" />
+                                <Setter Property="BorderThickness" Value="1" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding ToolsIsSuccess}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding ToolsIsWarning}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                        <Setter Property="Background" Value="#FFF4E5" />
+                                        <Setter Property="BorderBrush" Value="#B26A00" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding ToolsIsError}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                        <Setter Property="Background" Value="#FDECEA" />
+                                        <Setter Property="BorderBrush" Value="#D93025" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <TextBlock Text="{Binding ToolsMessage}"
+                                   FontSize="12" Foreground="#1B1B1B" TextWrapping="Wrap" />
+                    </Border>
+
+                    <!-- Sonda en curso -->
+                    <TextBlock Text="Ejecutando CheckAvailabilityAsync…"
+                               FontSize="11" Foreground="#666" Margin="0,8,0,0"
+                               Visibility="{Binding IsProbing, Converter={StaticResource BoolToVis}}" />
+
+                    <!-- Resultado de la sonda -->
+                    <Border BorderBrush="#CCC" BorderThickness="1" CornerRadius="4"
+                            Background="#F3F3F3" Padding="10" Margin="0,10,0,0"
+                            Visibility="{Binding HasProbeResult, Converter={StaticResource BoolToVis}}">
+                        <StackPanel>
+                            <TextBlock Text="SONDA SMARTCTL · CheckAvailabilityAsync"
+                                       FontSize="10" FontWeight="Bold" Foreground="#666" Margin="0,0,0,4" />
+
+                            <TextBlock Text="{Binding ProbeStatusText}"
+                                       FontSize="13" FontWeight="Bold"
+                                       Foreground="{Binding ProbeIsAvailable, Converter={StaticResource SmartctlAvailColor}}" />
+
+                            <TextBlock FontFamily="Consolas" FontSize="11" Foreground="#333"
+                                       Margin="0,4,0,0" TextTrimming="CharacterEllipsis">
+                                <Run Text="versión: " Foreground="#666" />
+                                <Run Text="{Binding ProbeVersion}" FontWeight="SemiBold" />
+                                <Run Text="   json: " Foreground="#666" />
+                                <Run Text="{Binding ProbeSupportsJsonText}" />
+                                <Run Text="   checked: " Foreground="#666" />
+                                <Run Text="{Binding ProbeCheckedAt}" />
+                            </TextBlock>
+
+                            <Grid Margin="0,4,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Grid.Column="0" Text="ruta: "
+                                           FontFamily="Consolas" FontSize="11" Foreground="#666"
+                                           VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding ProbePath}"
+                                           FontFamily="Consolas" FontSize="11" Foreground="#333"
+                                           VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis"
+                                           ToolTip="{Binding ProbePath}" />
+                                <Button Grid.Column="2" Content="Copiar"
+                                        Command="{Binding CopyPathCommand}"
+                                        CommandParameter="{Binding ProbePath}"
+                                        Padding="10,3" FontSize="11"
+                                        Background="Transparent" Foreground="#0067B8"
+                                        BorderThickness="0" Cursor="Hand"
+                                        ToolTip="Copiar la ruta efectiva de smartctl" />
+                            </Grid>
+
+                            <TextBlock Text="{Binding ProbeDetail}"
+                                       FontSize="11" Foreground="#555" TextWrapping="Wrap"
+                                       Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Border>
+
+            <!-- Sección: Rutas técnicas de la app -->
+            <TextBlock Text="RUTAS DE LA APP" FontSize="12" FontWeight="Bold"
+                       Foreground="#0078D4" Margin="0,0,0,4" />
+            <TextBlock Text="Resumen técnico del directorio de ejecución; las rutas se muestran completas."
+                       FontSize="12" Foreground="#666" Margin="0,0,0,10" />
+
+            <Border BorderBrush="#CCC" BorderThickness="1" CornerRadius="6"
+                    Padding="12" Background="#FAFAFA" Margin="0,0,0,25">
+                <ItemsControl ItemsSource="{Binding AppPaths}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="0,0,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="70" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Grid.Column="0"
+                                           Text="{Binding Label}"
+                                           FontSize="11" FontWeight="SemiBold" Foreground="#333"
+                                           VerticalAlignment="Center" />
+
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding Path}"
+                                           FontFamily="Consolas" FontSize="11" Foreground="#333"
+                                           VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis"
+                                           ToolTip="{Binding Path}" />
+
+                                <TextBlock Grid.Column="2"
+                                           Text="{Binding ExistsText}"
+                                           FontSize="10" Foreground="#999"
+                                           VerticalAlignment="Center" Margin="8,0" />
+
+                                <Button Grid.Column="3" Content="Copiar"
+                                        Command="{Binding DataContext.CopyPathCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding Path}"
+                                        Padding="10,3" FontSize="11"
+                                        Background="Transparent" Foreground="#0067B8"
+                                        BorderThickness="0" Cursor="Hand"
+                                        ToolTip="Copiar la ruta completa" />
+
+                                <Button Grid.Column="4" Content="Abrir carpeta"
+                                        Command="{Binding DataContext.OpenFolderCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding Path}"
+                                        Padding="10,3" FontSize="11"
+                                        Background="Transparent" Foreground="#0067B8"
+                                        BorderThickness="0" Cursor="Hand"
+                                        ToolTip="Abrir la carpeta en el Explorador" />
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Border>
 
         </StackPanel>
     </ScrollViewer>

@@ -104,7 +104,7 @@ public class ServiceReportStrictReadTests
     }
 
     [Fact]
-    public async Task MalformedUnrelatedFile_BlocksReadingAnotherClientAndPreservesBoth()
+    public async Task MalformedUnrelatedFile_IsSkippedAndValidClientRemainsReadable()
     {
         var root = Path.Combine(Path.GetTempPath(),
             "cattech-report-strict-pair-" + Guid.NewGuid().ToString("N"));
@@ -126,7 +126,10 @@ public class ServiceReportStrictReadTests
             Assert.Equal(1, health.UniqueEntries);
             Assert.Equal(1, health.InvalidEntries);
             Assert.True(health.RequiresReview);
-            Assert.Null(await store.LoadReportAsync(valid.Id));
+
+            // Política v0.3.1: el registro válido se puede leer; el borrado
+            // sigue bloqueado mientras el hermano dañado no se revise.
+            Assert.NotNull(await store.LoadReportAsync(valid.Id));
             Assert.False(await store.DeleteReportAsync(valid.Id));
             Assert.True(File.Exists(Path.Combine(dir, validFile)));
             Assert.True(File.Exists(damagedPath));

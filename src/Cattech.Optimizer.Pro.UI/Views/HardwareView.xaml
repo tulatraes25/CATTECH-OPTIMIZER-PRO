@@ -39,9 +39,13 @@
         <Grid Grid.Row="1" Margin="0,0,0,12">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="10" />
                 <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="10" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="10" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="10" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
@@ -52,8 +56,14 @@
                     Command="{Binding StartMonitoringCommand}" />
             <Button Grid.Column="4" Content="Detener" Padding="14,8"
                     Command="{Binding StopMonitoringCommand}" />
+            <Button Grid.Column="6" Content="Copiar tabla" Padding="12,8"
+                    Command="{Binding CopyTableCommand}"
+                    ToolTip="Copia snapshot live + inventario + diagnóstico técnico en TSV" />
+            <Button Grid.Column="8" Content="Exportar CSV" Padding="12,8"
+                    Command="{Binding ExportCsvCommand}"
+                    ToolTip="Guarda snapshot live + inventario WMI en CSV" />
 
-            <StackPanel Grid.Column="5" VerticalAlignment="Center" Margin="20,0,0,0">
+            <StackPanel Grid.Column="9" VerticalAlignment="Center" Margin="20,0,0,0">
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Text="Estado:" FontSize="12" Foreground="#555" />
                     <TextBlock Text="{Binding StatusText}" FontSize="12" FontWeight="SemiBold"
@@ -67,6 +77,8 @@
                     <TextBlock Text="  |  Modo administrador:" FontSize="11" Foreground="#555" />
                     <TextBlock Text="{Binding AdminText}" FontSize="11" FontWeight="SemiBold" Margin="6,0,0,0" />
                 </StackPanel>
+                <TextBlock Text="{Binding ExportStatusText}" FontSize="11" Foreground="#666" Margin="0,3,0,0"
+                           Visibility="{Binding ExportStatusText, Converter={StaticResource StringToVis}}" />
             </StackPanel>
         </Grid>
 
@@ -137,15 +149,36 @@
             </Border>
         </Grid>
 
-        <!-- Row 4: Warnings y Errors -->
+        <!-- Row 4: Diagnóstico técnico + Warnings y Errors -->
         <StackPanel Grid.Row="4" Margin="0,0,0,12">
+            <Border BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6"
+                    Padding="12,8" Background="#FAFAFA" Margin="0,0,0,8">
+                <StackPanel>
+                    <TextBlock Text="DIAGNÓSTICO TÉCNICO" FontSize="11" FontWeight="Bold"
+                               Foreground="#0078D4" Margin="0,0,0,4" />
+                    <TextBlock FontFamily="Consolas" FontSize="11" Foreground="#333" TextWrapping="Wrap">
+                        <Run Text="Proveedor: " /><Run Text="{Binding ProviderStatusText, Mode=OneWay}" />
+                        <Run Text=" | Admin: " /><Run Text="{Binding AdminText, Mode=OneWay}" />
+                        <Run Text=" | Estado: " /><Run Text="{Binding StatusText, Mode=OneWay}" />
+                        <Run Text=" | Inventario: " /><Run Text="{Binding InventoryStatusText, Mode=OneWay}" />
+                    </TextBlock>
+                    <TextBlock FontFamily="Consolas" FontSize="11" Foreground="#333" Margin="0,4,0,0" TextWrapping="Wrap">
+                        <Run Text="Temperatura: " /><Run Text="{Binding ValidSensorCountText, Mode=OneWay}" /><Run Text="/" /><Run Text="{Binding SensorCountText, Mode=OneWay}" />
+                        <Run Text=" | Performance: " /><Run Text="{Binding ValidPerformanceSensorCount, Mode=OneWay}" /><Run Text="/" /><Run Text="{Binding PerformanceSensorCount, Mode=OneWay}" />
+                        <Run Text=" | GPU memoria: " /><Run Text="{Binding ValidGpuMemorySensorCount, Mode=OneWay}" /><Run Text="/" /><Run Text="{Binding GpuMemorySensorCount, Mode=OneWay}" />
+                        <Run Text=" | Batería: " /><Run Text="{Binding ValidBatterySensorCount, Mode=OneWay}" /><Run Text="/" /><Run Text="{Binding BatterySensorCount, Mode=OneWay}" />
+                        <Run Text=" | Timings SPD: " /><Run Text="{Binding ValidMemoryTimingSensorCount, Mode=OneWay}" /><Run Text="/" /><Run Text="{Binding MemoryTimingSensorCount, Mode=OneWay}" />
+                        <Run Text="  (válidos/total)" Foreground="#888" />
+                    </TextBlock>
+                </StackPanel>
+            </Border>
             <Border CornerRadius="6" Padding="12,10" Margin="0,0,0,8"
                     Background="#FFF8E1" BorderBrush="#F9A825" BorderThickness="1"
                     Visibility="{Binding HasWarnings, Converter={StaticResource BoolToVis}}">
                 <ItemsControl ItemsSource="{Binding Warnings}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <TextBlock Text="{Binding}" FontSize="12" Foreground="#E65100"
+                            <TextBlock Text="{Binding}" FontFamily="Consolas" FontSize="11" Foreground="#E65100"
                                        TextWrapping="Wrap" Margin="0,1" />
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
@@ -157,7 +190,7 @@
                 <ItemsControl ItemsSource="{Binding Errors}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <TextBlock Text="{Binding}" FontSize="12" Foreground="#C62828"
+                            <TextBlock Text="{Binding}" FontFamily="Consolas" FontSize="11" Foreground="#C62828"
                                        TextWrapping="Wrap" Margin="0,1" />
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
@@ -178,6 +211,7 @@
                                FontSize="12" Foreground="#888" Margin="0,0,0,6"
                                Visibility="{Binding ShowEmptyTemperatureHint, Converter={StaticResource BoolToVis}}" />
                     <DataGrid Grid.Row="1" ItemsSource="{Binding TemperatureSensors}" AutoGenerateColumns="False"
+                              FontFamily="Consolas" FontSize="11"
                               IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False"
                               HeadersVisibility="Column" RowHeight="28" GridLinesVisibility="Horizontal"
                               Background="White" BorderBrush="#E0E0E0" BorderThickness="1"
@@ -217,6 +251,7 @@
                                FontSize="12" Foreground="#888" Margin="0,0,0,6"
                                Visibility="{Binding ShowEmptyPerformanceHint, Converter={StaticResource BoolToVis}}" />
                     <DataGrid Grid.Row="1" ItemsSource="{Binding PerformanceSensors}" AutoGenerateColumns="False"
+                              FontFamily="Consolas" FontSize="11"
                               IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False"
                               HeadersVisibility="Column" RowHeight="28" GridLinesVisibility="Horizontal"
                               Background="White" BorderBrush="#E0E0E0" BorderThickness="1"
@@ -258,6 +293,7 @@
                                FontSize="12" Foreground="#888" Margin="0,0,0,6"
                                Visibility="{Binding ShowEmptyGpuMemoryHint, Converter={StaticResource BoolToVis}}" />
                     <DataGrid Grid.Row="1" ItemsSource="{Binding GpuMemorySensors}" AutoGenerateColumns="False"
+                              FontFamily="Consolas" FontSize="11"
                               IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False"
                               HeadersVisibility="Column" RowHeight="28" GridLinesVisibility="Horizontal"
                               Background="White" BorderBrush="#E0E0E0" BorderThickness="1"
@@ -297,6 +333,7 @@
                                FontSize="12" Foreground="#888" Margin="0,0,0,6"
                                Visibility="{Binding ShowEmptyBatteryHint, Converter={StaticResource BoolToVis}}" />
                     <DataGrid Grid.Row="1" ItemsSource="{Binding BatterySensors}" AutoGenerateColumns="False"
+                              FontFamily="Consolas" FontSize="11"
                               IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False"
                               HeadersVisibility="Column" RowHeight="28" GridLinesVisibility="Horizontal"
                               Background="White" BorderBrush="#E0E0E0" BorderThickness="1"
@@ -337,6 +374,7 @@
                                FontSize="12" Foreground="#888" Margin="0,0,0,6"
                                Visibility="{Binding ShowEmptyTimingHint, Converter={StaticResource BoolToVis}}" />
                     <DataGrid Grid.Row="1" ItemsSource="{Binding MemoryTimingSensors}" AutoGenerateColumns="False"
+                              FontFamily="Consolas" FontSize="11"
                               IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False"
                               HeadersVisibility="Column" RowHeight="28" GridLinesVisibility="Horizontal"
                               Background="White" BorderBrush="#E0E0E0" BorderThickness="1"
@@ -446,6 +484,7 @@
                                                FontSize="12" Foreground="#888" Margin="0,0,0,6"
                                                Visibility="{Binding Gpus.Count, Converter={StaticResource ZeroToVis}}" />
                                     <DataGrid ItemsSource="{Binding Gpus}" AutoGenerateColumns="False"
+                                              FontFamily="Consolas" FontSize="11"
                                               IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False"
                                               HeadersVisibility="Column" RowHeight="28" GridLinesVisibility="Horizontal"
                                               Background="White" BorderBrush="#E0E0E0" BorderThickness="1"
@@ -504,6 +543,7 @@
                                                FontSize="12" Foreground="#888" Margin="0,0,0,6"
                                                Visibility="{Binding MemoryModules.Count, Converter={StaticResource ZeroToVis}}" />
                                     <DataGrid ItemsSource="{Binding MemoryModules}" AutoGenerateColumns="False"
+                                              FontFamily="Consolas" FontSize="11"
                                               IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False"
                                               HeadersVisibility="Column" RowHeight="28" GridLinesVisibility="Horizontal"
                                               Background="White" BorderBrush="#E0E0E0" BorderThickness="1"

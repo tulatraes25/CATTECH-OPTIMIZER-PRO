@@ -213,6 +213,32 @@ public partial class VisualOptimizationViewModel : ObservableObject
             }
 
             HasResult = true;
+
+            // Persistencia REAL del resultado (antes nunca se guardaba): la
+            // pantalla de Informes usa este historial para exponer la sección
+            // de optimización visual con datos efectivamente aplicados.
+            try
+            {
+                var savedFileName = await _optimizationService.SaveResultAsync(result);
+                if (!string.IsNullOrWhiteSpace(savedFileName))
+                {
+                    var historyLine = "Historial guardado: " + savedFileName;
+                    ResultDetails = string.IsNullOrWhiteSpace(ResultDetails)
+                        ? historyLine
+                        : ResultDetails + Environment.NewLine + historyLine;
+                }
+            }
+            catch (Exception persistEx)
+            {
+                // El estado real se mantiene: los ajustes SÍ se aplicaron.
+                // El error de persistencia se muestra en el detalle visible.
+                var persistFailure =
+                    "Aviso: los ajustes se aplicaron, pero el resultado no se pudo guardar en el historial: "
+                    + persistEx.Message;
+                ResultDetails = string.IsNullOrWhiteSpace(ResultDetails)
+                    ? persistFailure
+                    : ResultDetails + Environment.NewLine + persistFailure;
+            }
         }
         catch (Exception ex)
         {

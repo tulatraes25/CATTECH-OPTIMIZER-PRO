@@ -11,6 +11,36 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 Add-Type -AssemblyName System.Windows.Forms
+if (-not ('Win32Focus' -as [type])) {
+    Add-Type -Namespace '' -Name 'Win32Focus' -MemberDefinition @"
+[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+[DllImport("user32.dll")] public static extern void SwitchToThisWindow(IntPtr hWnd, bool fAltTab);
+[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+[DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
+[DllImport("user32.dll")] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+public static bool ForceForeground(IntPtr hWnd) {
+    ShowWindow(hWnd, 9);
+    SwitchToThisWindow(hWnd, true);
+    uint ignored;
+    uint target = GetWindowThreadProcessId(hWnd, out ignored);
+    uint current = GetCurrentThreadId();
+    uint foregroundThread = GetWindowThreadProcessId(GetForegroundWindow(), out ignored);
+    bool attached = false;
+    if (foregroundThread != 0 && foregroundThread != current) {
+        attached = AttachThreadInput(foregroundThread, current, true);
+    }
+    try {
+        bool ok = SetForegroundWindow(hWnd);
+        if (!ok) { SwitchToThisWindow(hWnd, true); }
+    } finally {
+        if (attached) { AttachThreadInput(foregroundThread, current, false); }
+    }
+    return GetForegroundWindow() == hWnd;
+}
+"@
+}
 if (-not ('Win32Mouse' -as [type])) {
     Add-Type -Namespace '' -Name 'Win32Mouse' -MemberDefinition @"
 [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
@@ -90,6 +120,68 @@ function Invoke-Element {
     return $false
 }
 
+function Get-ControlType {
+    param($Element)
+    $Element.Current.ControlType.ProgrammaticName -replace 'ControlType\.', ''
+}
+
+function Get-AutomationAncestor {
+    param($Element, [string[]]$Types, [int]$MaxLevels = 10)
+    $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+    $current = $Element
+    for ($i = 0; $i -lt $MaxLevels; $i++) {
+        $parent = $walker.GetParent($current)
+        if (-not $parent) { return $null }
+        if ((Get-ControlType $parent) -in $Types) { return $parent }
+        $current = $parent
+    }
+    return $null
+}
+
+function Wait-ForMarker {
+    param($Root, [string[]]$Markers, [int]$TimeoutSeconds = 20)
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        $names = @(foreach ($element in (Get-Descendants $Root)) {
+                if ($element.Current.Name) { $element.Current.Name }
+            })
+        foreach ($marker in $Markers) {
+            if ($names -contains $marker) { return $true }
+            if ($names | Where-Object { $_ -like "*$marker*" }) { return $true }
+        }
+        Start-Sleep -Milliseconds 400
+    }
+    return $false
+}
+
+function Navigate-ToSection {
+    param($Root, [string]$Section, [string[]]$Markers = @())
+    $shortcuts = @{
+        'Inicio' = '0'; 'Cliente y equipo' = '1'; 'Discos SMART' = '2';
+        'Hardware' = '3'; 'Diagnóstico' = '4'; 'Decisiones' = '5';
+        'Pantallas azules' = '6'; 'Reparaciones' = '7';
+        'Programas de inicio' = '8'; 'Limpieza' = '9'
+    }
+    for ($attempt = 1; $attempt -le 4; $attempt++) {
+        Set-ForegroundWindow $Root
+        if ($shortcuts.ContainsKey($Section)) {
+            [System.Windows.Forms.SendKeys]::SendWait('^' + $shortcuts[$Section])
+        }
+        else {
+            $textElement = Find-ByNameContains -Root $Root -Text $Section -ControlType 'Text'
+            if (-not $textElement) { Start-Sleep -Seconds 1; continue }
+            $row = Get-AutomationAncestor -Element $textElement -Types @('DataItem', 'ListItem', 'TabItem')
+            if (-not $row) { $row = $textElement }
+            Click-ElementCenter $row
+        }
+        if ($Markers.Count -eq 0) { Start-Sleep -Milliseconds 1200; return $true }
+        if (Wait-ForMarker -Root $Root -Markers $Markers -TimeoutSeconds 15) { return $true }
+        Start-Sleep -Milliseconds 500
+    }
+    return $false
+}
+
+
 function Set-EditText {
     param($Element, [string]$Text)
     $pattern = $null
@@ -99,6 +191,17 @@ function Set-EditText {
     return $false
 }
 
+function Force-AppForeground {
+    param($Element, [int]$TimeoutMs = 3000)
+    $hwnd = [IntPtr]$Element.Current.NativeWindowHandle
+    if ($hwnd -eq [IntPtr]::Zero) { return $false }
+    $deadline = (Get-Date).AddMilliseconds($TimeoutMs)
+    while ((Get-Date) -lt $deadline) {
+        if ([Win32Focus]::ForceForeground($hwnd)) { return $true }
+        Start-Sleep -Milliseconds 200
+    }
+    return $false
+}
 function Set-ForegroundWindow {
     param($Element)
     $hwnd = [IntPtr]$Element.Current.NativeWindowHandle
@@ -224,9 +327,7 @@ try {
     $window = Get-AppWindow -Process $process
     Start-Sleep -Seconds 2
 
-    $nav = Find-ByNameContains -Root $window -Text 'Programas de inicio' -ControlType 'Button'
-    if (-not $nav) { throw 'No se encontro el boton Programas de inicio.' }
-    [void](Invoke-Element $nav)
+    if (-not (Navigate-ToSection -Root $window -Section 'Programas de inicio' -Markers @('Desactivar seleccionados','Seleccionar todo lo desactivable'))) { throw 'No se encontro la seccion Programas de inicio.' }
     Start-Sleep -Seconds 2
 
     if (-not (Wait-TextMatch -Root $window -Patterns @('^Análisis completado') -TimeoutSeconds 60)) {

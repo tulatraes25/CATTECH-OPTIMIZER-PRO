@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.Text;
+using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Cattech.Optimizer.Pro.Core.Interfaces;
@@ -74,6 +76,16 @@ public partial class RepairCenterViewModel : ObservableObject
     [ObservableProperty]
     private RepairPlanDisplayItem? _selectedPlan;
 
+    /// <summary>
+    /// Comandos exactos del plan seleccionado, en texto monoespaciado read-only.
+    /// Solo describe el comando: esta versión no ejecuta reparaciones.
+    /// </summary>
+    [ObservableProperty]
+    private string _selectedPlanCommandsText = "(sin plan seleccionado)";
+
+    [ObservableProperty]
+    private string _copyStatusText = string.Empty;
+
     public ObservableCollection<WindowsUpdateServiceDisplayItem> UpdateServices { get; } = new();
     public ObservableCollection<RepairPlanDisplayItem> Plans { get; } = new();
 
@@ -101,7 +113,12 @@ public partial class RepairCenterViewModel : ObservableObject
         // The previous preflight must never be displayed for a newly selected plan.
         PreflightStatusText =
             "Sin revisar este plan. No se ejecutan comandos ni se autoriza una reparación.";
+        // El panel monoespaciado siempre muestra el comando exacto del plan actual.
+        SelectedPlanCommandsText = value == null
+            ? "(sin plan seleccionado)"
+            : BuildCommandsText(value);
         InspectSelectedPlanCommand.NotifyCanExecuteChanged();
+        CopyCommandsCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnIsBusyChanged(bool value)
@@ -220,5 +237,109 @@ public partial class RepairCenterViewModel : ObservableObject
         {
             IsBusy = false;
         }
+    }
+
+    // --- Copia de comandos/planes (solo texto; nunca ejecuta) ---
+
+    private bool CanCopyCommands()
+        => SelectedPlan != null && Plans.Contains(SelectedPlan);
+
+    [RelayCommand(CanExecute = nameof(CanCopyCommands))]
+    private void CopyCommands()
+    {
+        if (SelectedPlan == null)
+        {
+            CopyStatusText = "No hay plan seleccionado.";
+            return;
+        }
+
+        try
+        {
+            Clipboard.SetText(BuildCommandsText(SelectedPlan));
+            CopyStatusText = "Comandos del plan copiados al portapapeles.";
+        }
+        catch (Exception)
+        {
+            CopyStatusText = "No se pudieron copiar los comandos.";
+        }
+    }
+
+    [RelayCommand]
+    private void CopyFullPlan()
+    {
+        try
+        {
+            Clipboard.SetText(BuildFullPlanText());
+            CopyStatusText = "Plan completo copiado al portapapeles.";
+        }
+        catch (Exception)
+        {
+            CopyStatusText = "No se pudo copiar el plan completo.";
+        }
+    }
+
+    /// <summary>
+    /// Comandos exactos de un plan (ejecutable + argumentos fijos). Solo texto:
+    /// no autoriza ni ejecuta nada.
+    /// </summary>
+    public static string BuildCommandsText(RepairPlanDisplayItem plan)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+
+        // El comando se reconstruye desde el catálogo fijo, nunca desde input de usuario.
+        return $"{plan.CommandPreview}{Environment.NewLine}";
+    }
+
+    /// <summary>
+    /// Descripción completa del catálogo de planes + preflight del plan
+    /// seleccionado. Texto para revisión manual controlada; la ejecución no
+    /// está implementada en esta versión.
+    /// </summary>
+    public string BuildFullPlanText()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("CATTECH Optimizer Pro — Centro de reparación (solo preparación)");
+        sb.AppendLine($"Generado: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+        sb.AppendLine("EJECUCIÓN NO IMPLEMENTADA EN ESTA VERSIÓN.");
+        sb.AppendLine("Los comandos son para ejecución manual controlada por el técnico.");
+        sb.AppendLine();
+
+        for (var i = 0; i < Plans.Count; i++)
+        {
+            var plan = Plans[i];
+            sb.AppendLine($"[{i + 1}] {plan.DisplayName}");
+            sb.AppendLine($"    comando: {plan.CommandPreview}");
+            sb.AppendLine($"    impacto: {plan.ImpactText}");
+            sb.AppendLine($"    red: {plan.NetworkText}");
+            sb.AppendLine($"    nota: {plan.SafetyNote}");
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("PREFLIGHT DEL PLAN SELECCIONADO");
+        if (SelectedPlan == null)
+        {
+            sb.AppendLine("- (sin plan seleccionado)");
+        }
+        else
+        {
+            sb.AppendLine($"plan: {SelectedPlan.DisplayName}");
+            sb.AppendLine($"comando: {SelectedPlan.CommandPreview}");
+            sb.AppendLine($"estado: {PreflightStatusText}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($"ESTADO WINDOWS UPDATE: {UpdateStatusText}");
+
+        if (UpdateServices.Count > 0)
+        {
+            sb.AppendLine("SERVICIOS OBSERVADOS");
+            foreach (var service in UpdateServices)
+            {
+                sb.AppendLine(
+                    $"{service.Name}\testado={service.StateText}\tinicio={service.StartModeText}");
+            }
+        }
+
+        return sb.ToString();
     }
 }

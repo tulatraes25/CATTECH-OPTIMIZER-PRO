@@ -8,20 +8,46 @@
         <StackPanel MaxWidth="1000" HorizontalAlignment="Left">
             <TextBlock Text="Pantallas azules — evidencia BSOD"
                        FontSize="25" FontWeight="Bold" Foreground="#222222"
-                       Margin="0,0,0,6" />
-            <TextBlock Text="La búsqueda solo lee metadatos. La verificación opcional abre un archivo local mediante DumpChk y requiere confirmación expresa."
-                       FontSize="13" Foreground="#555555" TextWrapping="Wrap"
-                       Margin="0,0,0,14" />
+                       Margin="0,0,0,4" />
+            <TextBlock Text="Solo lectura de metadatos y registro System. DumpChk opcional requiere confirmación expresa."
+                       FontSize="12" Foreground="#555555" TextWrapping="Wrap"
+                       Margin="0,0,0,12" />
 
-            <Button Content="Buscar evidencia (solo lectura)"
-                    Command="{Binding RefreshCommand}"
-                    Padding="16,10" HorizontalAlignment="Left"
-                    Background="#0078D4" Foreground="White"
-                    BorderThickness="0" Cursor="Hand"
-                    Margin="0,0,0,14" />
+            <!-- Acciones técnicas -->
+            <WrapPanel Orientation="Horizontal" Margin="0,0,0,12">
+                <Button Content="Buscar evidencia (solo lectura)"
+                        Command="{Binding RefreshCommand}"
+                        Padding="16,8" Background="#0078D4" Foreground="White"
+                        BorderThickness="0" Cursor="Hand" Margin="0,0,8,8" />
+                <Button Content="Abrir carpeta de minidumps"
+                        Command="{Binding OpenMinidumpFolderCommand}"
+                        Padding="12,8"
+                        Background="#F3F3F3" Foreground="#333"
+                        BorderBrush="#CCC" BorderThickness="1" Cursor="Hand" Margin="0,0,8,8"
+                        ToolTip="{Binding DumpsFolderPath}" />
+                <Button Content="Abrir Visor de eventos"
+                        Command="{Binding OpenEventViewerCommand}"
+                        Padding="12,8"
+                        Background="#F3F3F3" Foreground="#333"
+                        BorderBrush="#CCC" BorderThickness="1" Cursor="Hand" Margin="0,0,8,8" />
+                <Button Content="Copiar análisis"
+                        Command="{Binding CopyAnalysisCommand}"
+                        Padding="12,8"
+                        Background="#F3F3F3" Foreground="#333"
+                        BorderBrush="#CCC" BorderThickness="1" Cursor="Hand" Margin="0,0,8,8" />
+            </WrapPanel>
+
+            <!-- Carpeta de volcados resuelta -->
+            <TextBlock Text="{Binding DumpsFolderPath, StringFormat='Carpeta de volcados: {0}'}"
+                       FontFamily="Consolas" FontSize="11" Foreground="#666"
+                       TextWrapping="Wrap" Margin="0,0,0,2" />
+            <TextBlock Text="{Binding DumpFolderStatusText}"
+                       FontFamily="Consolas" FontSize="11" Foreground="#666"
+                       TextWrapping="Wrap" Margin="0,0,0,14" />
+
             <!-- Indicador de ocupado: el comando Refresh se deshabilita solo
                  mientras consulta, sin ignorar clics en silencio. -->
-            <StackPanel Orientation="Horizontal" Margin="0,0,0,18">
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
                 <ProgressBar Width="110" Height="6" IsIndeterminate="True"
                              VerticalAlignment="Center" Margin="0,0,8,0"
                              Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}" />
@@ -30,20 +56,21 @@
             </StackPanel>
 
             <Border Background="#F2F6FA" CornerRadius="6"
-                    Padding="12" Margin="0,0,0,18">
-                <TextBlock Text="{Binding SummaryText}" FontSize="12"
-                           Foreground="#345068" TextWrapping="Wrap"/>
+                    Padding="10,8" Margin="0,0,0,16">
+                <TextBlock Text="{Binding SummaryText}" FontFamily="Consolas"
+                           FontSize="11" Foreground="#345068" TextWrapping="Wrap"/>
             </Border>
 
-            <TextBlock Text="Archivos de volcado" FontSize="19" FontWeight="SemiBold"
-                       Margin="0,0,0,6"/>
+            <TextBlock Text="Archivos de volcado" FontSize="17" FontWeight="SemiBold"
+                       Margin="0,0,0,5"/>
             <TextBlock Text="{Binding DumpStatusText}" Foreground="#555555"
                        TextWrapping="Wrap" Margin="0,0,0,8"/>
             <DataGrid ItemsSource="{Binding Dumps}"
                       SelectedItem="{Binding SelectedDump, Mode=TwoWay}"
                       SelectionMode="Single" IsReadOnly="True"
                       AutoGenerateColumns="False" CanUserAddRows="False"
-                      CanUserDeleteRows="False" Height="185"
+                      CanUserDeleteRows="False" Height="180"
+                      FontFamily="Consolas" FontSize="11" RowHeight="24"
                       HeadersVisibility="Column" Margin="0,0,0,20">
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="Archivo" Binding="{Binding FileName}" Width="2*" />
@@ -62,15 +89,16 @@
                     Margin="0,0,0,8" />
             <TextBlock Text="{Binding DumpCheckStatusText}"
                        Foreground="#555555" TextWrapping="Wrap"
-                       FontSize="12" Margin="0,0,0,20"/>
+                       FontFamily="Consolas" FontSize="11" Margin="0,0,0,20"/>
 
             <TextBlock Text="Eventos del sistema relacionados con BugCheck"
-                       FontSize="19" FontWeight="SemiBold" Margin="0,0,0,6" />
+                       FontSize="17" FontWeight="SemiBold" Margin="0,0,0,5" />
             <TextBlock Text="{Binding EventStatusText}" Foreground="#555555"
                        TextWrapping="Wrap" Margin="0,0,0,8"/>
             <DataGrid ItemsSource="{Binding Events}" IsReadOnly="True"
                       AutoGenerateColumns="False" CanUserAddRows="False"
-                      CanUserDeleteRows="False" Height="200"
+                      CanUserDeleteRows="False" Height="190"
+                      FontFamily="Consolas" FontSize="11" RowHeight="24"
                       HeadersVisibility="Column" Margin="0,0,0,20">
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="Fecha local" Binding="{Binding DateText}" Width="2*" />
@@ -80,7 +108,7 @@
                 </DataGrid.Columns>
             </DataGrid>
             <TextBlock Text="Un evento de energía no implica por sí solo pantalla azul. La presencia de un módulo o controlador tampoco confirma su responsabilidad. Solo DumpChk opcional analiza un archivo local tras confirmación explícita; el resultado no determina por sí mismo una causa."
-                       Foreground="#777777" FontSize="12" TextWrapping="Wrap"
+                       Foreground="#777777" FontSize="11" TextWrapping="Wrap"
                        Margin="0,0,0,18"/>
         </StackPanel>
     </ScrollViewer>

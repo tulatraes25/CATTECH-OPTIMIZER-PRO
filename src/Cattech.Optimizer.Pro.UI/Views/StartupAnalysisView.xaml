@@ -8,83 +8,109 @@
     <UserControl.Resources>
         <converters:BoolToVisibilityConverter x:Key="BoolToVis" />
         <converters:InvertBoolConverter x:Key="InvertBool" />
+        <converters:InverseBoolToVisibilityConverter x:Key="InvertBoolToVis" />
         <converters:StringToVisibilityConverter x:Key="StringToVis" />
         <converters:ZeroToVisibilityConverter x:Key="ZeroToVis" />
         <converters:RestoreColorConverter x:Key="RestoreColorConverter" />
+        <converters:BoolToVisYesNoConverter x:Key="BoolToVisYesNo" />
         <converters:RestoreTextConverter x:Key="RestoreTextConverter" />
 
         <Style x:Key="ColumnHeaderStyle" TargetType="DataGridColumnHeader">
             <Setter Property="Background" Value="#F0F0F0" />
             <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="FontSize" Value="12" />
-            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="Padding" Value="6,4" />
             <Setter Property="BorderBrush" Value="#E0E0E0" />
             <Setter Property="BorderThickness" Value="0,0,1,1" />
         </Style>
+
+        <Style x:Key="TechLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#555" />
+        </Style>
+
+        <Style x:Key="TechButton" TargetType="Button">
+            <Setter Property="Padding" Value="9,4" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Margin" Value="0,0,4,4" />
+            <Setter Property="Background" Value="#F3F3F3" />
+            <Setter Property="Foreground" Value="#333" />
+            <Setter Property="BorderBrush" Value="#CCC" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+
+        <Style x:Key="TechCell" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Consolas" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
     </UserControl.Resources>
 
-    <Grid Margin="30">
+    <Grid Margin="20,14">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- Row 0: Título -->
-        <StackPanel Grid.Row="0" Margin="0,0,0,10">
-            <TextBlock Text="Programas de Inicio" FontSize="26" FontWeight="Bold" Foreground="#1B1B1B" />
-            <TextBlock Text="Análisis, desactivación segura y reversión de programas de inicio." FontSize="13" Foreground="#666" Margin="0,5,0,0" />
+        <!-- Row 0: Título compacto -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,6">
+            <TextBlock Text="Programas de Inicio" FontSize="20" FontWeight="Bold" Foreground="#1B1B1B" />
+            <TextBlock Text="  ·  inventario de arranque, desactivación con backup y reversión"
+                       FontSize="11" Foreground="#777" VerticalAlignment="Bottom" Margin="0,0,0,2" />
         </StackPanel>
 
         <!-- Row 1: Mensajes -->
         <StackPanel Grid.Row="1">
-            <Border CornerRadius="6" Padding="12,10" Margin="0,0,0,10"
+            <Border CornerRadius="4" Padding="10,7" Margin="0,0,0,6"
                     Visibility="{Binding IsSuccess, Converter={StaticResource BoolToVis}}"
                     Background="#E6F4EA" BorderBrush="#34A853" BorderThickness="1">
-                <TextBlock Text="{Binding StatusMessage}" Foreground="#1E7E34" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding StatusMessage}" Foreground="#1E7E34" FontSize="11" FontWeight="SemiBold" TextWrapping="Wrap" />
             </Border>
-            <Border CornerRadius="6" Padding="12,10" Margin="0,0,0,10"
+            <Border CornerRadius="4" Padding="10,7" Margin="0,0,0,6"
                     Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}"
                     Background="#FDECEA" BorderBrush="#D93025" BorderThickness="1">
-                <TextBlock Text="{Binding ErrorMessage}" Foreground="#C62828" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding ErrorMessage}" Foreground="#C62828" FontSize="11" FontWeight="SemiBold" TextWrapping="Wrap" />
             </Border>
         </StackPanel>
 
         <!-- Row 2: Botones principales -->
-        <Grid Grid.Row="2" Margin="0,0,0,10">
+        <Grid Grid.Row="2" Margin="0,0,0,6">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="10" />
+                <ColumnDefinition Width="6" />
                 <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="10" />
+                <ColumnDefinition Width="6" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
-            <Button Grid.Column="0" Content="🔍 Analizar"
-                    Command="{Binding AnalyzeCommand}" Padding="16,8" FontSize="12"
+            <Button Grid.Column="0" Content="Analizar arranque"
+                    Command="{Binding AnalyzeCommand}" Padding="12,6" FontSize="11" FontWeight="SemiBold"
                     Background="#0078D4" Foreground="White" BorderThickness="0"
                     IsEnabled="{Binding IsRunning, Converter={StaticResource InvertBool}}" />
 
-            <Button Grid.Column="2" Content="💾 Guardar"
-                    Command="{Binding SaveAnalysisCommand}" Padding="16,8" FontSize="12"
+            <Button Grid.Column="2" Content="Guardar análisis"
+                    Command="{Binding SaveAnalysisCommand}" Padding="12,6" FontSize="11"
                     Background="#F3F3F3" Foreground="#333" BorderBrush="#CCC" BorderThickness="1"
                     IsEnabled="{Binding HasResults}" />
 
-            <Button Grid.Column="4" Content="📋 Backups"
-                    Command="{Binding LoadBackupsCommand}" Padding="16,8" FontSize="12"
+            <Button Grid.Column="4" Content="Backups"
+                    Command="{Binding LoadBackupsCommand}" Padding="12,6" FontSize="11"
                     Background="#F3F3F3" Foreground="#333" BorderBrush="#CCC" BorderThickness="1" />
 
-            <TextBlock Grid.Column="6" Text="{Binding StatusText}" FontSize="12" Foreground="#666" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="6" Text="{Binding StatusText}" FontSize="11" Foreground="#666"
+                       VerticalAlignment="Center" />
         </Grid>
 
         <!-- Row 3: Barra de desactivación -->
-        <Border Grid.Row="3" BorderBrush="#FFB74D" BorderThickness="1" CornerRadius="6"
-                Padding="12,10" Margin="0,0,0,10" Background="#FFF8E1"
+        <Border Grid.Row="3" BorderBrush="#FFB74D" BorderThickness="1" CornerRadius="4"
+                Padding="8,6" Margin="0,0,0,6" Background="#FFF8E1"
                 Visibility="{Binding HasResults, Converter={StaticResource BoolToVis}}">
             <Grid>
                 <Grid.ColumnDefinitions>
@@ -96,30 +122,29 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <TextBlock Grid.Column="0" Text="⚡ Desactivar:" FontSize="12" FontWeight="SemiBold"
+                <TextBlock Grid.Column="0" Text="Desactivar:" FontSize="11" FontWeight="SemiBold"
                            Foreground="#E65100" VerticalAlignment="Center" />
 
-                <TextBlock Grid.Column="1" FontSize="12" Foreground="#555" VerticalAlignment="Center" Margin="10,0">
+                <TextBlock Grid.Column="1" FontSize="11" Foreground="#555" VerticalAlignment="Center" Margin="8,0">
                     <Run Text="{Binding SelectedCount, Mode=OneWay}" FontWeight="Bold" />
                     <Run Text=" seleccionadas" />
                 </TextBlock>
 
-                <Button Grid.Column="2" Content="Seleccionar todo lo desactivable"
-                        Command="{Binding SelectAllPossibleDisableCommand}" Padding="10,6" FontSize="11"
-                        Background="#FFF3E0" Foreground="#E65100" BorderBrush="#FFCC80" BorderThickness="1" />
+                <Button Grid.Column="2" Content="Seleccionar todo lo desactivable" Style="{StaticResource TechButton}"
+                        Command="{Binding SelectAllPossibleDisableCommand}"
+                        Background="#FFF3E0" Foreground="#E65100" BorderBrush="#FFCC80" Margin="0" />
 
-                <Button Grid.Column="3" Content="Limpiar selección"
-                        Command="{Binding ClearSelectionCommand}" Padding="10,6" FontSize="11"
-                        Background="#F5F5F5" Foreground="#666" BorderBrush="#DDD" BorderThickness="1" Margin="5,0" />
+                <Button Grid.Column="3" Content="Limpiar selección" Style="{StaticResource TechButton}"
+                        Command="{Binding ClearSelectionCommand}" Margin="4,0" />
 
                 <TextBox Grid.Column="4" Text="{Binding DisableReason, UpdateSourceTrigger=PropertyChanged}"
-                         Width="150" Padding="8,6" FontSize="11" Margin="5,0"
+                         Width="150" Padding="6,4" FontSize="11" Margin="4,0"
                          BorderBrush="#CCC" BorderThickness="1" VerticalContentAlignment="Center"
                          ToolTip="Motivo de la desactivación (opcional)" />
 
-                <Button Grid.Column="5" Content="🚫 Desactivar seleccionados"
-                        Command="{Binding DisableSelectedCommand}" Padding="14,6" FontSize="12" FontWeight="SemiBold"
-                        Background="#E53935" Foreground="White" BorderThickness="0" Margin="5,0"
+                <Button Grid.Column="5" Content="Desactivar seleccionados" Padding="12,6" FontSize="11" FontWeight="SemiBold"
+                        Background="#E53935" Foreground="White" BorderThickness="0" Margin="4,0,0,0"
+                        Command="{Binding DisableSelectedCommand}"
                         IsEnabled="{Binding IsDisabling, Converter={StaticResource InvertBool}}" />
             </Grid>
         </Border>
@@ -128,138 +153,194 @@
         <Grid Grid.Row="4">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="280" />
+                <ColumnDefinition Width="390" />
             </Grid.ColumnDefinitions>
 
             <!-- Panel izquierdo: Filtros + Tabla -->
-            <Grid Grid.Column="0" Margin="0,0,10,0">
+            <Grid Grid.Column="0" Margin="0,0,8,0">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <WrapPanel Grid.Row="0" Margin="0,0,0,8">
+                <WrapPanel Grid.Row="0" Margin="0,0,0,5" VerticalAlignment="Center">
                     <RadioButton Content="Todos" IsChecked="True" Margin="0,0,8,0" GroupName="Filter" FontSize="11"
-                                 Command="{Binding SetFilterCommand}" CommandParameter="Todos" />
+                                 Command="{Binding SetFilterCommand}" CommandParameter="Todos" VerticalAlignment="Center" />
                     <RadioButton Content="No Microsoft" Margin="0,0,8,0" GroupName="Filter" FontSize="11"
-                                 Command="{Binding SetFilterCommand}" CommandParameter="No Microsoft" />
+                                 Command="{Binding SetFilterCommand}" CommandParameter="No Microsoft" VerticalAlignment="Center" />
                     <RadioButton Content="Revisar" Margin="0,0,8,0" GroupName="Filter" FontSize="11"
-                                 Command="{Binding SetFilterCommand}" CommandParameter="Recomendados para revisar" />
+                                 Command="{Binding SetFilterCommand}" CommandParameter="Recomendados para revisar" VerticalAlignment="Center" />
                     <RadioButton Content="Desactivar" Margin="0,0,8,0" GroupName="Filter" FontSize="11"
-                                 Command="{Binding SetFilterCommand}" CommandParameter="Posible desactivar" />
+                                 Command="{Binding SetFilterCommand}" CommandParameter="Posible desactivar" VerticalAlignment="Center" />
                     <RadioButton Content="Alertas" Margin="0,0,8,0" GroupName="Filter" FontSize="11"
-                                 Command="{Binding SetFilterCommand}" CommandParameter="Alertas" />
-
-                    <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" Width="180"
-                             Padding="8,6" FontSize="11" Margin="10,0,0,0" BorderBrush="#CCC" BorderThickness="1"
-                             VerticalContentAlignment="Center" />
+                                 Command="{Binding SetFilterCommand}" CommandParameter="Alertas" VerticalAlignment="Center" />
+                    <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" Width="190"
+                             Padding="6,4" FontSize="11" BorderBrush="#CCC" BorderThickness="1"
+                             VerticalContentAlignment="Center" ToolTip="Busca por nombre, comando, editor o ubicación" />
+                    <TextBlock Text="{Binding FilteredCountText}" FontSize="10" Foreground="#777"
+                               VerticalAlignment="Center" Margin="8,0,0,0" />
                 </WrapPanel>
 
-                <DataGrid Grid.Row="1" ItemsSource="{Binding SelectableEntries}" AutoGenerateColumns="False"
-                          IsReadOnly="True" SelectionMode="Single" GridLinesVisibility="Horizontal"
-                          HeadersVisibility="Column" AlternatingRowBackground="#FAFAFA"
-                          BorderBrush="#E0E0E0" BorderThickness="1" RowHeaderWidth="0"
-                          CanUserAddRows="False" CanUserSortColumns="True" FontSize="11">
+                <DataGrid Grid.Row="1" ItemsSource="{Binding FilteredSelectableEntries}" AutoGenerateColumns="False"
+                          IsReadOnly="True" SelectionMode="Single" SelectionUnit="FullRow"
+                          SelectedItem="{Binding SelectedSelectableEntry, Mode=TwoWay}"
+                          GridLinesVisibility="Horizontal" HeadersVisibility="Column"
+                          AlternatingRowBackground="#FAFAFA" BorderBrush="#E0E0E0" BorderThickness="1"
+                          RowHeaderWidth="0" CanUserAddRows="False" CanUserDeleteRows="False"
+                          CanUserSortColumns="True" FontSize="11" RowHeight="22"
+                          EnableRowVirtualization="True">
 
                     <DataGrid.ColumnHeaderStyle>
                         <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource ColumnHeaderStyle}" />
                     </DataGrid.ColumnHeaderStyle>
 
                     <DataGrid.Columns>
-                        <DataGridTemplateColumn Header="Sel." Width="45">
+                        <DataGridTemplateColumn Header="Sel." Width="42">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate DataType="{x:Type vm:SelectableStartupEntry}">
                                     <CheckBox IsChecked="{Binding IsSelected, Mode=OneWay}"
                                               IsEnabled="{Binding IsSelectable}"
                                               Command="{Binding DataContext.ToggleSelectionCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
                                               CommandParameter="{Binding}"
-                                              HorizontalAlignment="Center" />
+                                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              ToolTip="{Binding SelectionReason}" />
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
-                        <DataGridTextColumn Header="Nombre" Binding="{Binding Entry.Name}" Width="150" />
-                        <DataGridTextColumn Header="Editor" Binding="{Binding Entry.Publisher}" Width="90" />
-                        <DataGridTextColumn Header="Origen" Binding="{Binding Entry.SourceType}" Width="100" />
-                        <DataGridTextColumn Header="Riesgo" Binding="{Binding Entry.Risk}" Width="70" />
-                        <DataGridTextColumn Header="Recomend." Binding="{Binding Entry.Recommendation}" Width="100" />
-                        <DataGridTextColumn Header="Comando" Binding="{Binding Entry.Command}" Width="220" />
-                        <DataGridTextColumn Header="Razón bloqueo" Binding="{Binding SelectionReason}" Width="140" />
+                        <DataGridTextColumn Header="Nombre" Binding="{Binding Name}" Width="140" />
+                        <DataGridTextColumn Header="Editor" Binding="{Binding Publisher}" Width="90" />
+                        <DataGridTextColumn Header="Origen" Binding="{Binding SourceTypeText}" Width="90" />
+                        <DataGridTextColumn Header="Riesgo" Binding="{Binding RiskText}" Width="62" />
+                        <DataGridTextColumn Header="Recomend." Binding="{Binding RecommendationText}" Width="95" />
+                        <DataGridTemplateColumn Header="Comando" Width="*" MinWidth="150">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate DataType="{x:Type vm:SelectableStartupEntry}">
+                                    <TextBlock Text="{Binding Command}" Style="{StaticResource TechCell}"
+                                               ToolTip="{Binding Command}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="Ubicación" Width="*" MinWidth="140">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate DataType="{x:Type vm:SelectableStartupEntry}">
+                                    <TextBlock Text="{Binding Location}" Style="{StaticResource TechCell}"
+                                               ToolTip="{Binding Location}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="Estado" Binding="{Binding StatusText}" Width="90" />
+                        <DataGridTextColumn Header="Razón bloqueo" Binding="{Binding SelectionReason}" Width="120" />
                     </DataGrid.Columns>
                 </DataGrid>
             </Grid>
 
-            <!-- Panel derecho: Resumen + Detalle + Backups -->
-            <Border Grid.Column="1" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6" Padding="15" Background="#FAFAFA">
+            <!-- Panel derecho: Resumen + Detalle técnico + Backups -->
+            <Border Grid.Column="1" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="4"
+                    Padding="10" Background="#FAFAFA">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
 
                         <!-- Resumen -->
-                        <TextBlock Text="RESUMEN" FontSize="12" FontWeight="Bold" Foreground="#0078D4" Margin="0,0,0,8" />
-                        <Grid Margin="0,0,0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                            <TextBlock Text="Total:" FontSize="11" Foreground="#555" /><TextBlock Text="{Binding SummaryTotal}" FontSize="11" FontWeight="SemiBold" Grid.Column="1" /></Grid>
-                        <Grid Margin="0,0,0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                            <TextBlock Text="Microsoft:" FontSize="11" Foreground="#555" /><TextBlock Text="{Binding SummaryMicrosoft}" FontSize="11" FontWeight="SemiBold" Grid.Column="1" /></Grid>
-                        <Grid Margin="0,0,0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                            <TextBlock Text="Terceros:" FontSize="11" Foreground="#555" /><TextBlock Text="{Binding SummaryThirdParty}" FontSize="11" FontWeight="SemiBold" Grid.Column="1" /></Grid>
-                        <Grid Margin="0,0,0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                            <TextBlock Text="Posibles desactivar:" FontSize="11" Foreground="#555" /><TextBlock Text="{Binding SummaryPossibleDisable}" FontSize="11" FontWeight="SemiBold" Foreground="#E65100" Grid.Column="1" /></Grid>
-                        <Grid Margin="0,0,0,12"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                            <TextBlock Text="Alertas:" FontSize="11" Foreground="#555" /><TextBlock Text="{Binding SummaryAlerts}" FontSize="11" FontWeight="SemiBold" Foreground="#C62828" Grid.Column="1" /></Grid>
+                        <TextBlock Text="RESUMEN" FontSize="10" FontWeight="Bold" Foreground="#0078D4" Margin="0,0,0,4" />
+                        <Grid Margin="0,0,0,2"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Total:" Style="{StaticResource TechLabel}" /><TextBlock Text="{Binding SummaryTotal}" FontSize="10" FontWeight="SemiBold" Grid.Column="1" /></Grid>
+                        <Grid Margin="0,0,0,2"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Microsoft:" Style="{StaticResource TechLabel}" /><TextBlock Text="{Binding SummaryMicrosoft}" FontSize="10" FontWeight="SemiBold" Grid.Column="1" /></Grid>
+                        <Grid Margin="0,0,0,2"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Terceros:" Style="{StaticResource TechLabel}" /><TextBlock Text="{Binding SummaryThirdParty}" FontSize="10" FontWeight="SemiBold" Grid.Column="1" /></Grid>
+                        <Grid Margin="0,0,0,2"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Posibles desactivar:" Style="{StaticResource TechLabel}" /><TextBlock Text="{Binding SummaryPossibleDisable}" FontSize="10" FontWeight="SemiBold" Foreground="#E65100" Grid.Column="1" /></Grid>
+                        <Grid Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Alertas:" Style="{StaticResource TechLabel}" /><TextBlock Text="{Binding SummaryAlerts}" FontSize="10" FontWeight="SemiBold" Foreground="#C62828" Grid.Column="1" /></Grid>
 
-                        <Separator Background="#E0E0E0" Margin="0,0,0,12" />
+                        <Separator Background="#E0E0E0" Margin="0,0,0,8" />
 
-                        <!-- Detalle -->
-                        <TextBlock Text="DETALLE" FontSize="12" FontWeight="Bold" Foreground="#0078D4" Margin="0,0,0,8" />
-                        <TextBlock Text="Seleccioná una entrada" FontSize="11" Foreground="#999"
-                                   Visibility="{Binding HasSelectedEntry, Converter={StaticResource InvertBool}}" />
+                        <!-- Detalle técnico -->
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
+                            <TextBlock Text="DETALLE TÉCNICO" FontSize="10" FontWeight="Bold" Foreground="#0078D4" />
+                            <TextBlock Text="{Binding LocationKindText}" FontSize="10" Foreground="#777" Margin="8,0,0,0" />
+                        </StackPanel>
+                        <TextBlock Text="Seleccioná una entrada en la grilla" FontSize="11" Foreground="#999"
+                                   Visibility="{Binding HasSelectedEntry, Converter={StaticResource InvertBoolToVis}}" />
 
                         <StackPanel Visibility="{Binding HasSelectedEntry, Converter={StaticResource BoolToVis}}">
-                            <Grid Margin="0,0,0,6"><Grid.ColumnDefinitions><ColumnDefinition Width="60" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                <TextBlock Text="Nombre:" FontSize="10" FontWeight="SemiBold" Foreground="#555" />
-                                <TextBlock Text="{Binding SelectedEntry.Name}" FontSize="10" Grid.Column="1" TextWrapping="Wrap" /></Grid>
-                            <Grid Margin="0,0,0,6"><Grid.ColumnDefinitions><ColumnDefinition Width="60" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                <TextBlock Text="Editor:" FontSize="10" FontWeight="SemiBold" Foreground="#555" />
-                                <TextBlock Text="{Binding SelectedEntry.Publisher}" FontSize="10" Grid.Column="1" TextWrapping="Wrap" /></Grid>
-                            <Grid Margin="0,0,0,6"><Grid.ColumnDefinitions><ColumnDefinition Width="60" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                <TextBlock Text="Riesgo:" FontSize="10" FontWeight="SemiBold" Foreground="#555" />
-                                <TextBlock Text="{Binding SelectedEntry.Risk}" FontSize="10" FontWeight="SemiBold" Grid.Column="1" /></Grid>
-                            <Grid Margin="0,0,0,6"><Grid.ColumnDefinitions><ColumnDefinition Width="60" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                <TextBlock Text="Recomend.:" FontSize="10" FontWeight="SemiBold" Foreground="#555" />
-                                <TextBlock Text="{Binding SelectedEntry.Recommendation}" FontSize="10" FontWeight="SemiBold" Grid.Column="1" /></Grid>
-                            <TextBlock Text="Comando:" FontSize="10" FontWeight="SemiBold" Foreground="#555" Margin="0,0,0,3" />
-                            <TextBlock Text="{Binding SelectedEntry.Command}" FontSize="9" Foreground="#333" TextWrapping="Wrap" Margin="0,0,0,6" />
-                            <TextBlock Text="{Binding SelectedEntry.Notes}" FontSize="9" Foreground="#E65100" TextWrapping="Wrap"
+                            <Grid Margin="0,0,0,3"><Grid.ColumnDefinitions><ColumnDefinition Width="76" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="ID:" Style="{StaticResource TechLabel}" />
+                                <TextBlock Grid.Column="1" Text="{Binding SelectedEntry.Id}" FontFamily="Consolas" FontSize="10" /></Grid>
+                            <Grid Margin="0,0,0,3"><Grid.ColumnDefinitions><ColumnDefinition Width="76" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="Nombre:" Style="{StaticResource TechLabel}" />
+                                <TextBlock Grid.Column="1" Text="{Binding SelectedEntry.Name}" FontSize="10" FontWeight="SemiBold" TextWrapping="Wrap" /></Grid>
+                            <Grid Margin="0,0,0,3"><Grid.ColumnDefinitions><ColumnDefinition Width="76" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="Editor:" Style="{StaticResource TechLabel}" />
+                                <TextBlock Grid.Column="1" Text="{Binding SelectedEntry.Publisher, TargetNullValue='-'}" FontSize="10" TextWrapping="Wrap" /></Grid>
+                            <Grid Margin="0,0,0,3"><Grid.ColumnDefinitions><ColumnDefinition Width="76" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="Origen:" Style="{StaticResource TechLabel}" />
+                                <TextBlock Grid.Column="1" Text="{Binding SelectedSelectableEntry.SourceTypeText}" FontSize="10" /></Grid>
+                            <Grid Margin="0,0,0,3"><Grid.ColumnDefinitions><ColumnDefinition Width="76" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="Estado:" Style="{StaticResource TechLabel}" />
+                                <TextBlock Grid.Column="1" Text="{Binding SelectedSelectableEntry.StatusText}" FontSize="10" /></Grid>
+                            <Grid Margin="0,0,0,3"><Grid.ColumnDefinitions><ColumnDefinition Width="76" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="Riesgo:" Style="{StaticResource TechLabel}" />
+                                <TextBlock Grid.Column="1" Text="{Binding SelectedSelectableEntry.RiskText}" FontSize="10" FontWeight="SemiBold" /></Grid>
+                            <Grid Margin="0,0,0,3"><Grid.ColumnDefinitions><ColumnDefinition Width="76" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="Recomend.:" Style="{StaticResource TechLabel}" />
+                                <TextBlock Grid.Column="1" Text="{Binding SelectedSelectableEntry.RecommendationText}" FontSize="10" FontWeight="SemiBold" /></Grid>
+                            <Grid Margin="0,0,0,5"><Grid.ColumnDefinitions><ColumnDefinition Width="76" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="Desactivable:" Style="{StaticResource TechLabel}" />
+                                <TextBlock Grid.Column="1" Text="{Binding IsSelectedEntryDisableable, Converter={StaticResource BoolToVisYesNo}}" FontSize="10" /></Grid>
+
+                            <TextBlock Text="Comando completo:" Style="{StaticResource TechLabel}" Margin="0,2,0,2" />
+                            <TextBox Text="{Binding SelectedEntry.Command, Mode=OneWay}" IsReadOnly="True"
+                                     FontFamily="Consolas" FontSize="10" TextWrapping="Wrap"
+                                     BorderBrush="#DDD" BorderThickness="1" Background="White"
+                                     ToolTip="{Binding SelectedEntry.Command}" Margin="0,0,0,4" />
+
+                            <TextBlock Text="Ubicación (clave de registro / ruta):" Style="{StaticResource TechLabel}" Margin="0,2,0,2" />
+                            <TextBox Text="{Binding SelectedEntry.Location, Mode=OneWay}" IsReadOnly="True"
+                                     FontFamily="Consolas" FontSize="10" TextWrapping="Wrap"
+                                     BorderBrush="#DDD" BorderThickness="1" Background="White"
+                                     ToolTip="{Binding SelectedEntry.Location}" Margin="0,0,0,4" />
+
+                            <TextBlock Text="Notas:" Style="{StaticResource TechLabel}" Margin="0,2,0,2"
                                        Visibility="{Binding SelectedEntry.Notes, Converter={StaticResource StringToVis}}" />
+                            <TextBlock Text="{Binding SelectedEntry.Notes}" FontSize="10" Foreground="#E65100"
+                                       TextWrapping="Wrap" Margin="0,0,0,4"
+                                       Visibility="{Binding SelectedEntry.Notes, Converter={StaticResource StringToVis}}" />
+
+                            <WrapPanel Margin="0,4,0,0">
+                                <Button Content="Copiar comando" Style="{StaticResource TechButton}"
+                                        Command="{Binding CopyCommand}" />
+                                <Button Content="Copiar entrada" Style="{StaticResource TechButton}"
+                                        Command="{Binding CopyEntryCommand}" />
+                                <Button Content="Abrir ubicación" Style="{StaticResource TechButton}"
+                                        Command="{Binding OpenLocationCommand}" />
+                            </WrapPanel>
                         </StackPanel>
 
                         <!-- Backups -->
-                        <Separator Background="#E0E0E0" Margin="0,12,0,12"
+                        <Separator Background="#E0E0E0" Margin="0,8,0,8"
                                    Visibility="{Binding ShowBackups, Converter={StaticResource BoolToVis}}" />
 
                         <StackPanel Visibility="{Binding ShowBackups, Converter={StaticResource BoolToVis}}">
-                            <TextBlock Text="BACKUPS" FontSize="12" FontWeight="Bold" Foreground="#0078D4" Margin="0,0,0,8" />
+                            <TextBlock Text="BACKUPS" FontSize="10" FontWeight="Bold" Foreground="#0078D4" Margin="0,0,0,6" />
 
                             <TextBlock Text="No hay backups" FontSize="11" Foreground="#999"
                                        Visibility="{Binding Backups.Count, Converter={StaticResource ZeroToVis}}" />
 
-                            <ItemsControl ItemsSource="{Binding Backups}" MaxHeight="250">
+                            <ItemsControl ItemsSource="{Binding Backups}" MaxHeight="240">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate DataType="{x:Type startup:StartupBackupRecord}">
-                                        <Border BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="4"
-                                                Padding="8,6" Margin="0,0,0,6" Background="White"
-                                                Cursor="Hand">
-                                            <Border.InputBindings>
-                                                <MouseBinding MouseAction="LeftClick"
-                                                              Command="{Binding DataContext.LoadBackupsCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" />
-                                            </Border.InputBindings>
+                                        <Border BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="3"
+                                                Padding="7,5" Margin="0,0,0,5" Background="White">
                                             <StackPanel>
                                                 <Grid>
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="*" />
                                                         <ColumnDefinition Width="Auto" />
                                                     </Grid.ColumnDefinitions>
-                                                    <TextBlock Text="{Binding EntryName}" FontSize="11" FontWeight="SemiBold" />
-                                                    <Border Grid.Column="1" CornerRadius="3" Padding="4,1"
+                                                    <TextBlock Text="{Binding EntryName}" FontSize="11" FontWeight="SemiBold"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <Border Grid.Column="1" CornerRadius="2" Padding="4,1"
                                                             Background="{Binding CanRestore, Converter={StaticResource RestoreColorConverter}}">
                                                         <TextBlock Text="{Binding CanRestore, Converter={StaticResource RestoreTextConverter}}"
                                                                    FontSize="9" Foreground="White" />
@@ -268,8 +349,6 @@
                                                 <TextBlock Text="{Binding SourceType}" FontSize="10" Foreground="#666" />
                                                 <TextBlock Text="{Binding CreatedAt, StringFormat='Desactivado: {0:dd/MM/yyyy HH:mm}'}"
                                                            FontSize="9" Foreground="#999" />
-                                                <TextBlock Text="{Binding DisabledBy}" FontSize="9" Foreground="#999"
-                                                           Visibility="{Binding DisabledBy, Converter={StaticResource StringToVis}}" />
                                                 <Button Content="Restaurar" FontSize="10" Padding="8,3" Margin="0,4,0,0"
                                                         Background="#E8F5E9" Foreground="#2E7D32" BorderBrush="#A5D6A7"
                                                         BorderThickness="1" HorizontalAlignment="Left"
